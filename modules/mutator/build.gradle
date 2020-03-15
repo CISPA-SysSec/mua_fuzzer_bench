@@ -1,0 +1,53 @@
+import org.apache.tools.ant.filters.ReplaceTokens
+import org.gradle.internal.os.OperatingSystem
+
+apply plugin: 'c'
+apply plugin: 'cpp'
+
+def llvmConfigVariable(variable, components = []) {
+    if (!file(llvmConfigScript).exists()) {
+        throw new GradleException("missing llvm-config script")
+    }
+
+    def componentsString = String.join(' ', components)
+    def proc = "${llvmConfigScript} --${variable} ${componentsString}".execute()
+    def outputStream = new StringBuffer()
+
+    proc.waitForProcessOutput(outputStream, System.err)
+    return outputStream.toString().replaceAll('\n', '').trim().split("\\s+")
+}
+
+
+def PkgConfigVariable(variable, library) {
+    def proc = "pkg-config --${variable} ${library}".execute()
+    def outputStream = new StringBuffer()
+
+    proc.waitForProcessOutput(outputStream, System.err)
+    return outputStream.toString().replaceAll('\n', ' ').trim().split("\\s+")
+}
+
+
+model {
+    components {
+        traceplugin(NativeLibrarySpec) {
+            sources {
+                cpp {
+                    source {
+                        include 'mutator.cpp'
+                    }
+
+//                     exportedHeaders {
+//                         srcDir 'include'
+//                     }
+                }
+            }
+
+            binaries.all { binary ->
+                cppCompiler.args llvmConfigVariable('cxxflags')
+                linker.args llvmConfigVariable('ldflags')
+                linker.args llvmConfigVariable('libs', ['core'])
+            }
+        }
+    }
+}
+

@@ -1,0 +1,44 @@
+buildscript {
+    ext.kotlin_version = '1.3.10'
+
+    repositories {
+        maven {
+            url 'https://plugins.gradle.org/m2/'
+        }
+    }
+
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jmailen.gradle:kotlinter-gradle:1.20.1"
+    }
+}
+
+plugins {
+    id "org.jlleitschuh.gradle.ktlint" version "6.3.1"
+}
+
+// toolChain.clang.path "${clangPath}"
+
+apply plugin: 'distribution'
+distributions {
+    main {
+        contents {
+            into('lib') {
+//                 from { project(':mutator').tasks.getByName('createWrappermainStaticLibrary') }
+//                 from { project(':mutator').tasks.getByName('createWrapperlibcStaticLibrary') }
+//                 from { project(':mutator').tasks.getByName('createSimpletracerStaticLibrary') }
+                from { project(':mutator').tasks.getByName('linkMutatorPluginSharedLibrary') }
+            }
+
+//             into('bin') {
+//                 from { project(':trace-instr').tasks.getByName('generateScripts') }
+//                 from { project(':trace-pygmalion').tasks.getByName('generateScripts') }
+//                 from { project(':input-repair').tasks.getByName('generateScripts') }
+//             }
+
+//             into('include/traceinstr') {
+//                 from { project(':trace-instr').tasks.getByName('generateWrapperHeaders') }
+//             }
+        }
+    }
+}

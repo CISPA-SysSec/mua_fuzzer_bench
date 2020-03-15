@@ -1,0 +1,10 @@
+def includeProject = { String projectDirName, String projectName ->
+    File modulesDir = new File(rootDir, projectDirName)
+    File projectDir = new File(modulesDir, projectName)
+
+    include projectName
+    project(":${projectName}").projectDir    = projectDir
+    project(":${projectName}").buildFileName = 'build.gradle'
+}
+
+includeProject 'modules', 'mutator'
