@@ -5,12 +5,12 @@ apply plugin: 'c'
 apply plugin: 'cpp'
 
 def llvmConfigVariable(variable, components = []) {
-    if (!file(llvmConfigScript).exists()) {
+    if (!file("${llvmBinPath}llvm-config").exists()) {
         throw new GradleException("missing llvm-config script")
     }
 
     def componentsString = String.join(' ', components)
-    def proc = "${llvmConfigScript} --${variable} ${componentsString}".execute()
+    def proc = "${llvmBinPath}llvm-config --${variable} ${componentsString}".execute()
     def outputStream = new StringBuffer()
 
     proc.waitForProcessOutput(outputStream, System.err)
@@ -28,11 +28,18 @@ def PkgConfigVariable(variable, library) {
 
 
 model {
+    toolChains {
+        clang(Clang) {
+            path "${llvmBinPath}"
+        }
+    }
+
     components {
-        traceplugin(NativeLibrarySpec) {
+        MutatorPlugin(NativeLibrarySpec) {
             sources {
                 cpp {
                     source {
+                        srcDir 'sources'
                         include 'mutator.cpp'
                     }
 
@@ -44,6 +51,10 @@ model {
 
             binaries.all { binary ->
                 cppCompiler.args llvmConfigVariable('cxxflags')
+                // needed for catalina builds
+                // TODO maybe also restrict to only use in catalina builds and upwards?
+                cppCompiler.args "-isysroot", "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
+                cppCompiler.args "-isystem", "/Library/Developer/CommandLineTools/usr/include/c++/v1"
                 linker.args llvmConfigVariable('ldflags')
                 linker.args llvmConfigVariable('libs', ['core'])
             }
