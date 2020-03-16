@@ -8,3 +8,5 @@ def includeProject = { String projectDirName, String projectName ->
 }
 
 includeProject 'modules', 'mutator'
+
+rootProject.name = 'LLVM_Mutation_Tool'

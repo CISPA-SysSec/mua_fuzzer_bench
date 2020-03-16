@@ -27,14 +27,14 @@ distributions {
 //                 from { project(':mutator').tasks.getByName('createWrappermainStaticLibrary') }
 //                 from { project(':mutator').tasks.getByName('createWrapperlibcStaticLibrary') }
 //                 from { project(':mutator').tasks.getByName('createSimpletracerStaticLibrary') }
-                from { project(':mutator').tasks.getByName('linkMutatorPluginSharedLibrary') }
+                from { project(':mutator').tasks.getByName('linkMutatorpluginSharedLibrary') }
             }
 
-//             into('bin') {
-//                 from { project(':trace-instr').tasks.getByName('generateScripts') }
+            into('bin') {
+                from { project(':mutator').tasks.getByName('generateScripts') }
 //                 from { project(':trace-pygmalion').tasks.getByName('generateScripts') }
 //                 from { project(':input-repair').tasks.getByName('generateScripts') }
-//             }
+            }
 
 //             into('include/traceinstr') {
 //                 from { project(':trace-instr').tasks.getByName('generateWrapperHeaders') }
