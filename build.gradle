@@ -27,10 +27,12 @@ distributions {
 //                 from { project(':mutator').tasks.getByName('createWrappermainStaticLibrary') }
 //                 from { project(':mutator').tasks.getByName('createWrapperlibcStaticLibrary') }
 //                 from { project(':mutator').tasks.getByName('createSimpletracerStaticLibrary') }
+                from { project(':mutationfinder').tasks.getByName('linkMutationfinderpluginSharedLibrary') }
                 from { project(':mutator').tasks.getByName('linkMutatorpluginSharedLibrary') }
             }
 
             into('bin') {
+                from { project(':mutationfinder').tasks.getByName('generateScripts') }
                 from { project(':mutator').tasks.getByName('generateScripts') }
 //                 from { project(':trace-pygmalion').tasks.getByName('generateScripts') }
 //                 from { project(':input-repair').tasks.getByName('generateScripts') }

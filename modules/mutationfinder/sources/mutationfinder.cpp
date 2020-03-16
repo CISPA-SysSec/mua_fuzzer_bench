@@ -3,8 +3,6 @@
 #include <map>
 #include <set>
 #include <thread>
-#include <sstream>
-#include <string>
 
 #include <llvm/Pass.h>
 #include <llvm/IR/Type.h>
@@ -24,9 +22,9 @@ using namespace llvm;
 
 #define DEBUG_TYPE "mutationfinder"
 
-cl::opt<std::string> Mutation("mutation_pattern",
-                                   cl::desc("the source location and mutation pattern"),
-                                   cl::value_desc("string"));
+cl::opt<std::string> MutationLocationFile("mutation_patterns",
+                                   cl::desc("file containing the mutation patterns"),
+                                   cl::value_desc("filename"));
 
 //counter which is used to assign for each basic block a unique ID
 int bbIDCounter = 0;
@@ -37,10 +35,6 @@ int callIDCounter = 1;
 // a counter and the number of functions to print the current status
 int number_functions = 0;
 int funcounter = 0;
-
-// the following variables define the location of the mutation as well as the pattern
-// containing in order: Directory, File, line, column as strings
-std::vector<std::string> seglist;
 
 std::ofstream mutationLocations;
 
@@ -95,26 +89,15 @@ public:
     {
         if (funNameString.find("malloc") != std::string::npos) {
             const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
+
             std::string directory = debugInfo->getDirectory().str();
             std::string filePath = debugInfo->getFilename().str();
             int line = debugInfo->getLine();
             int column = debugInfo->getColumn();
-
-            if (seglist[0] == directory && seglist[1] == filePath
-                    && std::stoi(seglist[2]) == line && std::stoi(seglist[3]) == column) {
-                // substract 1 and give the new value to malloc
-                Value* lhs;
-                if (CallInst* callinst = dyn_cast<CallInst>(instr))
-                {
-                    lhs = callinst->getArgOperand(0); // TODO a pattern could describe which argument to mutate
-                    builderMutex.lock();
-                    auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
-                    builderMutex.unlock();
-                    callinst->setOperand(0, newVal);
-                }
-                return true;
-            }
-
+            fileMutex.lock();
+            mutationLocations << directory << "|" << filePath << "|" << line << "|" << column << "\n";
+            fileMutex.unlock();
+            return true;
         }
         return false;
     }
@@ -227,17 +210,8 @@ struct MutatorPlugin : public ModulePass
 
         std::mutex builderMutex;
         std::mutex fileMutex;
-        std::cout << "Mutating: " << Mutation << "\n";
-
-        //splitting and storing the parts of the string
-        std::string segment;
-        std::stringstream strs(Mutation);
-        while(std::getline(strs, segment, '|'))
-        {
-            seglist.push_back(segment);
-        }
-
-        unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
+        mutationLocations.open(MutationLocationFile);
+        unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency() * 30);
         std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
         std::vector<std::vector<Function*>> threadFunctions(concurrentThreadsSupported);
@@ -271,4 +245,4 @@ struct MutatorPlugin : public ModulePass
 };
 
 char MutatorPlugin::ID = 0;
-static RegisterPass<MutatorPlugin> X("mutatorplugin", "Plugin to mutate a bitcode file.");
+static RegisterPass<MutatorPlugin> X("mutationfinder", "Plugin to mutate a bitcode file.");
