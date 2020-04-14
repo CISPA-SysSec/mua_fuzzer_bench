@@ -1,3 +1,4 @@
+
 buildscript {
     ext.kotlin_version = '1.3.10'
 
@@ -15,32 +16,27 @@ buildscript {
 
 plugins {
     id "org.jlleitschuh.gradle.ktlint" version "6.3.1"
+    id 'cpp-library'
 }
 
-// toolChain.clang.path "${clangPath}"
+build.dependsOn ":mutationfinder:build", ":mutator:build"
 
-apply plugin: 'distribution'
-distributions {
-    main {
-        contents {
-            into('lib') {
-//                 from { project(':mutator').tasks.getByName('createWrappermainStaticLibrary') }
-//                 from { project(':mutator').tasks.getByName('createWrapperlibcStaticLibrary') }
-//                 from { project(':mutator').tasks.getByName('createSimpletracerStaticLibrary') }
-                from { project(':mutationfinder').tasks.getByName('linkMutationfinderpluginSharedLibrary') }
-                from { project(':mutator').tasks.getByName('linkMutatorpluginSharedLibrary') }
-            }
-
-            into('bin') {
-                from { project(':mutationfinder').tasks.getByName('generateScripts') }
-                from { project(':mutator').tasks.getByName('generateScripts') }
-//                 from { project(':trace-pygmalion').tasks.getByName('generateScripts') }
-//                 from { project(':input-repair').tasks.getByName('generateScripts') }
-            }
-
-//             into('include/traceinstr') {
-//                 from { project(':trace-instr').tasks.getByName('generateWrapperHeaders') }
-//             }
+task getAll() {
+    dependsOn ":mutationfinder:build", ":mutator:build"
+    doLast {
+        println "test"
+        println project('mutationfinder').tasks.getByName('generateScripts')
+        copy {
+            from project('mutationfinder').tasks.getByName('generateScripts')
+            from project('mutator').tasks.getByName('generateScripts')
+            into 'build/install/LLVM_Mutation_Tool/bin/'
+        }
+        copy {
+            from project('mutationfinder').tasks.getByName('linkDebug')
+            from project('mutator').tasks.getByName('linkDebug')
+            into 'build/install/LLVM_Mutation_Tool/lib/'
         }
     }
 }
+
+build.finalizedBy getAll

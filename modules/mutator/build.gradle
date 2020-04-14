@@ -1,8 +1,8 @@
 import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.internal.os.OperatingSystem
+import org.apache.tools.ant.taskdefs.condition.Os
 
-apply plugin: 'c'
-apply plugin: 'cpp'
+apply plugin: 'cpp-library'
 
 def llvmConfigVariable(variable, components = []) {
     if (!file("${llvmBinPath}llvm-config").exists()) {
@@ -27,39 +27,38 @@ def PkgConfigVariable(variable, library) {
 }
 
 
+tasks.withType(CppCompile).configureEach {
+
+    // Define a compiler options
+    compilerArgs.add '-O3'
+    compilerArgs.addAll llvmConfigVariable('cxxflags')
+
+    // Define toolchain-specific compiler options
+    compilerArgs.addAll toolChain.map { toolChain ->
+        if (Os.isFamily(Os.FAMILY_MAC)) {
+            println 'On Mac, adding sysroot and system path'
+            return ['-isysroot', '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/', "-isystem", "/Library/Developer/CommandLineTools/usr/include/c++/v1"]
+        }
+        return []
+    }
+
+}
+
+tasks.withType(LinkSharedLibrary).configureEach {
+    linkerArgs.addAll llvmConfigVariable('ldflags')
+    linkerArgs.addAll llvmConfigVariable('libs', ['core'])
+}
+
 model {
     toolChains {
         clang(Clang) {
             path "${llvmBinPath}"
         }
     }
+}
 
-    components {
-        Mutatorplugin(NativeLibrarySpec) {
-            sources {
-                cpp {
-                    source {
-                        srcDir 'sources'
-                        include 'mutator.cpp'
-                    }
-
-//                     exportedHeaders {
-//                         srcDir 'include'
-//                     }
-                }
-            }
-
-            binaries.all { binary ->
-                cppCompiler.args llvmConfigVariable('cxxflags')
-                // needed for catalina builds
-                // TODO maybe also restrict to only use in catalina builds and upwards?
-                cppCompiler.args "-isysroot", "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
-                cppCompiler.args "-isystem", "/Library/Developer/CommandLineTools/usr/include/c++/v1"
-                linker.args llvmConfigVariable('ldflags')
-                linker.args llvmConfigVariable('libs', ['core'])
-            }
-        }
-    }
+library {
+   linkage = [Linkage.SHARED]
 }
 
 task generateScripts(type: Copy) {
@@ -70,11 +69,12 @@ task generateScripts(type: Copy) {
         filter(ReplaceTokens, tokens: [
                 LLVM_BINDIR: llvmConfigVariable('bindir')[0],
 //                 CLANG      : new File(llvmConfigVariable('bindir')[0].toString(), 'clang').getAbsolutePath(),
-                MUTATOR_PLUGIN: new File("${rootDir}/build/install/LLVM_Mutation_Tool/lib", OperatingSystem.current().getSharedLibraryName('mutatorplugin')).getAbsolutePath(),
+                MUTATOR_PLUGIN: new File("${rootDir}/build/install/LLVM_Mutation_Tool/lib", OperatingSystem.current().getSharedLibraryName('mutator')).getAbsolutePath(),
         ])
     }
 
     destinationDir file("${buildDir}/bin")
 }
 
+build.dependsOn generateScripts
 

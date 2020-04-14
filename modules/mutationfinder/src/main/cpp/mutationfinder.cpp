@@ -72,7 +72,6 @@ public:
                       << ": " << F->getName().data()
                       << std::endl;
             builderMutex.unlock();
-
             mutateFunction(*F);
         }
     }
@@ -137,7 +136,6 @@ public:
                 if (calledFunctionName.empty())
                 {
                     // as a last resort use 'null' for the name
-                    // TODO (michael.mera) Really? It seems to me that 'null' is a misleading name, rather use 'unknown' or something similar.
                     calledFunctionName = "null";
                 }
             }
@@ -151,7 +149,7 @@ public:
 
 
     /**
-     * Instrument one function, i.e. run over all isntructions in that function and instrument them.
+     * Instrument one function, i.e. run over all instructions in that function and instrument them.
      * @param F the given function
      * @return true on successful instrumentation
      */
@@ -161,19 +159,6 @@ public:
         for (BasicBlock& bb : F)
         {
             auto first_insertion_point = bb.getFirstInsertionPt();
-//
-//            IRBuilder<> builder(&bb, first_insertion_point);
-//
-//            std::vector<Value*> iHeaderArgs;
-//            createStaticArgList(&builder, iHeaderArgs, &*first_insertion_point);
-//            builderMutex.lock();
-//            iHeaderArgs[0] = builder.getInt64(additionalOperators.at("bbenter")->opcode);
-//            builder.CreateCall(tracer("instructionHeader"), iHeaderArgs);
-//            std::vector<Value*> bbEnterArgs;
-//            bbEnterArgs.push_back(builder.getInt64(bbIDCounter++));
-//            builder.CreateCall(tracer("enterBasicBlock"), bbEnterArgs);
-//            builder.CreateCall(tracer("instructionEnd"), {});
-//            builderMutex.unlock();
 
             for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb)
             {
