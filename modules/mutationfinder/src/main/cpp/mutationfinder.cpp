@@ -90,13 +90,12 @@ public:
                 return;
             }
 
-            auto patternLocations = look_for_pattern(instr);
-            for (auto loc: patternLocations) {
-                fileMutex.lock();
-                mutationLocations << loc;
-                fileMutex.unlock();
-            }
-            return;
+        }
+        auto patternLocations = look_for_pattern(instr);
+        for (auto loc: patternLocations) {
+            fileMutex.lock();
+            mutationLocations << loc;
+            fileMutex.unlock();
         }
     }
 

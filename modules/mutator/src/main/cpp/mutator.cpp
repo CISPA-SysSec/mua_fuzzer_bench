@@ -6,6 +6,8 @@
 #include <sstream>
 #include <string>
 
+#include "mutator_lib.h"
+
 #include <llvm/Pass.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/IRBuilder.h>
@@ -39,7 +41,7 @@ int number_functions = 0;
 int funcounter = 0;
 
 // the following variables define the location of the mutation as well as the pattern
-// containing in order: Directory, File, line, column as strings
+// containing in order: Directory, File, line, column, mutation-ID as strings
 std::vector<std::string> seglist;
 
 std::ofstream mutationLocations;
@@ -83,42 +85,6 @@ public:
         }
     }
 
-    /**
-     * Mutate the given function call if a mutation pattern exists for the function.
-     * @param builder the builder to add instruction in front of the call
-     * @param nextInstructionBuilder the builder to add instructions after the call
-     * @param instr the instruction to mutate (i.e. the function call)
-     * @param funNameString the name of the function that is called
-     * @return
-     */
-    bool mutateFunctionCall(IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder, Instruction* instr, const std::string& funNameString)
-    {
-        if (funNameString.find("malloc") != std::string::npos) {
-            const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
-            std::string directory = debugInfo->getDirectory().str();
-            std::string filePath = debugInfo->getFilename().str();
-            int line = debugInfo->getLine();
-            int column = debugInfo->getColumn();
-
-            if (seglist[0] == directory && seglist[1] == filePath
-                    && std::stoi(seglist[2]) == line && std::stoi(seglist[3]) == column) {
-                // substract 1 and give the new value to malloc
-                Value* lhs;
-                if (CallInst* callinst = dyn_cast<CallInst>(instr))
-                {
-                    lhs = callinst->getArgOperand(0); // TODO a pattern could describe which argument to mutate
-                    builderMutex.lock();
-                    auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
-                    builderMutex.unlock();
-                    callinst->setOperand(0, newVal);
-                }
-                return true;
-            }
-
-        }
-        return false;
-    }
-
 
     /**
      * Instrument the given instruction with the given builders.
@@ -139,31 +105,8 @@ public:
                 // skip llvm intrinsic functions other than llvm.memcpy and llvm memmove
                 return;
             }
-
-            std::string calledFunctionName;
-            if (fun != nullptr)
-            {
-                calledFunctionName = fun->getName().str();
-            }
-            else
-            {
-                // called function might be unknown when using casts or indirect calls (through pointer)
-
-                // try harder to find the function name by removing casts and aliases
-                calledFunctionName = callinst->getCalledValue()->stripPointerCasts()->getName().str();
-                if (calledFunctionName.empty())
-                {
-                    // as a last resort use 'null' for the name
-                    // TODO (michael.mera) Really? It seems to me that 'null' is a misleading name, rather use 'unknown' or something similar.
-                    calledFunctionName = "null";
-                }
-            }
-
-            if (mutateFunctionCall(builder, nextInstructionBuilder, instr, calledFunctionName))
-            {
-                return;
-            }
         }
+        mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist);
     }
 
 
