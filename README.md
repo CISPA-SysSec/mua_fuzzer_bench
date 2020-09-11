@@ -8,6 +8,8 @@
 # setting up llvm takes some time and space (llvm is fully compiled including clang)
 ./scripts/setup_llvm_clang.sh
 
+
+
 # compiles the project and installs it under build/install
 gradle build
 ```

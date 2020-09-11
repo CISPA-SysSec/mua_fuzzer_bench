@@ -59,6 +59,9 @@ model {
 
 library {
    linkage = [Linkage.SHARED]
+   dependencies {
+        api project(":utilities")
+   }
 }
 
 task generateScripts(type: Copy) {

@@ -1,20 +1,17 @@
 #include <iostream>
 #include <fstream>
 #include <map>
-#include <set>
 #include <thread>
+
+#include "pattern_lib.h"
 
 #include <llvm/Pass.h>
 #include <llvm/IR/Type.h>
-#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IntrinsicInst.h>
-#include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Function.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
-#include <llvm/IR/DebugLoc.h>
-#include <llvm/IR/DebugInfoMetadata.h>
 
 
 
@@ -25,12 +22,6 @@ using namespace llvm;
 cl::opt<std::string> MutationLocationFile("mutation_patterns",
                                    cl::desc("file containing the mutation patterns"),
                                    cl::value_desc("filename"));
-
-//counter which is used to assign for each basic block a unique ID
-int bbIDCounter = 0;
-
-//counter for method calls, each method call gets a unique ID
-int callIDCounter = 1;
 
 // a counter and the number of functions to print the current status
 int number_functions = 0;
@@ -62,7 +53,7 @@ public:
      * Instrument all functions given as parameter.
      * @param functions
      */
-    void instrumentFunctions(std::vector<Function*> functions)
+    void findPatternInFunctions(std::vector<Function*> functions)
     {
         for (auto F: functions)
         {
@@ -72,34 +63,11 @@ public:
                       << ": " << F->getName().data()
                       << std::endl;
             builderMutex.unlock();
-            mutateFunction(*F);
+            findPatternInFunction(*F);
         }
     }
 
-    /**
-     * Mutate the given function call if a mutation pattern exists for the function.
-     * @param builder the builder to add instruction in front of the call
-     * @param nextInstructionBuilder the builder to add instructions after the call
-     * @param instr the instruction to mutate (i.e. the function call)
-     * @param funNameString the name of the function that is called
-     * @return
-     */
-    bool mutateFunctionCall(IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder, Instruction* instr, const std::string& funNameString)
-    {
-        if (funNameString.find("malloc") != std::string::npos) {
-            const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
 
-            std::string directory = debugInfo->getDirectory().str();
-            std::string filePath = debugInfo->getFilename().str();
-            int line = debugInfo->getLine();
-            int column = debugInfo->getColumn();
-            fileMutex.lock();
-            mutationLocations << directory << "|" << filePath << "|" << line << "|" << column << "\n";
-            fileMutex.unlock();
-            return true;
-        }
-        return false;
-    }
 
 
     /**
@@ -108,10 +76,10 @@ public:
      * @param builder
      * @param nextInstructionBuilder
      */
-    void mutateInstr(Instruction* instr, IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder)
+    void handInstructionToPatternMatchers(Instruction* instr)
     {
-        // Call instructions are handled differently
-        if (CallInst* callinst = dyn_cast<CallInst>(instr))
+        // Handle call instructions with function call pattern analyzer
+        if (auto* callinst = dyn_cast<CallInst>(instr))
         {
             Function* fun = callinst->getCalledFunction();
             if (fun != nullptr && fun->isIntrinsic() && !dyn_cast<MemCpyInst>(callinst) && !dyn_cast<MemMoveInst>(callinst)
@@ -122,28 +90,13 @@ public:
                 return;
             }
 
-            std::string calledFunctionName;
-            if (fun != nullptr)
-            {
-                calledFunctionName = fun->getName().str();
+            auto patternLocations = look_for_pattern(instr);
+            for (auto loc: patternLocations) {
+                fileMutex.lock();
+                mutationLocations << loc;
+                fileMutex.unlock();
             }
-            else
-            {
-                // called function might be unknown when using casts or indirect calls (through pointer)
-
-                // try harder to find the function name by removing casts and aliases
-                calledFunctionName = callinst->getCalledValue()->stripPointerCasts()->getName().str();
-                if (calledFunctionName.empty())
-                {
-                    // as a last resort use 'null' for the name
-                    calledFunctionName = "null";
-                }
-            }
-
-            if (mutateFunctionCall(builder, nextInstructionBuilder, instr, calledFunctionName))
-            {
-                return;
-            }
+            return;
         }
     }
 
@@ -153,7 +106,7 @@ public:
      * @param F the given function
      * @return true on successful instrumentation
      */
-    bool mutateFunction(Function& F)
+    bool findPatternInFunction(Function& F)
     {
         std::vector<Instruction*> toInstrument;
         for (BasicBlock& bb : F)
@@ -168,12 +121,7 @@ public:
 
         for (Instruction* instr : toInstrument)
         {
-            BasicBlock::iterator itr_bb(instr);
-            builderMutex.lock();
-            IRBuilder<> builder(instr->getParent(), itr_bb);
-            IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
-            builderMutex.unlock();
-            mutateInstr(instr, &builder, &nextInstructionBuilder);
+            handInstructionToPatternMatchers(instr);
         }
 
         return true;
@@ -185,7 +133,7 @@ struct MutatorPlugin : public ModulePass
     static char ID; // Pass identification, replacement for typeid
     MutatorPlugin() : ModulePass(ID) {}
 
-    bool runOnModule(Module& M)
+    bool runOnModule(Module& M) override
     {
         auto& llvm_context = M.getContext();
 
@@ -216,7 +164,7 @@ struct MutatorPlugin : public ModulePass
         std::vector<std::thread> threads;
         for (auto& functions : threadFunctions)
         {
-            threads.push_back(std::thread(&Worker::instrumentFunctions, new Worker(M, builderMutex, fileMutex), functions));
+            threads.push_back(std::thread(&Worker::findPatternInFunctions, new Worker(M, builderMutex, fileMutex), functions));
         }
 
         for (auto& thread : threads)

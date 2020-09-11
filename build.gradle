@@ -19,12 +19,11 @@ plugins {
     id 'cpp-library'
 }
 
-build.dependsOn ":mutationfinder:build", ":mutator:build"
+build.dependsOn ":utilities:build", ":mutationfinder:build", ":mutator:build"
 
 task getAll() {
-    dependsOn ":mutationfinder:build", ":mutator:build"
+    dependsOn ":utilities:build", ":mutationfinder:build", ":mutator:build"
     doLast {
-        println "test"
         println project('mutationfinder').tasks.getByName('generateScripts')
         copy {
             from project('mutationfinder').tasks.getByName('generateScripts')
@@ -32,6 +31,7 @@ task getAll() {
             into 'build/install/LLVM_Mutation_Tool/bin/'
         }
         copy {
+            from project('utilities').tasks.getByName('linkDebug')
             from project('mutationfinder').tasks.getByName('linkDebug')
             from project('mutator').tasks.getByName('linkDebug')
             into 'build/install/LLVM_Mutation_Tool/lib/'

@@ -4,7 +4,6 @@ import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'cpp-library'
 
-
 def llvmConfigVariable(variable, components = []) {
     if (!file("${llvmBinPath}llvm-config").exists()) {
         throw new GradleException("missing llvm-config script")
@@ -26,6 +25,7 @@ def PkgConfigVariable(variable, library) {
     proc.waitForProcessOutput(outputStream, System.err)
     return outputStream.toString().replaceAll('\n', ' ').trim().split("\\s+")
 }
+
 
 tasks.withType(CppCompile).configureEach {
 
@@ -57,29 +57,7 @@ model {
     }
 }
 
-
 library {
-    linkage = [Linkage.SHARED]
-    dependencies {
-        api project(":utilities")
-    }
+   linkage = [Linkage.SHARED]
 }
-
-task generateScripts(type: Copy) {
-    from('scripts') {
-        include 'compileAndFind.py'
-        fileMode 0750
-
-        filter(ReplaceTokens, tokens: [
-                LLVM_BINDIR: llvmConfigVariable('bindir')[0],
-//                 CLANG      : new File(llvmConfigVariable('bindir')[0].toString(), 'clang').getAbsolutePath(),
-                MUTATOR_PLUGIN: new File("${rootDir}/build/install/LLVM_Mutation_Tool/lib", OperatingSystem.current().getSharedLibraryName('mutationfinder')).getAbsolutePath(),
-        ])
-    }
-
-    destinationDir file("${buildDir}/bin")
-}
-
-build.dependsOn generateScripts
-
 

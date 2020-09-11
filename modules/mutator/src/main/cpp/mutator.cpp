@@ -79,7 +79,7 @@ public:
                       << std::endl;
             builderMutex.unlock();
 
-            mutateFunction(*F);
+            findPatternInFunction(*F);
         }
     }
 
@@ -126,7 +126,7 @@ public:
      * @param builder
      * @param nextInstructionBuilder
      */
-    void mutateInstr(Instruction* instr, IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder)
+    void handInstructionToPatternMatchers(Instruction* instr, IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder)
     {
         // Call instructions are handled differently
         if (CallInst* callinst = dyn_cast<CallInst>(instr))
@@ -172,7 +172,7 @@ public:
      * @param F the given function
      * @return true on successful instrumentation
      */
-    bool mutateFunction(Function& F)
+    bool findPatternInFunction(Function& F)
     {
         std::vector<Instruction*> toInstrument;
         for (BasicBlock& bb : F)
@@ -205,7 +205,7 @@ public:
             IRBuilder<> builder(instr->getParent(), itr_bb);
             IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
             builderMutex.unlock();
-            mutateInstr(instr, &builder, &nextInstructionBuilder);
+            handInstructionToPatternMatchers(instr, &builder, &nextInstructionBuilder);
         }
 
         return true;
