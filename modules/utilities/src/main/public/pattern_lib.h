@@ -19,7 +19,7 @@
 
 using namespace llvm;
 
-std::string look_for_pattern(Instruction* instr);
+std::vector<std::string> look_for_pattern(Instruction* instr);
 
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H

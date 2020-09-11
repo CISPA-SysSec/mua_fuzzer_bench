@@ -25,7 +25,7 @@ def main():
     basepath = os.path.dirname(progsource)
     mutations_folder = os.path.join(basepath, "mutations")
     progname = os.path.basename(progsource)
-    print(f"Folder to put mutations into: {mutations_folder}")
+    print(f"[INFO] Folder to put mutations into: {mutations_folder}")
     shutil.rmtree(mutations_folder, ignore_errors=True)
     os.makedirs(mutations_folder)
     with open(f"{progsource}.mutationlocations") as mutations:

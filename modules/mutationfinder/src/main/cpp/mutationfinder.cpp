@@ -93,9 +93,11 @@ public:
         }
         auto patternLocations = look_for_pattern(instr);
         for (auto loc: patternLocations) {
-            fileMutex.lock();
-            mutationLocations << loc;
-            fileMutex.unlock();
+            if (!loc.empty()) {
+                fileMutex.lock();
+                mutationLocations << loc;
+                fileMutex.unlock();
+            }
         }
     }
 

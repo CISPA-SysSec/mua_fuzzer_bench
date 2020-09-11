@@ -95,7 +95,7 @@ public:
     void handInstructionToPatternMatchers(Instruction* instr, IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder)
     {
         // Call instructions are handled differently
-        if (CallInst* callinst = dyn_cast<CallInst>(instr))
+        if (auto* callinst = dyn_cast<CallInst>(instr))
         {
             Function* fun = callinst->getCalledFunction();
             if (fun != nullptr && fun->isIntrinsic() && !dyn_cast<MemCpyInst>(callinst) && !dyn_cast<MemMoveInst>(callinst)
@@ -170,7 +170,7 @@ struct MutatorPlugin : public ModulePass
 
         std::mutex builderMutex;
         std::mutex fileMutex;
-        std::cout << "Mutating: " << Mutation << "\n";
+        std::cout << "[INFO] Mutating: " << Mutation << "\n";
 
         //splitting and storing the parts of the string
         std::string segment;
