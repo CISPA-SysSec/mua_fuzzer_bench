@@ -25,7 +25,6 @@ std::vector<std::string> look_for_pattern(
     auto results = std::vector<std::string>();
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto funNameString = callinst->getCalledFunction()->getName();
-        std::cout << funNameString.str() << "\n\n";
         results.push_back(findMalloc(instr, funNameString));
         results.push_back(findFGets(instr, funNameString));
     }

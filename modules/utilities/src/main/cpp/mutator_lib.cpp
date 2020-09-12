@@ -16,7 +16,6 @@ bool mutateMalloc(
         CallInst* callinst
 ) {
     auto segref = *seglist;
-    std::cout << std::to_string((uint64_t)callinst) << " called\n\n";
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.find("malloc") != std::string::npos) {
         const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
@@ -43,6 +42,42 @@ bool mutateMalloc(
     return false;
 }
 
+bool mutateFGets(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        std::vector<std::string>* seglist,
+        CallInst* callinst
+) {
+    auto segref = *seglist;
+    auto funNameString = callinst->getCalledFunction()->getName();
+    if (funNameString.find("fgets") != std::string::npos) {
+        const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
+        std::string directory = debugInfo->getDirectory().str();
+        std::string filePath = debugInfo->getFilename().str();
+        int line = debugInfo->getLine();
+        int column = debugInfo->getColumn();
+
+        if (segref[0] == directory
+            && segref[1] == filePath
+            && std::stoi(segref[2]) == line
+            && std::stoi(segref[3]) == column
+            && std::stoi(segref[4]) == FGETS_MATCH_BUFFER_SIZE) {
+            // substract 1 and give the new value to malloc
+            Value* lhs;
+            lhs = callinst->getArgOperand(1);
+            builderMutex.lock();
+            auto newVal = builder->CreateAdd(lhs, builder->getInt64(1));
+            newVal = builder->CreateMul(newVal, builder->getInt64(5));
+            builderMutex.unlock();
+            callinst->setOperand(1, newVal);
+            return true;
+        }
+    }
+    return false;
+}
+
 
 
 /**
@@ -61,11 +96,14 @@ bool mutatePattern(
         std::vector<std::string>* seglist
 )
 {
-    std::cout << "test\n\n";
     // TODO until further refactoring put call instruction mutations in here
     // TODO in future we should have one abstract class from which concrete mutators should inherit
     // TODO we just register the mutators here and call them, same for the pattern finder
+    auto mutated = false;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
-        mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+        mutated |= mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+        mutated |= mutateFGets(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+        return mutated;
     }
+    return true;
 }
