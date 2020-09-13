@@ -1,0 +1,30 @@
+FROM ubuntu:20.04
+
+#for installing without user-interactions
+ENV DEBIAN_FRONTEND "noninteractive"
+
+# setup clang
+WORKDIR /home/
+RUN apt update
+
+RUN apt install -y locales
+RUN locale-gen en_US.UTF-8
+ENV LC_ALL "en_US.UTF-8"
+ENV LANG "en_US.UTF-8"
+
+RUN apt install -y build-essential
+RUN apt install -y gcc
+RUN apt install -y ninja-build
+RUN apt install -y cmake
+RUN apt install -y python3
+RUN apt install -y wget
+RUN apt install -y git
+
+
+RUN mkdir -p /home/scripts
+COPY scripts/setup_llvm_clang.sh /home/scripts/setup_llvm_clang.sh
+
+WORKDIR /home/scripts/
+
+RUN chmod +x setup_llvm_clang.sh
+RUN ./setup_llvm_clang.sh

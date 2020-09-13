@@ -1,6 +1,10 @@
 # own stuff
 .idea/*
 samples/*
+venv/
+gradle/
+gradlew
+gradlew.bat
 
 # Created by https://www.gitignore.io/api/macos,clion,gradle
 # Edit at https://www.gitignore.io/?templates=macos,clion,gradle

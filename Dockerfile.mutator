@@ -1,0 +1,52 @@
+FROM mutator_llvm:901
+
+# get necessary dependencies
+RUN apt-get update
+RUN apt install -y git
+RUN apt install -y curl
+RUN apt install -y zip
+RUN apt install -y nano
+RUN apt install -y htop
+RUN apt install -y python3-distutils
+RUN apt install -y libzmq3-dev
+RUN apt install -y openjdk-11-jdk
+RUN apt install -y pkg-config
+RUN apt install -y libz-dev
+RUN apt install -y libreadline-dev
+RUN apt install -y time
+RUN apt install -y telnet
+RUN apt install -y libgnutls28-dev
+
+WORKDIR /home/
+RUN mkdir -p downloads
+WORKDIR /home/downloads
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN python3 get-pip.py
+
+ENV PATH "/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/:$PATH"
+
+RUN wget https://downloads.gradle-dn.com/distributions/gradle-6.6.1-bin.zip
+RUN unzip gradle-6.6.1-bin.zip
+RUN mv gradle-6.6.1 /usr/local/gradle
+
+ENV PATH "/usr/local/gradle/bin/:$PATH"
+
+WORKDIR /home/
+RUN mkdir mutator
+WORKDIR mutator
+
+COPY modules /home/mutator/modules
+COPY samples /home/mutator/samples
+COPY build.gradle /home/mutator/
+COPY run_mutation.sh /home/mutator/
+RUN chmod +x run_mutation.sh
+COPY settings.gradle /home/mutator
+RUN echo "llvmBinPath=/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/" > gradle.properties
+
+
+RUN gradle clean build
+
+# set library paths for used shared libraries s.t. the system finds them
+ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
+
+RUN ./run_mutation.sh samples/cwe_119_bounds_checks-match/bounds_need_to_match.c

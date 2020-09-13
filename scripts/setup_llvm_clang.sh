@@ -1,4 +1,4 @@
-#!/lib/bash -
+#!/bin/bash -
 # This is a helper script to download and build the correct version of llvm+clang
 # for the project. It should work on most Linux and MacOSX.
 
