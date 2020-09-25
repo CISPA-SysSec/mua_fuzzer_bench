@@ -106,7 +106,7 @@ public:
                 return;
             }
         }
-        mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist);
+        mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
     }
 
 

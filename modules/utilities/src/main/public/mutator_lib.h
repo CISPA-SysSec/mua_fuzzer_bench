@@ -21,11 +21,14 @@
 
 using namespace llvm;
 
+#define ADDITIONAL_INFORMATION_START = 5  //the index of the first additional information argument, in future we should have some json format or so which makes this unnecessary
+
 bool mutatePattern(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist
+        std::vector<std::string>* seglist,
+        Module& M
 );
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H

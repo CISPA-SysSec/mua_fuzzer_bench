@@ -28,6 +28,7 @@ bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, c
             return false;
         }
     }
+    return false;
 }
 
 bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string> &segref) {
@@ -40,6 +41,37 @@ bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string>
            && segref[1] == filePath
            && std::stoi(segref[2]) == line
            && std::stoi(segref[3]) == column;
+}
+
+bool mutateFreeArgumentReturn(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        std::vector<std::string>* seglist,
+        Module& M
+) {
+    auto segref = *seglist;
+    if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
+        if (isMutationLocation(instr, seglist, FREE_FUNCTION_ARGUMENT)) {
+
+            builderMutex.lock();
+            LLVMContext &llvmContext = M.getContext();
+            // first bitcast to i8* as this is the type free expects
+            auto funArg = returnInst->getFunction()->getArg(std::stoi(segref[5]));
+            auto bitcasted = builder->CreateBitCast(funArg, Type::getInt8PtrTy(llvmContext));
+            auto args = std::vector<Value*>();
+            args.push_back(bitcasted);
+
+            // add free to the environment and then add it to the code
+            auto freeFun = M.getOrInsertFunction("free", Type::getVoidTy(llvmContext), Type::getInt8PtrTy(llvmContext));
+            builder->CreateCall(freeFun, args);
+            builderMutex.unlock();
+
+            return true;
+        }
+    }
+    return false;
 }
 
 
@@ -176,7 +208,8 @@ bool mutatePattern(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist
+        std::vector<std::string>* seglist,
+        Module& M
 )
 {
     // TODO until further refactoring put call instruction mutations in here
@@ -188,14 +221,13 @@ bool mutatePattern(
         if (calledFun) {
             mutated |= mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
             mutated |= mutateFGets(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
-            return mutated;
         }
-        return true;
     }
     else if (auto* cmpinst = dyn_cast<ICmpInst>(instr)){
         mutated |= mutateGreaterThan(builder, nextInstructionBuilder, instr, builderMutex, seglist, cmpinst);
         mutated |= mutateLessThan(builder, nextInstructionBuilder, instr, builderMutex, seglist, cmpinst);
-        return mutated;
+    } else {
+        mutated |= mutateFreeArgumentReturn(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
     }
-    return true;
+    return mutated;
 }

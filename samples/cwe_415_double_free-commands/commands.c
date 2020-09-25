@@ -36,7 +36,6 @@ char* double_letters(char* inp) {
     // Mutation: inp is no longer needed and could be freed here,
     // which would cause a double free.
     // -> put frees of function arguments here / before all return values of a function
-
     return res;
 }
 

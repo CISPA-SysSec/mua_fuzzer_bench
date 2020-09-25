@@ -7,11 +7,12 @@
 #include "mutations.h"
 
 
-std::string getIdentifierString(const Instruction *instr, int type);
+std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo = "");
 std::string findMalloc(const Instruction *instr, const StringRef &funNameString);
 std::string findFGets(const Instruction *instr, const StringRef &funNameString);
 std::string findLessThanEqualTo(const Instruction *instr, llvm::CmpInst::Predicate predicate);
 std::string findGreaterThan(const Instruction *instr, llvm::CmpInst::Predicate predicate);
+std::string findFreeArgumentReturn(const Instruction *instr);
 /**
      * Mutate the given function call if a mutation pattern exists for the function.
      * @param builder the builder to add instruction in front of the call
@@ -41,11 +42,13 @@ std::vector<std::string> look_for_pattern(
         auto predicate = icmpinst->getPredicate();
         results.push_back(findLessThanEqualTo(instr, predicate));
         results.push_back(findGreaterThan(instr, predicate));
+    } else {
+        results.push_back(findFreeArgumentReturn(instr));
     }
     return results;
 }
 
-std::string getIdentifierString(const Instruction *instr, int type){
+std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo){
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
@@ -56,11 +59,32 @@ std::string getIdentifierString(const Instruction *instr, int type){
                filePath + "|" +
                std::to_string(line) + "|" +
                std::to_string(column) + "|" +
-               std::to_string(type) + "\n";
+               std::to_string(type) + "|" +
+               additionalInfo + "\n";
     } else {
         return "no_debug_loc|no_debug_loc|0|0|" +
-               std::to_string(type) + "\n";
+               std::to_string(type) + "|" +
+              additionalInfo +  "\n";
     }
+}
+
+/**
+ * Searches for returns, if one is found it signals the mutations engine to mutate the location
+ * Mutation will be handled in the mutator, it will add a free in front of the return, freeing
+ * one function argument. The freeing is done for each function argument individually if it is a pointer type.
+ * @param instr
+ * @return
+ */
+std::string findFreeArgumentReturn(const Instruction *instr) {
+    if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
+        const Function *outerFunction = returnInst->getFunction();
+        for (auto op = outerFunction->arg_begin(); op != outerFunction->arg_end(); op++) {
+            if (op->getType()->isPointerTy()) {
+                return getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, std::to_string(op->getArgNo()));
+            }
+        }
+    }
+    return "";
 }
 
 std::string findFGets(const Instruction *instr, const StringRef &funNameString) {
