@@ -2,6 +2,22 @@
 
 ## Install
 
+### Docker Install
+```shell script
+# use the python script mutator-docker-wrapper.py
+
+# first build the docker containers
+python3 mutator-docker-wrapper.py -b
+
+# then connect to the container
+python3 mutator-docker-wrapper.py -a
+
+# [optional] constul the script's help output for rebuilding and similar (will be faster than the initial build)
+python3 mutator-docker-wrapper.py -h
+```
+
+### Local Install
+
 ```shell script
 # run both from root directory
 
