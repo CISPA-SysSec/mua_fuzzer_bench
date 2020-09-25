@@ -6,9 +6,32 @@
 #include "../public/mutator_lib.h"
 #include "mutations.h"
 
+
+bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string> &segref);
+
 bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, int type) {
     auto segref = *seglist;
-    const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
+    if (std::stoi(segref[4]) == type) {
+        return isMutationDebugLoc(instr, segref);
+    } else {
+        return false;
+    }
+}
+
+bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, const std::vector<int>* types) {
+    auto segref = *seglist;
+    int givenType = std::stoi(segref[4]);
+    for (auto type : *types) {
+        if (givenType == type) {
+            return isMutationDebugLoc(instr, segref);
+        } else {
+            return false;
+        }
+    }
+}
+
+bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string> &segref) {
+    const DebugLoc &debugInfo = instr->getDebugLoc();
     std::string directory = debugInfo->getDirectory().str();
     std::string filePath = debugInfo->getFilename().str();
     uint64_t line = debugInfo->getLine();
@@ -16,8 +39,7 @@ bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, i
     return segref[0] == directory
            && segref[1] == filePath
            && std::stoi(segref[2]) == line
-           && std::stoi(segref[3]) == column
-           && std::stoi(segref[4]) == type;
+           && std::stoi(segref[3]) == column;
 }
 
 
@@ -94,21 +116,11 @@ bool mutateGreaterThan(
         std::vector<std::string>* seglist,
         ICmpInst* icmpinst
 ) {
-    auto segref = *seglist;
     auto predicate = icmpinst->getPredicate();
     if (predicate == 38 || predicate == 39) {
-        const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
-        std::string directory = debugInfo->getDirectory().str();
-        std::string filePath = debugInfo->getFilename().str();
-        int line = debugInfo->getLine();
-        int column = debugInfo->getColumn();
 
-        if (segref[0] == directory
-            && segref[1] == filePath
-            && std::stoi(segref[2]) == line
-            && std::stoi(segref[3]) == column
-            && (std::stoi(segref[4]) == SIGNED_GREATER_THAN ||
-                std::stoi(segref[4]) == SIGNED_GREATER_THAN_EQUALTO )) {
+        const auto &typelist = std::vector<int>(SIGNED_GREATER_THAN, SIGNED_GREATER_THAN_EQUALTO);
+        if (isMutationLocation(instr, seglist, &typelist)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
@@ -131,21 +143,10 @@ bool mutateLessThan(
         std::vector<std::string>* seglist,
         ICmpInst* icmpinst
 ) {
-    auto segref = *seglist;
     auto predicate = icmpinst->getPredicate();
     if (predicate == 40 || predicate == 41) {
-        const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
-        std::string directory = debugInfo->getDirectory().str();
-        std::string filePath = debugInfo->getFilename().str();
-        int line = debugInfo->getLine();
-        int column = debugInfo->getColumn();
-
-        if (segref[0] == directory
-            && segref[1] == filePath
-            && std::stoi(segref[2]) == line
-            && std::stoi(segref[3]) == column
-            && (std::stoi(segref[4]) == SIGNED_LESS_THAN ||
-                std::stoi(segref[4]) == SIGNED_LESS_THAN_EQUALTO )) {
+        const auto &typelist = std::vector<int>(SIGNED_LESS_THAN, SIGNED_LESS_THAN_EQUALTO);
+        if (isMutationLocation(instr, seglist, &typelist)) {
             // add 2 and give the new value to the instruction
             Value* rhs;
             rhs = icmpinst->getOperand(1);
