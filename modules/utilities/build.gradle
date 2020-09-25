@@ -30,7 +30,8 @@ def PkgConfigVariable(variable, library) {
 tasks.withType(CppCompile).configureEach {
 
     // Define a compiler options
-     compilerArgs.add '-O3'
+    compilerArgs.add '-O3'
+    compilerArgs.add '-Werror'
     compilerArgs.addAll llvmConfigVariable('cxxflags')
 
     // Define toolchain-specific compiler options
