@@ -6,6 +6,20 @@
 #include "../public/mutator_lib.h"
 #include "mutations.h"
 
+bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, int type) {
+    auto segref = *seglist;
+    const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
+    std::string directory = debugInfo->getDirectory().str();
+    std::string filePath = debugInfo->getFilename().str();
+    uint64_t line = debugInfo->getLine();
+    uint64_t column = debugInfo->getColumn();
+    return segref[0] == directory
+           && segref[1] == filePath
+           && std::stoi(segref[2]) == line
+           && std::stoi(segref[3]) == column
+           && std::stoi(segref[4]) == type;
+}
+
 
 bool mutateMalloc(
         IRBuilder<>* builder,
@@ -15,20 +29,9 @@ bool mutateMalloc(
         std::vector<std::string>* seglist,
         CallInst* callinst
 ) {
-    auto segref = *seglist;
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.find("malloc") != std::string::npos) {
-        const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
-        std::string directory = debugInfo->getDirectory().str();
-        std::string filePath = debugInfo->getFilename().str();
-        int line = debugInfo->getLine();
-        int column = debugInfo->getColumn();
-
-        if (segref[0] == directory
-            && segref[1] == filePath
-            && std::stoi(segref[2]) == line
-            && std::stoi(segref[3]) == column
-            && std::stoi(segref[4]) == MALLOC) {
+        if (isMutationLocation(instr, seglist, MALLOC)) {
             // substract 1 and give the new value to malloc
             Value* lhs;
             lhs = callinst->getArgOperand(0);
@@ -50,20 +53,9 @@ bool mutateFGets(
         std::vector<std::string>* seglist,
         CallInst* callinst
 ) {
-    auto segref = *seglist;
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.find("fgets") != std::string::npos) {
-        const llvm::DebugLoc &debugInfo = instr->getDebugLoc();
-        std::string directory = debugInfo->getDirectory().str();
-        std::string filePath = debugInfo->getFilename().str();
-        int line = debugInfo->getLine();
-        int column = debugInfo->getColumn();
-
-        if (segref[0] == directory
-            && segref[1] == filePath
-            && std::stoi(segref[2]) == line
-            && std::stoi(segref[3]) == column
-            && std::stoi(segref[4]) == FGETS_MATCH_BUFFER_SIZE) {
+        if (isMutationLocation(instr, seglist, FGETS_MATCH_BUFFER_SIZE)) {
             // add 1 to original value, multiply this new value by 5 and then
             // give the value to fgets
             Value* lhs;
@@ -119,11 +111,11 @@ bool mutateGreaterThan(
                 std::stoi(segref[4]) == SIGNED_GREATER_THAN_EQUALTO )) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
-            rhs = icmpinst->getOperand(1);
             builderMutex.lock();
-            auto newVal = builder->CreateSub(rhs, builder->getInt64(1));
-            builderMutex.unlock();
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
             return true;
         }
     }
@@ -158,8 +150,8 @@ bool mutateLessThan(
             Value* rhs;
             rhs = icmpinst->getOperand(1);
             builderMutex.lock();
-            auto newVal = builder->CreateAdd(rhs, builder->getInt64(1));
-            newVal = builder->CreateMul(newVal, builder->getInt64(2));
+            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
             builderMutex.unlock();
             icmpinst->setOperand(1, newVal);
             return true;
@@ -191,13 +183,18 @@ bool mutatePattern(
     // TODO we just register the mutators here and call them, same for the pattern finder
     auto mutated = false;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
-        mutated |= mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
-        mutated |= mutateFGets(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
-        return mutated;
+        auto calledFun = callinst->getCalledFunction();
+        if (calledFun) {
+            mutated |= mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+            mutated |= mutateFGets(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+            return mutated;
+        }
+        return true;
     }
     else if (auto* cmpinst = dyn_cast<ICmpInst>(instr)){
         mutated |= mutateGreaterThan(builder, nextInstructionBuilder, instr, builderMutex, seglist, cmpinst);
         mutated |= mutateLessThan(builder, nextInstructionBuilder, instr, builderMutex, seglist, cmpinst);
+        return mutated;
     }
     return true;
 }

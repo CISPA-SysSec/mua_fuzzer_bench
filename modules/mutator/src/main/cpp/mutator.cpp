@@ -74,12 +74,12 @@ public:
     {
         for (auto F: functions)
         {
-            builderMutex.lock();
-            std::cout << "[INFO] in thread " << std::this_thread::get_id() << ": "
-                      << "instrumenting function " << ++funcounter << " of " << number_functions
-                      << ": " << F->getName().data()
-                      << std::endl;
-            builderMutex.unlock();
+//            builderMutex.lock();
+//            std::cout << "[INFO] in thread " << std::this_thread::get_id() << ": "
+//                      << "instrumenting function " << ++funcounter << " of " << number_functions
+//                      << ": " << F->getName().data()
+//                      << std::endl;
+//            builderMutex.unlock();
 
             findPatternInFunction(*F);
         }
@@ -181,7 +181,7 @@ struct MutatorPlugin : public ModulePass
         }
 
         unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
-        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
+//        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
         std::vector<std::vector<Function*>> threadFunctions(concurrentThreadsSupported);
         auto i = 0;

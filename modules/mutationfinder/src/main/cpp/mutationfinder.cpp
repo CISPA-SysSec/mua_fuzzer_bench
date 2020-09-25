@@ -91,8 +91,10 @@ public:
             }
 
         }
+        builderMutex.lock();
         auto patternLocations = look_for_pattern(instr);
-        for (auto loc: patternLocations) {
+        builderMutex.unlock();
+        for (const auto& loc: patternLocations) {
             if (!loc.empty()) {
                 fileMutex.lock();
                 mutationLocations << loc;
