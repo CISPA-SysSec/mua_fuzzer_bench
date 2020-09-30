@@ -24,8 +24,6 @@ bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, c
     for (auto type : *types) {
         if (givenType == type) {
             return isMutationDebugLoc(instr, segref);
-        } else {
-            return false;
         }
     }
     return false;
@@ -150,8 +148,7 @@ bool mutateGreaterThan(
 ) {
     auto predicate = icmpinst->getPredicate();
     if (predicate == 38 || predicate == 39) {
-
-        const auto &typelist = std::vector<int>(SIGNED_GREATER_THAN, SIGNED_GREATER_THAN_EQUALTO);
+        std::vector<int> typelist {SIGNED_GREATER_THAN, SIGNED_GREATER_THAN_EQUALTO};
         if (isMutationLocation(instr, seglist, &typelist)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
@@ -177,16 +174,16 @@ bool mutateLessThan(
 ) {
     auto predicate = icmpinst->getPredicate();
     if (predicate == 40 || predicate == 41) {
-        const auto &typelist = std::vector<int>(SIGNED_LESS_THAN, SIGNED_LESS_THAN_EQUALTO);
+        std::vector<int> typelist{SIGNED_LESS_THAN, SIGNED_LESS_THAN_EQUALTO};
         if (isMutationLocation(instr, seglist, &typelist)) {
-            // add 2 and give the new value to the instruction
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
-            rhs = icmpinst->getOperand(1);
             builderMutex.lock();
+            rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
-            builderMutex.unlock();
             icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
             return true;
         }
     }
