@@ -1,6 +1,5 @@
 # own stuff
 .idea/*
-samples/*
 venv/
 gradle/
 gradlew
