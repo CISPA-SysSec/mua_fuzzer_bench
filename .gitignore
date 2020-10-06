@@ -144,3 +144,4 @@ gradle-app.setting
 **/build/
 
 # End of https://www.gitignore.io/api/macos,clion,gradle
+/samples/cwe_362_race_condition/sample

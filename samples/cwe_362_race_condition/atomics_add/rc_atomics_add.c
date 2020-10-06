@@ -2,9 +2,13 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <time.h>
+#include <unistd.h>
 
-// Initialize a mutex that will be shared between the threads
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+int AVAILABLE = 42;
+int BLA = 2;
+int LOCKED = 36;
 
 // The data each thread gets to do its work.
 struct thread_data {
@@ -12,7 +16,8 @@ struct thread_data {
     int total_threads;
     char* data;
     int data_len;
-    char** out;
+    char* out;
+    int* out_offset;
 };
 
 // The function each thread executes
@@ -28,23 +33,13 @@ void* worker(void * tdata) {
 
         /* printf("%d: %d %c\n", info->num, ii, info->data[ii]); */
 
-        // Get lock
-        // Mutation: remove the locking code, this should reintroduce race
-        // conditions
-        // TODO: Mutation Idea: delete *all* locks and unlocks in one function
-        if (pthread_mutex_lock(&mutex) != 0) {
-            return (void*) 1;
-        }
-
         // Copy a input byte to the output
-        char* addr = *info->out;
-        *addr = info->data[ii];
-        *info->out = addr + 1;
-
-        // Release lock
-        if (pthread_mutex_unlock(&mutex) != 0) {
-            return (void*) 2;
-        }
+        // Mutation: This atomic fetch add needs to be removed and replaced with an
+        // ordinary version.
+        int offset = __atomic_fetch_add(info->out_offset, 1, __ATOMIC_SEQ_CST);
+        useconds_t sleep_time = rand() % 100;
+        usleep(sleep_time);
+        info->out[offset] = info->data[ii];
     }
 
     // The caller does not clean up the memory, so do it here.
@@ -56,6 +51,7 @@ void* worker(void * tdata) {
 
 // Get and set up threads and user data.
 int main() {
+    srand(time(NULL));
     // Get the number of threads to work with
     #define THRD_INP_SIZE 16
     // Get the user input that specifies the number of threads
@@ -80,7 +76,7 @@ int main() {
     fgets(data, INP_SIZE, stdin);
 
     // print the input again
-    printf("%s", data);
+    printf("%lu, %s\n", strnlen(data, INP_SIZE), data);
 
     // get length of input (this includes a possible linebreak)
     int data_len = strnlen(data, INP_SIZE);
@@ -92,6 +88,9 @@ int main() {
     // Set up array to store info on started threads
     pthread_t thread_id[16] = {0};
 
+    // Initialize atomically used int to act as the counter shared by all threads
+    int offset = 0;
+
     // Start the specified number of threads
     for (int i=0; i < num_threads; ++i) {
         // Each gets a copy of the thread_data, that is freed inside the thread.
@@ -100,7 +99,8 @@ int main() {
         tdata->total_threads = num_threads;
         tdata->data = data;
         tdata->data_len = data_len;
-        tdata->out = &out;
+        tdata->out = out;
+        tdata->out_offset = &offset;
 
         // Start the thread
         if (pthread_create(&thread_id[i], NULL, worker, tdata) != 0) {
@@ -118,7 +118,7 @@ int main() {
     }
 
     // Print the resulting output
-    printf("%s\n", initial_out);
+    printf("%lu, %s\n", strnlen(initial_out, INP_SIZE), initial_out);
 
     // Clean up the remaining allocated data
     free(data);
