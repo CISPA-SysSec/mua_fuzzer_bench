@@ -12,7 +12,7 @@ std::string findMalloc(const Instruction *instr, const StringRef &funNameString)
 std::string findFGets(const Instruction *instr, const StringRef &funNameString);
 std::string findLessThanEqualTo(const Instruction *instr, llvm::CmpInst::Predicate predicate);
 std::string findGreaterThan(const Instruction *instr, llvm::CmpInst::Predicate predicate);
-std::string findFreeArgumentReturn(const Instruction *instr);
+std::vector<std::string> findFreeArgumentReturn(const Instruction *instr);
 /**
      * Mutate the given function call if a mutation pattern exists for the function.
      * @param builder the builder to add instruction in front of the call
@@ -43,7 +43,10 @@ std::vector<std::string> look_for_pattern(
         results.push_back(findLessThanEqualTo(instr, predicate));
         results.push_back(findGreaterThan(instr, predicate));
     } else {
-        results.push_back(findFreeArgumentReturn(instr));
+        auto mutation_locations = findFreeArgumentReturn(instr);
+        for (const auto& location : mutation_locations) {
+            results.push_back(location);
+        }
     }
     return results;
 }
@@ -75,16 +78,17 @@ std::string getIdentifierString(const Instruction *instr, int type, const std::s
  * @param instr
  * @return
  */
-std::string findFreeArgumentReturn(const Instruction *instr) {
+std::vector<std::string> findFreeArgumentReturn(const Instruction *instr) {
+    auto results = std::vector<std::string>();
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
         for (auto op = outerFunction->arg_begin(); op != outerFunction->arg_end(); op++) {
             if (op->getType()->isPointerTy()) {
-                return getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, std::to_string(op->getArgNo()));
+                results.push_back(getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, std::to_string(op->getArgNo())));
             }
         }
     }
-    return "";
+    return results;
 }
 
 std::string findFGets(const Instruction *instr, const StringRef &funNameString) {
