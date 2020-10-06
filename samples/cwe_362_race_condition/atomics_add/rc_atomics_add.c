@@ -34,6 +34,8 @@ void* worker(void * tdata) {
         /* printf("%d: %d %c\n", info->num, ii, info->data[ii]); */
 
         // Copy a input byte to the output
+        // Mutation: This atomic fetch add needs to be removed and replaced with an
+        // ordinary version.
         int offset = __atomic_fetch_add(info->out_offset, 1, __ATOMIC_SEQ_CST);
         useconds_t sleep_time = rand() % 100;
         usleep(sleep_time);
@@ -86,7 +88,7 @@ int main() {
     // Set up array to store info on started threads
     pthread_t thread_id[16] = {0};
 
-    // Initialize atomically used int to act as mutex
+    // Initialize atomically used int to act as the counter shared by all threads
     int offset = 0;
 
     // Start the specified number of threads
