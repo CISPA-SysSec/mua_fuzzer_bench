@@ -14,6 +14,8 @@ std::string findFGets(const Instruction *instr, const StringRef &funNameString);
 std::string findLessThanEqualTo(const Instruction *instr, llvm::CmpInst::Predicate predicate);
 std::string findGreaterThan(const Instruction *instr, llvm::CmpInst::Predicate predicate);
 std::vector<std::string> findFreeArgumentReturn(const Instruction *instr);
+std::string findCMPXCHG(const Instruction *instr);
+std::string findATOMICRMW(const Instruction *instr);
 /**
      * Mutate the given function call if a mutation pattern exists for the function.
      * @param builder the builder to add instruction in front of the call
@@ -49,6 +51,8 @@ std::vector<std::string> look_for_pattern(
         for (const auto& location : mutation_locations) {
             results.push_back(location);
         }
+        results.push_back(findCMPXCHG(instr));
+        results.push_back(findATOMICRMW(instr));
     }
     return results;
 }
@@ -120,6 +124,25 @@ std::string findPThread(const Instruction *instr, const StringRef &funNameString
     } else {
         return "";
     }
+}
+
+std::string findCMPXCHG(const Instruction *instr) {
+    const std::string &funNameStdString = instr->getFunction()->getName().str();
+    if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
+        if (dyn_cast<AtomicRMWInst>(instr)) {
+            return getIdentifierString(instr, ATOMIC_CMP_XCHG, funNameStdString);
+        }
+    }
+    return "";
+}
+
+std::string findAtomicRMW(const Instruction *instr) {
+    if (!foundAtomicRMW) { // atomicrmw was not found yet
+        if (dyn_cast<AtomicRMWInst>(instr)) {
+            return getIdentifierString(instr, ATOMICRMW_REPLACE);
+        }
+    }
+    return "";
 }
 
 std::string findLessThanEqualTo(const Instruction *instr, const llvm::CmpInst::Predicate predicate) {

@@ -41,6 +41,16 @@ bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string>
            && std::stoi(segref[3]) == column;
 }
 
+/**
+ * On all function returns it frees all arguments that are pointers, for each argument a unique mutant is created.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param M
+ * @return
+ */
 bool mutateFreeArgumentReturn(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -72,6 +82,16 @@ bool mutateFreeArgumentReturn(
     return false;
 }
 
+/**
+ * For the given function it replaces all locks and unlocks in the function.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param callinst
+ * @return
+ */
 bool mutatePThread(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -100,7 +120,47 @@ bool mutatePThread(
     return false;
 }
 
+/**
+ * For the given function it takes the return value of the compare exchange and replaces the compare result with true.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @return
+ */
+bool mutateCMPXCHG(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        std::vector<std::string>* seglist
+) {
+    auto surroundingFunction = instr->getFunction()->getName().str();
+    auto segref = *seglist;
+    // we need a more fuzzy match here, the concrete location is not important, only the function
+    if (std::stoi(segref[4]) == ATOMIC_CMP_XCHG && surroundingFunction == segref[5] && dyn_cast<AtomicCmpXchgInst>(instr))
+    {
+        builderMutex.lock();
+        // we leave the atomicxchg in but always return 1, hence we emulate an always successful exchange
+//        auto returnVal = instr->getOperand(0);
+        nextInstructionBuilder->CreateInsertValue(instr, builder->getIntN(1, 1), (uint64_t) 1);
+        builderMutex.unlock();
+        return true;
+    }
+    return false;
+}
 
+/**
+ * On malloc it allocates one byte less memory.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param callinst
+ * @return
+ */
 bool mutateMalloc(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -125,6 +185,17 @@ bool mutateMalloc(
     return false;
 }
 
+/**
+ * On fgets it allows to read more bytes than intended by the developer (concretely if X bytes should have been
+ * read, (X+1)*5 bytes are read).
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param callinst
+ * @return
+ */
 bool mutateFGets(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -165,7 +236,11 @@ bool mutateFGets(
  */
 
 
-// The mutator for both ICMP_SGT, ICMP_SGE will be the same
+/**
+ * The mutator for both ICMP_SGT, ICMP_SGE will be the same.
+ * It changes one of the operators to cause an off-by one error.
+ *
+ */
 bool mutateGreaterThan(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -191,7 +266,17 @@ bool mutateGreaterThan(
     return false;
 }
 
-// The mutator for both ICMP_SLT, ICMP_SLE will be the same
+/**
+ * The mutator for both ICMP_SLT, ICMP_SLE will be the same
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
 bool mutateLessThan(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -254,6 +339,7 @@ bool mutatePattern(
         mutated |= mutateLessThan(builder, nextInstructionBuilder, instr, builderMutex, seglist, cmpinst);
     } else {
         mutated |= mutateFreeArgumentReturn(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+        mutated |= mutateCMPXCHG(builder, nextInstructionBuilder, instr, builderMutex, seglist);
     }
     return mutated;
 }
