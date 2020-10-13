@@ -9,6 +9,7 @@
 
 std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo = "");
 std::string findMalloc(const Instruction *instr, const StringRef &funNameString);
+std::string findPThread(const Instruction *instr, const StringRef &funNameString);
 std::string findFGets(const Instruction *instr, const StringRef &funNameString);
 std::string findLessThanEqualTo(const Instruction *instr, llvm::CmpInst::Predicate predicate);
 std::string findGreaterThan(const Instruction *instr, llvm::CmpInst::Predicate predicate);
@@ -36,6 +37,7 @@ std::vector<std::string> look_for_pattern(
             auto funNameString = calledFun->getName();
             results.push_back(findMalloc(instr, funNameString));
             results.push_back(findFGets(instr, funNameString));
+            results.push_back(findPThread(instr, funNameString));
         }
     }
     else if (auto* icmpinst = dyn_cast<ICmpInst>(instr)){
@@ -102,6 +104,19 @@ std::string findFGets(const Instruction *instr, const StringRef &funNameString) 
 std::string findMalloc(const Instruction *instr, const StringRef &funNameString) {
     if (funNameString.find("malloc") != std::string::npos) {
         return getIdentifierString(instr, MALLOC);
+    } else {
+        return "";
+    }
+}
+
+std::string findPThread(const Instruction *instr, const StringRef &funNameString) {
+    const std::string &funNameStdString = instr->getFunction()->getName().str();
+    if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end() // function was not used before
+        && (funNameString.find("pthread_mutex_lock") != std::string::npos
+        || funNameString.find("pthread_mutex_unlock") != std::string::npos)
+    ) {
+        pthreadFoundFunctions.insert(funNameStdString);
+        return getIdentifierString(instr, PTHREAD_MUTEX, funNameStdString);
     } else {
         return "";
     }

@@ -72,6 +72,34 @@ bool mutateFreeArgumentReturn(
     return false;
 }
 
+bool mutatePThread(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        std::vector<std::string>* seglist,
+        CallInst* callinst
+) {
+    auto funNameString = callinst->getCalledFunction()->getName();
+    auto surroundingFunction = instr->getFunction()->getName().str();
+    auto segref = *seglist;
+    // we need a more fuzzy match here, the concrete location is not important, only the function
+    if (    std::stoi(segref[4]) == PTHREAD_MUTEX && surroundingFunction == segref[5]
+            && (funNameString.find("pthread_mutex_lock") != std::string::npos
+            || funNameString.find("pthread_mutex_unlock") != std::string::npos)
+            )
+    {
+        builderMutex.lock();
+        // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
+        instr->replaceAllUsesWith(builder->getInt32(1));
+        // then we can remove the instruction from the parent
+        instr->removeFromParent();
+        builderMutex.unlock();
+        return true;
+    }
+    return false;
+}
+
 
 bool mutateMalloc(
         IRBuilder<>* builder,
@@ -218,6 +246,7 @@ bool mutatePattern(
         if (calledFun) {
             mutated |= mutateMalloc(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
             mutated |= mutateFGets(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
+            mutated |= mutatePThread(builder, nextInstructionBuilder, instr, builderMutex, seglist, callinst);
         }
     }
     else if (auto* cmpinst = dyn_cast<ICmpInst>(instr)){
