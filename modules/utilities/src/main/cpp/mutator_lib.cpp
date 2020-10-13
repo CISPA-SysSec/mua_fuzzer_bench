@@ -152,6 +152,107 @@ bool mutateCMPXCHG(
 }
 
 /**
+ * TODO some versions of atomic instructions are not yet implemented
+ * Takes the given atomic instruction and replaces it with its non-atomic counterpart.
+ * @param instr
+ * @param nextInstructionBuilder
+ * @return
+ */
+bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder) {
+    auto operation = instr->getOperation();
+    Instruction::BinaryOps operand = llvm::Instruction::BinaryOpsBegin;
+    switch (operation) {
+        case AtomicRMWInst::Xchg:
+        case AtomicRMWInst::Nand:
+        case AtomicRMWInst::Max:
+        case AtomicRMWInst::Min:
+        case AtomicRMWInst::UMax:
+        case AtomicRMWInst::UMin:
+            return false; // TODO in future we can populate this as well
+        case AtomicRMWInst::Add:
+        {
+            operand = Instruction::BinaryOps::Add;
+            break;
+        }
+        case AtomicRMWInst::Sub:
+        {
+            operand = Instruction::BinaryOps::Sub;
+            break;
+        }
+        case AtomicRMWInst::And:
+        {
+            operand = Instruction::BinaryOps::And;
+            break;
+        }
+        case AtomicRMWInst::Or:
+        {
+            operand = Instruction::BinaryOps::Or;
+            break;
+        }
+        case AtomicRMWInst::Xor:
+        {
+            operand = Instruction::BinaryOps::Xor;
+            break;
+        }
+        case AtomicRMWInst::FAdd:
+        {
+            operand = Instruction::BinaryOps::FAdd;
+            break;
+        }
+        case AtomicRMWInst::FSub:
+        {
+            operand = Instruction::BinaryOps::FSub;
+            break;
+        }
+        case AtomicRMWInst::BAD_BINOP:
+            return false;
+    }
+
+    // generic code for most binops: first load the lhs, then create a standard binop, then replace values and remove
+    // old atomic version
+    auto loadResult = nextInstructionBuilder->CreateLoad(instr->getOperand(0));
+    auto newinst = nextInstructionBuilder->CreateBinOp(
+            operand,
+            loadResult,
+            instr->getOperand(1)
+    );
+    instr->replaceAllUsesWith(newinst);
+    instr->removeFromParent();
+    return true;
+}
+
+/**
+ * If we have at least one atomicrmw instruction, we replace the atomicrmw with its non-atomic counterpart.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @return
+ */
+bool mutateATOMICRMW(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        std::vector<std::string>* seglist
+) {
+    auto surroundingFunction = instr->getFunction()->getName().str();
+    auto segref = *seglist;
+    // we need a more fuzzy match here, the concrete location is not important, only if we mutate the atomicrmw instruction
+    auto rmw = dyn_cast<AtomicRMWInst>(instr);
+    if (std::stoi(segref[4]) == ATOMICRMW_REPLACE && rmw)
+    {
+        builderMutex.lock();
+        // we replace the atomicrmw with its non-atomic counterpart
+        auto mutated = convertAtomicBinOpToBinOp(rmw, nextInstructionBuilder);
+        builderMutex.unlock();
+        return mutated;
+    }
+    return false;
+}
+
+/**
  * On malloc it allocates one byte less memory.
  * @param builder
  * @param nextInstructionBuilder
@@ -340,6 +441,7 @@ bool mutatePattern(
     } else {
         mutated |= mutateFreeArgumentReturn(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         mutated |= mutateCMPXCHG(builder, nextInstructionBuilder, instr, builderMutex, seglist);
+        mutated |= mutateATOMICRMW(builder, nextInstructionBuilder, instr, builderMutex, seglist);
     }
     return mutated;
 }

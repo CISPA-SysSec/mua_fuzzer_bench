@@ -129,14 +129,14 @@ std::string findPThread(const Instruction *instr, const StringRef &funNameString
 std::string findCMPXCHG(const Instruction *instr) {
     const std::string &funNameStdString = instr->getFunction()->getName().str();
     if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
-        if (dyn_cast<AtomicRMWInst>(instr)) {
+        if (dyn_cast<AtomicCmpXchgInst>(instr)) {
             return getIdentifierString(instr, ATOMIC_CMP_XCHG, funNameStdString);
         }
     }
     return "";
 }
 
-std::string findAtomicRMW(const Instruction *instr) {
+std::string findATOMICRMW(const Instruction *instr) {
     if (!foundAtomicRMW) { // atomicrmw was not found yet
         if (dyn_cast<AtomicRMWInst>(instr)) {
             return getIdentifierString(instr, ATOMICRMW_REPLACE);
