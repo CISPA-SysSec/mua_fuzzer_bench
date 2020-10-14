@@ -70,15 +70,17 @@ std::string getIdentifierString(const Instruction *instr, int type, const std::s
         j["filePath"] = filePath;
         j["line"] = line;
         j["type"] = type;
-        j["additionalInfo"] = additionalInfo;
+        j["column"] = column;
+        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
         return j.dump(4);
     } else {
         json j;
         j["directory"] = "no_debug_loc";
         j["filePath"] = "no_debug_loc";
         j["line"] = 0;
-        j["type"] = 0;
-        j["additionalInfo"] = additionalInfo;
+        j["type"] = type;
+        j["column"] = column;
+        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
         return j.dump(4);
     }
 }

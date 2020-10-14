@@ -95,6 +95,8 @@ public:
         builderMutex.unlock();
         for (const auto& loc: patternLocations) {
             if (!loc.empty()) {
+                // N.B Assuming not a very lot of mutation locations in a file
+                // Otherwise mutationLocationsvector may eat up a lot of RAM.
                 vectorMutex.lock();
                 mutationLocationsvector.push_back(loc);
                 vectorMutex.unlock();
