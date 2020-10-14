@@ -69,8 +69,8 @@ std::string getIdentifierString(const Instruction *instr, int type, const std::s
         j["directory"] = directory;
         j["filePath"] = filePath;
         j["line"] = line;
-        j["type"] = type;
         j["column"] = column;
+        j["type"] = type;
         j["additionalInfo"] = { {"extra_arg", additionalInfo} };
         return j.dump(4);
     } else {
@@ -78,8 +78,8 @@ std::string getIdentifierString(const Instruction *instr, int type, const std::s
         j["directory"] = "no_debug_loc";
         j["filePath"] = "no_debug_loc";
         j["line"] = 0;
+        j["column"] = 0;
         j["type"] = type;
-        j["column"] = column;
         j["additionalInfo"] = { {"extra_arg", additionalInfo} };
         return j.dump(4);
     }

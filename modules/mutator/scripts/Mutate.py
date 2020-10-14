@@ -2,6 +2,7 @@ import subprocess
 import sys
 import os
 import shutil
+import json
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 
@@ -30,8 +31,9 @@ def main():
     os.makedirs(mutations_folder)
     with open(f"{progsource}.mutationlocations") as mutations:
         mutation_list = []
-        for el in mutations.readlines(): #el contains the data here.
-            mutation_list.append((counter, el, mutations_folder, progname))
+        mutation_jsondata = json.load(mutations)
+        for mutation in mutation_jsondata:
+            mutation_list.append((counter, json.dumps(mutation), mutations_folder, progname))
             counter += 1
         # TODO later this will get logged to have for each id the correct pattern used
         pool = ThreadPool(cpu_count())
@@ -49,9 +51,9 @@ def mutate_file(information):
     mutation = information[1] # this contains each line that has been read from the mutationLocations file
     mutations_folder = information[2]
     progname = information[3]
-    print(f"[INFO] Mutating {mutation[:-1]} to file {mutations_folder}/{progname}.{counter}.mut\n")
+    print(f"[INFO] Mutating {mutation} to file {mutations_folder}/{progname}.{counter}.mut\n")
     with open(f"{progsource}.ll") as progsource_file:
-        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutatorplugin", "-mutation_pattern", mutation[:-1],  "-disable-verify", "-o", f"{mutations_folder}/{progname}.{counter}.mut.ll"], stdin=progsource_file)
+        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutatorplugin", "-mutation_pattern", mutation, "-disable-verify", "-o", f"{mutations_folder}/{progname}.{counter}.mut.ll"], stdin=progsource_file)
 
     if uname.sysname == "Darwin":
         subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{counter}.mut", f"{mutations_folder}/{progname}.{counter}.mut.ll", "-lm", "-lz", "-ldl"])

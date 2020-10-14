@@ -42,7 +42,7 @@ int funcounter = 0;
 
 // the following variables define the location of the mutation as well as the pattern
 // containing in order: Directory, File, line, column, mutation-ID as strings
-std::vector<std::string> seglist;
+json seglist;
 
 std::ofstream mutationLocations;
 
@@ -170,16 +170,11 @@ struct MutatorPlugin : public ModulePass
 
         std::mutex builderMutex;
         std::mutex fileMutex;
-        std::cout << "[INFO] Mutating: " << Mutation << "\n";
+        // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
 
-        //splitting and storing the parts of the string
+        //Parsing the string into a json
         std::string segment;
-        std::stringstream strs(Mutation);
-        while(std::getline(strs, segment, '|'))
-        {
-            seglist.push_back(segment);
-        }
-
+        seglist = json::parse(Mutation);
         unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
 //        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
@@ -207,7 +202,7 @@ struct MutatorPlugin : public ModulePass
         {
             thread.join();
         }
-
+        // Where is this opened and where it is used? - Abhilash
         mutationLocations.close();
         return true;
     }
