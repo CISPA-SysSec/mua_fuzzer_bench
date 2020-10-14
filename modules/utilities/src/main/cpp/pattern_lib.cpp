@@ -4,8 +4,9 @@
 
 #include <iostream>
 #include "../public/pattern_lib.h"
+#include <nlohmann/json.hpp>
 #include "mutations.h"
-
+using json = nlohmann::json;
 
 std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo = "");
 std::string findMalloc(const Instruction *instr, const StringRef &funNameString);
@@ -64,16 +65,21 @@ std::string getIdentifierString(const Instruction *instr, int type, const std::s
         std::string filePath = debugInfo->getFilename().str();
         uint32_t line = debugInfo->getLine();
         uint32_t column = debugInfo->getColumn();
-        return directory + "|" +
-               filePath + "|" +
-               std::to_string(line) + "|" +
-               std::to_string(column) + "|" +
-               std::to_string(type) + "|" +
-               additionalInfo + "\n";
+        json j;
+        j["directory"] = directory;
+        j["filePath"] = filePath;
+        j["line"] = line;
+        j["type"] = type;
+        j["additionalInfo"] = additionalInfo;
+        return j.dump(4);
     } else {
-        return "no_debug_loc|no_debug_loc|0|0|" +
-               std::to_string(type) + "|" +
-              additionalInfo +  "\n";
+        json j;
+        j["directory"] = "no_debug_loc";
+        j["filePath"] = "no_debug_loc";
+        j["line"] = 0;
+        j["type"] = 0;
+        j["additionalInfo"] = additionalInfo;
+        return j.dump(4);
     }
 }
 

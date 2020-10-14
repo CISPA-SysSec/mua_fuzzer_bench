@@ -30,7 +30,7 @@ def main():
     os.makedirs(mutations_folder)
     with open(f"{progsource}.mutationlocations") as mutations:
         mutation_list = []
-        for el in mutations.readlines():
+        for el in mutations.readlines(): #el contains the data here.
             mutation_list.append((counter, el, mutations_folder, progname))
             counter += 1
         # TODO later this will get logged to have for each id the correct pattern used
@@ -46,7 +46,7 @@ def mutate_file(information):
     :return:
     """
     counter = information[0]
-    mutation = information[1]
+    mutation = information[1] # this contains each line that has been read from the mutationLocations file
     mutations_folder = information[2]
     progname = information[3]
     print(f"[INFO] Mutating {mutation[:-1]} to file {mutations_folder}/{progname}.{counter}.mut\n")
