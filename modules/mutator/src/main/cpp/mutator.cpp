@@ -1,10 +1,6 @@
-#include <iostream>
 #include <fstream>
 #include <map>
-#include <set>
 #include <thread>
-#include <sstream>
-#include <string>
 
 #include "mutator_lib.h"
 
@@ -13,12 +9,9 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IntrinsicInst.h>
-#include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Function.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
-#include <llvm/IR/DebugLoc.h>
-#include <llvm/IR/DebugInfoMetadata.h>
 
 
 

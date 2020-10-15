@@ -36,7 +36,7 @@ tasks.withType(CppCompile).configureEach {
     compilerArgs.addAll llvmConfigVariable('cxxflags')
     // Gotcha: The -fexceptions must always be written after llvmConfigVariable to overwrite -fno-exceptions
     compilerArgs.add '-fexceptions'
-    compilerArgs.add PkgConfigVariable('cflags', 'nlohmann_json')
+//     compilerArgs.add PkgConfigVariable('cflags', 'nlohmann_json')
     // Define toolchain-specific compiler options
     compilerArgs.addAll toolChain.map { toolChain ->
         if (Os.isFamily(Os.FAMILY_MAC)) {

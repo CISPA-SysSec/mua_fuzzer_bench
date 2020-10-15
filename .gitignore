@@ -4,6 +4,12 @@ venv/
 gradle/
 gradlew
 gradlew.bat
+modules/utilities/src/main/dependencies/*
+samples/**/mutations/*
+*.ll
+*.mutationlocations
+# custom exclude since this is on my machine for testing -- BM
+/samples/mjs/
 
 # Created by https://www.gitignore.io/api/macos,clion,gradle
 # Edit at https://www.gitignore.io/?templates=macos,clion,gradle

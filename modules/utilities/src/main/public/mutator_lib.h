@@ -18,7 +18,7 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
-#include <nlohmann/json.hpp>
+#include <../dependencies/json.hpp>
 
 using json = nlohmann::json;
 using namespace llvm;

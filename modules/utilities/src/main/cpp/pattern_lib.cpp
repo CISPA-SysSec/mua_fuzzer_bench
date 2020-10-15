@@ -4,8 +4,8 @@
 
 #include <iostream>
 #include "../public/pattern_lib.h"
-#include <nlohmann/json.hpp>
 #include "mutations.h"
+
 using json = nlohmann::json;
 
 std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo = "");
