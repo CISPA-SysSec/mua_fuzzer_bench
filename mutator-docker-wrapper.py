@@ -153,7 +153,7 @@ def stop():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="lFuzzer Docker Wrapper")
+    parser = argparse.ArgumentParser(description="Mutator Docker Wrapper")
     parser.add_argument('-b', "--build", action='store_true',
                         help="Builds the llvm image and consecutively the lFuzzer image. Takes about an hour.")
     parser.add_argument('-a', "--attach", action='store_true',

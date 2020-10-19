@@ -33,6 +33,7 @@ void* worker(void * tdata) {
         // Get lock
         // Mutation: remove the locking code, this should reintroduce race
         // conditions
+        // TODO: Mutation Idea: delete *all* locks and unlocks in one function
         if (pthread_mutex_lock(&mutex) != 0) {
             return (void*) 1;
         }

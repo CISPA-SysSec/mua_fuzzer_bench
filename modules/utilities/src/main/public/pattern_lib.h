@@ -16,10 +16,15 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include <set>
 
 using namespace llvm;
 
 std::vector<std::string> look_for_pattern(Instruction* instr);
+
+std::set<std::string> pthreadFoundFunctions;
+std::set<std::string> cmpxchgFoundFunctions;
+bool foundAtomicRMW = false;
 
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H
