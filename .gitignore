@@ -145,3 +145,5 @@ gradle-app.setting
 
 # End of https://www.gitignore.io/api/macos,clion,gradle
 /samples/cwe_362_race_condition/sample
+samples/wrong_sizeof_argument/sizeof_argument
+samples/unitialized_variables/unitialized_variables
