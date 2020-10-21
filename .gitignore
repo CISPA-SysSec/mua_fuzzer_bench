@@ -147,3 +147,4 @@ gradle-app.setting
 /samples/cwe_362_race_condition/sample
 samples/wrong_sizeof_argument/sizeof_argument
 samples/unitialized_variables/unitialized_variables
+samples/primitive_casting/wrap_aroung_error/wrap_around

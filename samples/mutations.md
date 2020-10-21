@@ -12,6 +12,7 @@
 -   for `wchar_t` exchange wcslen with strlen (need to find all interesting functions)
 -   change length based functions to null termination based functions (strncpy -> strcpy)?
 -   replace functions with their inherently dangerous alternatives (gets, >> operator)
+    - scanf, strcpy, gets, strcpy, (also using argv directly) ...
 -   :white_check_mark: remove locking mechanisms (`pthread_mutex_lock`)
 -   remove disabling of signal handler (needed for uninterrupted execution of atomic code and when running non-reentrant signal handlers)
 -   remove/insert/move frees, deletes (adding/moving frees are only interesting if they are in in different parts of the control flow)
