@@ -20,19 +20,25 @@ int main() {
     // so on... The same for the types of "stdint.h" (uint32_t, int64_t, ...).
     unsigned long inp_size = strlen(inp);
 
+    // Allocate buffer to copy to.
     struct work* data = (struct work*) malloc(inp_size*sizeof(struct work));
     if (data == NULL) {
         return 1;
     }
 
+    // Set pointers to use during copying.
     char* cur_inp = inp;
     struct work* cur_data = data;
+
+    // Copy the data.
     while (*cur_inp != 0) {
         cur_data->the_input = *cur_inp;
         cur_data += 1;
         cur_inp += 1;
     }
 
+    // Free work data.
     free(data);
+
     return 0;
 }
