@@ -13,7 +13,8 @@ int main(int argc, char** argv) {
     int index = atoi(inp);
 
     // Mutation: removing the bounds checks (upper or lower) will enable out
-    // of bounds reads.
+    // of bounds reads. Also introduce off by one errors, like changing the 4
+    // to a 5 here.
     if (index > 0 && index <= 4) {
         printf("You selected %s\n", items[index-1]);
     }
