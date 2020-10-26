@@ -7,20 +7,20 @@
 #include "mutations.h"
 
 
-bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string> &segref);
+bool isMutationDebugLoc(const Instruction *instr, const json &segref);
 
-bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, int type) {
+bool isMutationLocation(Instruction* instr, json *seglist, int type) {
     auto segref = *seglist;
-    if (std::stoi(segref[4]) == type) {
+    if (segref["type"] == type) {
         return isMutationDebugLoc(instr, segref);
     } else {
         return false;
     }
 }
 
-bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, const std::vector<int>* types) {
+bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types) {
     auto segref = *seglist;
-    int givenType = std::stoi(segref[4]);
+    int givenType = segref["type"];
     for (auto type : *types) {
         if (givenType == type) {
             return isMutationDebugLoc(instr, segref);
@@ -29,16 +29,16 @@ bool isMutationLocation(Instruction* instr, std::vector<std::string>* seglist, c
     return false;
 }
 
-bool isMutationDebugLoc(const Instruction *instr, const std::vector<std::string> &segref) {
+bool isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     std::string directory = debugInfo->getDirectory().str();
     std::string filePath = debugInfo->getFilename().str();
     uint64_t line = debugInfo->getLine();
     uint64_t column = debugInfo->getColumn();
-    return segref[0] == directory
-           && segref[1] == filePath
-           && std::stoi(segref[2]) == line
-           && std::stoi(segref[3]) == column;
+    return segref["directory"] == directory
+           && segref["filePath"] == filePath
+           && segref["line"] == line
+           && segref["column"] == column;
 }
 
 /**
@@ -56,7 +56,7 @@ bool mutateFreeArgumentReturn(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         Module& M
 ) {
     auto segref = *seglist;
@@ -66,7 +66,8 @@ bool mutateFreeArgumentReturn(
             builderMutex.lock();
             LLVMContext &llvmContext = M.getContext();
             // first bitcast to i8* as this is the type free expects
-            auto funArg = returnInst->getFunction()->getArg(std::stoi(segref[5]));
+            std::string extra_arg = segref["additionalInfo"]["extra_arg"];
+            auto funArg = returnInst->getFunction()->getArg(std::stoi(extra_arg));
             auto bitcasted = builder->CreateBitCast(funArg, Type::getInt8PtrTy(llvmContext));
             auto args = std::vector<Value*>();
             args.push_back(bitcasted);
@@ -97,18 +98,18 @@ bool mutatePThread(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         CallInst* callinst
 ) {
     auto funNameString = callinst->getCalledFunction()->getName();
     auto surroundingFunction = instr->getFunction()->getName().str();
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
-    if (    std::stoi(segref[4]) == PTHREAD_MUTEX && surroundingFunction == segref[5]
-            && (funNameString.find("pthread_mutex_lock") != std::string::npos
-            || funNameString.find("pthread_mutex_unlock") != std::string::npos)
-            )
-    {
+    if (segref["type"] == PTHREAD_MUTEX
+        && surroundingFunction == segref["additionalInfo"]["extra_arg"]
+        && (funNameString.find("pthread_mutex_lock") != std::string::npos
+        || funNameString.find("pthread_mutex_unlock") != std::string::npos)
+    ){
         builderMutex.lock();
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
@@ -134,12 +135,14 @@ bool mutateCMPXCHG(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist
+        json *seglist
 ) {
     auto surroundingFunction = instr->getFunction()->getName().str();
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
-    if (std::stoi(segref[4]) == ATOMIC_CMP_XCHG && surroundingFunction == segref[5] && dyn_cast<AtomicCmpXchgInst>(instr))
+    if (segref["type"] == ATOMIC_CMP_XCHG
+        && surroundingFunction == segref["additionalInfo"]["extra_arg"]
+        && dyn_cast<AtomicCmpXchgInst>(instr))
     {
         builderMutex.lock();
         // we leave the atomicxchg in but always return 1, hence we emulate an always successful exchange
@@ -235,13 +238,13 @@ bool mutateATOMICRMW(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist
+        json *seglist
 ) {
     auto surroundingFunction = instr->getFunction()->getName().str();
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only if we mutate the atomicrmw instruction
     auto rmw = dyn_cast<AtomicRMWInst>(instr);
-    if (std::stoi(segref[4]) == ATOMICRMW_REPLACE && rmw)
+    if (segref["type"] == ATOMICRMW_REPLACE && rmw)
     {
         builderMutex.lock();
         // we replace the atomicrmw with its non-atomic counterpart
@@ -267,7 +270,7 @@ bool mutateMalloc(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         CallInst* callinst
 ) {
     auto funNameString = callinst->getCalledFunction()->getName();
@@ -302,7 +305,7 @@ bool mutateFGets(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         CallInst* callinst
 ) {
     auto funNameString = callinst->getCalledFunction()->getName();
@@ -347,7 +350,7 @@ bool mutateGreaterThan(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         ICmpInst* icmpinst
 ) {
     auto predicate = icmpinst->getPredicate();
@@ -383,7 +386,7 @@ bool mutateLessThan(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         ICmpInst* icmpinst
 ) {
     auto predicate = icmpinst->getPredicate();
@@ -419,7 +422,7 @@ bool mutatePattern(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         Module& M
 )
 {

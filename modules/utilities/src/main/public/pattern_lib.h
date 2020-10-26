@@ -17,6 +17,7 @@
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <set>
+#include "../dependencies/json.hpp"
 
 using namespace llvm;
 

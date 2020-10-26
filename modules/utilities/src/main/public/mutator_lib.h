@@ -18,7 +18,9 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include <../dependencies/json.hpp>
 
+using json = nlohmann::json;
 using namespace llvm;
 
 #define ADDITIONAL_INFORMATION_START = 5  //the index of the first additional information argument, in future we should have some json format or so which makes this unnecessary
@@ -28,7 +30,7 @@ bool mutatePattern(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        std::vector<std::string>* seglist,
+        json *seglist,
         Module& M
 );
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H
