@@ -21,6 +21,7 @@ int main() {
     unsigned long inp_size = strlen(inp);
 
     // Allocate buffer to copy to.
+    // TODO truncate bitlength of input to add/sub/mul/fmul ...
     struct work* data = (struct work*) malloc(inp_size*sizeof(struct work));
     if (data == NULL) {
         return 1;
