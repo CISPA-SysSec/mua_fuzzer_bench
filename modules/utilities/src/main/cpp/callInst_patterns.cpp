@@ -9,7 +9,7 @@ void CallInstPatterns::getfunNameString(const Instruction *instr){
 }
 
 std::vector<std::string> MallocPattern::find(const Instruction *instr){
-    auto results = std::vector<std::string>();
+    std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find("malloc") != std::string::npos) {
         results.push_back(getIdentifierString(instr, MALLOC));
@@ -18,7 +18,7 @@ std::vector<std::string> MallocPattern::find(const Instruction *instr){
 }
 
 std::vector<std::string> FGetsPattern::find (const Instruction *instr) {
-    auto results = std::vector<std::string>();
+    std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find("fgets") != std::string::npos) {
         results.push_back(getIdentifierString(instr, FGETS_MATCH_BUFFER_SIZE));
@@ -27,7 +27,7 @@ std::vector<std::string> FGetsPattern::find (const Instruction *instr) {
 }
 
 std::vector<std::string> PThreadPattern::find (const Instruction *instr) {
-    auto results = std::vector<std::string>();
+    std::vector<std::string> results;
     getfunNameString(instr);
     const std::string &funNameStdString = instr->getFunction()->getName().str();
     if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end() // function was not used before

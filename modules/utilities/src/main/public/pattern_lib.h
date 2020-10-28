@@ -34,6 +34,7 @@ class Patterns
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
     protected:
         std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
+        std::set<std::string> pthreadFoundFunctions;
 };
 
 // Abstract base classes for CallInst types of instruction patterns
@@ -71,8 +72,6 @@ class FGetsPattern: public CallInstPatterns{
 class PThreadPattern: public CallInstPatterns{
     public:
         std::vector<std::string> find(const Instruction *instr);
-    private:
-        std::set<std::string> pthreadFoundFunctions;
 };
 
 
@@ -86,4 +85,25 @@ class GreaterThanPattern: public ICmpInstPatterns{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
+
+// Misc types of instruction patterns
+class FreeArgumentReturnPattern: public Patterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+};
+
+class CMPXCHGPattern: public Patterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+    private:
+        std::set<std::string> cmpxchgFoundFunctions;
+};
+
+class ATOMICRMWPattern: public Patterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+    private:
+        bool foundAtomicRMW = false;
+};
+
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H
