@@ -28,17 +28,18 @@ def PkgConfigVariable(variable, library) {
     def output = outputStream.toString()
     return output.replaceAll('\n', ' ').trim()
 }
-
-def nlohmann_json = file('src/main/dependencies/json.hpp')
-if (!nlohmann_json.exists()) {
-    println "Downloading dependencies"
-    mkdir "src/main/dependencies/"
-    file('src/main/dependencies/json.hpp').text = new URL('https://github.com/nlohmann/json/releases/download/v3.9.1/json.hpp').getText()
+def load_dependencies() {
+    def nlohmann_json = file('src/main/dependencies/json.hpp')
+    if (!nlohmann_json.exists()) {
+        println "Downloading dependencies"
+        mkdir "src/main/dependencies/"
+        file('src/main/dependencies/json.hpp').text = new URL('https://github.com/nlohmann/json/releases/download/v3.9.1/json.hpp').getText()
+    }
 }
 
 
 tasks.withType(CppCompile).configureEach {
-
+    load_dependencies()
     // Define a compiler options
     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'

@@ -31,14 +31,18 @@ bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int
 
 bool isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
-    std::string directory = debugInfo->getDirectory().str();
-    std::string filePath = debugInfo->getFilename().str();
-    uint64_t line = debugInfo->getLine();
-    uint64_t column = debugInfo->getColumn();
-    return segref["directory"] == directory
-           && segref["filePath"] == filePath
-           && segref["line"] == line
-           && segref["column"] == column;
+    if (debugInfo) {
+        std::string directory = debugInfo->getDirectory().str();
+        std::string filePath = debugInfo->getFilename().str();
+        uint64_t line = debugInfo->getLine();
+        uint64_t column = debugInfo->getColumn();
+        return segref["directory"] == directory
+               && segref["filePath"] == filePath
+               && segref["line"] == line
+               && segref["column"] == column;
+    } else {
+        return false; // if the debug loc does not exist, we cannot do a mutation
+    }
 }
 
 /**
