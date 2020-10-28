@@ -17,15 +17,56 @@
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <set>
-#include "../dependencies/json.hpp"
+
 
 using namespace llvm;
 
 std::vector<std::string> look_for_pattern(Instruction* instr);
 
-std::set<std::string> pthreadFoundFunctions;
-std::set<std::string> cmpxchgFoundFunctions;
-bool foundAtomicRMW = false;
 
 
+
+// The most abstract base class
+class Patterns
+{
+    // Data members of class
+    protected:
+        std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
+
+    public:
+        // Pure Virtual Function
+        virtual std::vector<std::string> find(const Instruction *instr) = 0;
+
+   /* Other members */
+};
+
+// Abstract base classes for CallInst types of instruction patterns
+class CallInstPatterns: public Patterns {
+    protected:
+        StringRef funNameString;
+        void getfunNameString(const Instruction *instr);
+    public:
+        // Pure Virtual Function
+        virtual std::vector<std::string> find(const Instruction *instr) = 0;
+};
+
+
+
+// CallInst types of instruction patterns
+class MallocPattern: public CallInstPatterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+};
+
+class FGetsPattern: public CallInstPatterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+};
+
+class PThreadPattern: public CallInstPatterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+    private:
+        std::set<std::string> pthreadFoundFunctions;
+};
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H
