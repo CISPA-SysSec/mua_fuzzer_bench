@@ -40,10 +40,10 @@ std::vector<std::string> look_for_pattern(
 //    std::cout << instr->getDebugLoc() << "\n";
 //    std::cout << getIdentifierString(instr, 10) ;
 //    std::cout << "test2\n";
+    int i = 1;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
-            int i = 1;
             MallocPattern Mpattern;
             for (auto& pattern : Mpattern.find(instr))
             {
@@ -71,8 +71,22 @@ std::vector<std::string> look_for_pattern(
         }
     }
     else if (auto* icmpinst = dyn_cast<ICmpInst>(instr)){
-
-    }
+        LessThanEqualToPattern LTETpattern;
+        for (auto& pattern : LTETpattern.find(instr))
+        {
+            std::cout<<i<<std::endl;
+            std::cout<<pattern<<std::endl;
+            results.push_back(pattern);
+            i++;
+        }
+        GreaterThanPattern GTpattern;
+        for (auto& pattern : GTpattern.find(instr))
+        {
+            std::cout<<i<<std::endl;
+            std::cout<<pattern<<std::endl;
+            results.push_back(pattern);
+            i++;
+        }
     //     if (calledFun) {
     //         auto funNameString = calledFun->getName();
     //         results.push_back(findMalloc(instr, funNameString));

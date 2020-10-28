@@ -29,28 +29,33 @@ std::vector<std::string> look_for_pattern(Instruction* instr);
 // The most abstract base class
 class Patterns
 {
-    // Data members of class
-    protected:
-        std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
-
     public:
         // Pure Virtual Function
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
-
-   /* Other members */
+    protected:
+        std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
 };
 
 // Abstract base classes for CallInst types of instruction patterns
 class CallInstPatterns: public Patterns {
-    protected:
-        StringRef funNameString;
-        void getfunNameString(const Instruction *instr);
     public:
         // Pure Virtual Function
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
+    protected:
+        StringRef funNameString;
+        void getfunNameString(const Instruction *instr);
 };
 
-
+// Abstract base classes for ICmpInst types of instruction patterns
+class ICmpInstPatterns: public Patterns {
+    public:
+        // Pure Virtual Function
+        virtual std::vector<std::string> find(const Instruction *instr) = 0;
+    protected:
+        llvm::CmpInst::Predicate predicate;
+        // auto predicate = icmpinst->getPredicate();
+        void getpredicate(const Instruction *instr);
+};
 
 // CallInst types of instruction patterns
 class MallocPattern: public CallInstPatterns{
@@ -68,5 +73,17 @@ class PThreadPattern: public CallInstPatterns{
         std::vector<std::string> find(const Instruction *instr);
     private:
         std::set<std::string> pthreadFoundFunctions;
+};
+
+
+// ICmpInst types of instruction patterns
+class LessThanEqualToPattern: public ICmpInstPatterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
+};
+
+class GreaterThanPattern: public ICmpInstPatterns{
+    public:
+        std::vector<std::string> find(const Instruction *instr);
 };
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H

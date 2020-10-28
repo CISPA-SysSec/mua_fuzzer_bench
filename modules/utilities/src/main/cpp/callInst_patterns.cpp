@@ -2,10 +2,10 @@
 #include "mutations.h"
 
 void CallInstPatterns::getfunNameString(const Instruction *instr){
-        auto *callinst = dyn_cast<CallInst>(instr);
-        auto calledFun = callinst->getCalledFunction();
-        auto fNString = calledFun->getName();
-        funNameString = fNString;
+    auto *callinst = dyn_cast<CallInst>(instr);
+    auto calledFun = callinst->getCalledFunction();
+    auto fNString = calledFun->getName();
+    funNameString = fNString;
 }
 
 std::vector<std::string> MallocPattern::find(const Instruction *instr){
