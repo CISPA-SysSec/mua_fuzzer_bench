@@ -17,9 +17,9 @@ def main():
     # TODO also check for actual version, not only if macos or not
     if uname.sysname== "Darwin":
         # if (uname["release"]):
-        subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-isysroot", f"{sysroot}", "-emit-llvm", "-o", f"{progsource}.ll", "-x", "c", progsource])
+        subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-isysroot", f"{sysroot}", "-emit-llvm", "-o", f"{progsource}.ll", progsource])
     else:
-        subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-emit-llvm", "-o", f"{progsource}.ll", "-x", "c", progsource])
+        subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-emit-llvm", "-o", f"{progsource}.ll", progsource])
 
     # "${LLVM}/opt" -S -instnamer -reg2mem -load "${TRACEPLUGIN}" -traceplugin -exclude_functions "${EXCLUDED_FUNCTIONS}" -disable-verify "${PROG_SOURCE}.uninstrumented.bc" -o  "${PROG_SOURCE}.opt_debug.bc"
 

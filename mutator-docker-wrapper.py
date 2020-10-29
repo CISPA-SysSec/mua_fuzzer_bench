@@ -48,8 +48,10 @@ def build():
         print_fail("LLVM image was not properly built. Check output for details.")
         exit(1)
     print("Building Mutator container.")
-    # proc = subprocess.run(["docker", "build", "--no-cache", "-t", mutator_image, "-f", mutator_dockerfile, "."])
-    proc = subprocess.run(["docker", "build", "-t", mutator_image, "-f", mutator_dockerfile, "."])
+    if args.no_cache:
+        proc = subprocess.run(["docker", "build", "--no-cache", "-t", mutator_image, "-f", mutator_dockerfile, "."])
+    else:
+        proc = subprocess.run(["docker", "build", "-t", mutator_image, "-f", mutator_dockerfile, "."])
     if proc.returncode != 0:
         print_fail("Mutator image was not properly built. Check output for details.")
         exit(1)
@@ -124,10 +126,10 @@ def delete():
     if inpt == "yes":
         proc = subprocess.run(["docker", "rm", container_name])
         if proc.returncode != 0:
-            print_fail("lFuzzer container was not properly deleted. Check output for details.")
+            print_fail("Mutator container was not properly deleted. Check output for details.")
         proc = subprocess.run(["docker", "image", "rm", mutator_image])
         if proc.returncode != 0:
-            print_fail("lFuzzer image was not properly deleted. Check output for details.")
+            print_fail("Mutator image was not properly deleted. Check output for details.")
         proc = subprocess.run(["docker", "image", "rm", llvm_image])
         if proc.returncode != 0:
             print_fail("llvm image was not properly deleted. Check output for details.")
@@ -155,7 +157,7 @@ def stop():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mutator Docker Wrapper")
     parser.add_argument('-b', "--build", action='store_true',
-                        help="Builds the llvm image and consecutively the lFuzzer image. Takes about an hour.")
+                        help="Builds the llvm image and consecutively the Mutator image. Takes about an hour.")
     parser.add_argument('-a', "--attach", action='store_true',
                         help="Runs the built container. Builds it on demand if not existing "
                              "(takes about an hour to build).",)
@@ -164,8 +166,10 @@ if __name__ == "__main__":
     parser.add_argument('-s', "--stop", action='store_true',
                         help="Stops the running container, stopping all running experiments.")
     parser.add_argument('-r', "--rebuild", action='store_true',
-                        help="Deleted the lFuzzer image and container including all experiment "
+                        help="Deleted the Mutator image and container including all experiment "
                              "data and builds it from scratch. The LLVM image will be kept.")
+    parser.add_argument('-nc', "--no_cache", action='store_true',
+                        help="Disables docker caching when building the Mutator image.")
     args = parser.parse_args(sys.argv[1:])
 
     if args.build:
