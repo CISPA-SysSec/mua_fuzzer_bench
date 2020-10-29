@@ -45,6 +45,7 @@ std::string Patterns::getIdentifierString(const Instruction *instr, int type, co
      * @param funNameString the name of the function that is called
      * @return
  */
+//TODO: Refactor this to loop through a vector (or vectors) of objects
 std::vector<std::string> look_for_pattern(
         Instruction* instr
         )
