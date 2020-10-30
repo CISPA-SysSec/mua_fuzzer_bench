@@ -4,6 +4,7 @@ A python script for orchestrating the mutation of subjects.
 """
 import sys
 import subprocess
+import argparse
 
 def main(prog: str):
     """
@@ -18,10 +19,26 @@ def main(prog: str):
     else:
         mutate = prog
     subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate])
-    subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py", mutate])
+
+    arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py", "-p", mutate]
+    if args.bitcode:
+        arguments.append("-bc")
+    if args.bitcode_human_readable:
+        arguments.append("-ll")
+    if args.binary:
+        arguments.append("-bn")
+    subprocess.run(arguments)
 
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) > 1, "no program given for mutation"
-    main(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Mutator Script")
+    parser.add_argument('-bc', "--bitcode", action='store_true', help="Keeps the mutated bitcode files.")
+    parser.add_argument('-ll', "--bitcode_human_readable", action='store_true', help="Keeps the mutated bitcode files as human readable files.")
+    parser.add_argument('-bn', "--binary", action='store_true', help="Creates mutated runnable binaries.")
+    parser.add_argument('-p', "--program", default="", type=str, required=True,
+                        help="Path to the source file that will be mutated. Use at least one of the arguments [-bc, -ll, -bn] to get "
+                             "resulting files.")
+    args = parser.parse_args(sys.argv[1:])
+
+    main(args.program)

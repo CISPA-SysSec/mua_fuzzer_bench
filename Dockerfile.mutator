@@ -67,4 +67,4 @@ RUN CC=wllvm ./configure && \
     mv objdump.bc /home/mutator/samples/binutil
 
 WORKDIR /home/mutator
-RUN ./run_mutation.py samples/binutil/objdump.bc > mutationlog.txt 2>&1
+RUN ./run_mutation.py -p samples/binutil/objdump.bc -bc > mutationlog.txt 2>&1
