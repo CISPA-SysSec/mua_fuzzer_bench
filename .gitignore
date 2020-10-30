@@ -8,6 +8,9 @@ modules/utilities/src/main/dependencies/*
 samples/**/mutations/*
 *.ll
 *.mutationlocations
+*.o
+*.bc
+*.out
 # custom exclude since this is on my machine for testing -- BM
 /samples/mjs/
 
