@@ -1,7 +1,7 @@
 #include "../public/pattern_lib.h"
 #include "mutations.h"
 
-void ICmpInstPatterns::getpredicate(const Instruction *instr){
+void ICmpInstPattern::getpredicate(const Instruction *instr){
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     predicate = icmpinst->getPredicate();
 }

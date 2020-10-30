@@ -11,28 +11,28 @@ std::vector<std::unique_ptr<PatternMutator>> CallInstMutators;
 std::vector<std::unique_ptr<PatternMutator>> ICmpInstMutators;
 std::vector<std::unique_ptr<PatternMutator>> MiscInstMutators;
 
-// TODO: maybe refactor this into OOP. Only if required, later on.
-//Add new CallInstMutators here as you add them.
+// TODO: maybe refactor the populate functions into OOP. But only if required, later on.
+// Add new CallInstMutator objects here as you add them.
 void populateCallInstMutators(){
     CallInstMutators.push_back(std::make_unique <PThreadPatternMutator>());
     CallInstMutators.push_back(std::make_unique <MallocPatternMutator>());
     CallInstMutators.push_back(std::make_unique <FGetsPatternMutator>());
 }
 
-//Add new populateICmpInstMutators here as you add them.
+// Add new ICmpInstMutator objects here as you add them.
 void populateICmpInstMutators(){
     ICmpInstMutators.push_back(std::make_unique <GreaterThanPatternMutator>());
     ICmpInstMutators.push_back(std::make_unique <LessThanPatternMutator>());
 }
 
-//Add new populateMiscInstMutators here as you add them.
+// Add new MiscInstMutator objects here as you add them.
 void populateMiscInstMutators(){
     MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPatternMutator>());
     MiscInstMutators.push_back(std::make_unique <CMPXCHGPatternMutator>());
     MiscInstMutators.push_back(std::make_unique <ATOMICRMWPatternMutator>());
 }
 
-//Global function to call all the vector populators
+// Global function to call all the vector populators
 void populateMutatorVectors(){
     populateCallInstMutators();
     populateICmpInstMutators();

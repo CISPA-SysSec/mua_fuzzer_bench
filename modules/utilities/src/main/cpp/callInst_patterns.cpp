@@ -1,7 +1,7 @@
 #include "../public/pattern_lib.h"
 #include "mutations.h"
 
-void CallInstPatterns::getfunNameString(const Instruction *instr){
+void CallInstPattern::getfunNameString(const Instruction *instr){
     auto *callinst = dyn_cast<CallInst>(instr);
     auto calledFun = callinst->getCalledFunction();
     auto fNString = calledFun->getName();

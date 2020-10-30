@@ -22,23 +22,21 @@
 using namespace llvm;
 
 std::vector<std::string> look_for_pattern(Instruction* instr);
-
-
-
-
+void populatePatternVectors();
 // The most abstract base class
-class Patterns
+class Pattern
 {
     public:
         // Pure Virtual Function
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
+        virtual ~Pattern() {}
     protected:
         std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
         std::set<std::string> pthreadFoundFunctions;
 };
 
 // Abstract base classes for CallInst types of instruction patterns
-class CallInstPatterns: public Patterns {
+class CallInstPattern: public Pattern {
     public:
         // Pure Virtual Function
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
@@ -48,7 +46,7 @@ class CallInstPatterns: public Patterns {
 };
 
 // Abstract base classes for ICmpInst types of instruction patterns
-class ICmpInstPatterns: public Patterns {
+class ICmpInstPattern: public Pattern {
     public:
         // Pure Virtual Function
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
@@ -59,47 +57,47 @@ class ICmpInstPatterns: public Patterns {
 };
 
 // CallInst types of instruction patterns
-class MallocPattern: public CallInstPatterns{
+class MallocPattern: public CallInstPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class FGetsPattern: public CallInstPatterns{
+class FGetsPattern: public CallInstPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class PThreadPattern: public CallInstPatterns{
+class PThreadPattern: public CallInstPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
 
 // ICmpInst types of instruction patterns
-class LessThanEqualToPattern: public ICmpInstPatterns{
+class LessThanEqualToPattern: public ICmpInstPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class GreaterThanPattern: public ICmpInstPatterns{
+class GreaterThanPattern: public ICmpInstPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
 // Misc types of instruction patterns
-class FreeArgumentReturnPattern: public Patterns{
+class FreeArgumentReturnPattern: public Pattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class CMPXCHGPattern: public Patterns{
+class CMPXCHGPattern: public Pattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
     private:
         std::set<std::string> cmpxchgFoundFunctions;
 };
 
-class ATOMICRMWPattern: public Patterns{
+class ATOMICRMWPattern: public Pattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
     private:

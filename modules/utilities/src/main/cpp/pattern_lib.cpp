@@ -9,8 +9,41 @@
 using json = nlohmann::json;
 
 
+// smart pointers (unique_ptr) to make garbage collection automatic.
+std::vector<std::unique_ptr<Pattern>> CallInstPatterns;
+std::vector<std::unique_ptr<Pattern>> ICmpInstPatterns;
+std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 
-std::string Patterns::getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo){
+
+// TODO: maybe refactor the populate functions into OOP. But only if required, later on.
+// Add new CallInstPattern objects here as you add them.
+void populateCallInstPatterns(){
+    CallInstPatterns.push_back(std::make_unique <PThreadPattern>());
+    CallInstPatterns.push_back(std::make_unique <MallocPattern>());
+    CallInstPatterns.push_back(std::make_unique <FGetsPattern>());
+}
+
+// Add new ICmpInstPattern objects here as you add them.
+void populateICmpInstPatterns(){
+    ICmpInstPatterns.push_back(std::make_unique <GreaterThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <LessThanEqualToPattern>());
+}
+
+// Add new MiscInstPattern objects here as you add them.
+void populateMiscInstPatterns(){
+    MiscInstPatterns.push_back(std::make_unique <FreeArgumentReturnPattern>());
+    MiscInstPatterns.push_back(std::make_unique <CMPXCHGPattern>());
+    MiscInstPatterns.push_back(std::make_unique <ATOMICRMWPattern>());
+}
+
+// Global function to call all the vector populators
+void populatePatternVectors(){
+    populateCallInstPatterns();
+    populateICmpInstPatterns();
+    populateMiscInstPatterns();
+}
+
+std::string Pattern::getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo){
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
@@ -45,84 +78,35 @@ std::string Patterns::getIdentifierString(const Instruction *instr, int type, co
      * @param funNameString the name of the function that is called
      * @return
  */
-//TODO: Refactor this to loop through a vector (or vectors) of objects
+// TODO: Maybe refactor this further to push down the inst check and make it one
+// single loop on a single vector but only if required.
 std::vector<std::string> look_for_pattern(
         Instruction* instr
         )
 {
     auto results = std::vector<std::string>();
-    int i = 1;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
-            MallocPattern Mpattern;
-            for (auto& pattern : Mpattern.find(instr))
-            {
-                std::cout<<i<<std::endl;
-                std::cout<<pattern<<std::endl;
-                results.push_back(pattern);
-                i++;
-            }
-            FGetsPattern FGpattern;
-            for (auto& pattern : FGpattern.find(instr))
-            {
-                std::cout<<i<<std::endl;
-                std::cout<<pattern<<std::endl;
-                results.push_back(pattern);
-                i++;
-            }
-            PThreadPattern PTpattern;
-            for (auto& pattern : PTpattern.find(instr))
-            {
-                std::cout<<i<<std::endl;
-                std::cout<<pattern<<std::endl;
-                results.push_back(pattern);
-                i++;
+            for (auto &patternobject : CallInstPatterns){
+                for (auto &pattern : patternobject->find(instr)){
+                    results.push_back(pattern);
+                }
             }
         }
     }
     else if (auto* icmpinst = dyn_cast<ICmpInst>(instr)){
-        LessThanEqualToPattern LTETpattern;
-        for (auto& pattern : LTETpattern.find(instr))
-        {
-            std::cout<<i<<std::endl;
-            std::cout<<pattern<<std::endl;
-            results.push_back(pattern);
-            i++;
-        }
-        GreaterThanPattern GTpattern;
-        for (auto& pattern : GTpattern.find(instr))
-        {
-            std::cout<<i<<std::endl;
-            std::cout<<pattern<<std::endl;
-            results.push_back(pattern);
-            i++;
+        for (auto &patternobject : ICmpInstPatterns){
+            for (auto &pattern : patternobject->find(instr)){
+                results.push_back(pattern);
+            }
         }
     }
     else{
-        FreeArgumentReturnPattern FARpattern;
-        for (auto& pattern : FARpattern.find(instr))
-        {
-            std::cout<<i<<std::endl;
-            std::cout<<pattern<<std::endl;
-            results.push_back(pattern);
-            i++;
-        }
-        CMPXCHGPattern Cpattern;
-        for (auto& pattern : Cpattern.find(instr))
-        {
-            std::cout<<i<<std::endl;
-            std::cout<<pattern<<std::endl;
-            results.push_back(pattern);
-            i++;
-        }
-        ATOMICRMWPattern ARMWpattern;
-        for (auto& pattern : ARMWpattern.find(instr))
-        {
-            std::cout<<i<<std::endl;
-            std::cout<<pattern<<std::endl;
-            results.push_back(pattern);
-            i++;
+        for (auto &patternobject : MiscInstPatterns){
+            for (auto &pattern : patternobject->find(instr)){
+                results.push_back(pattern);
+            }
         }
     }
     return results;
