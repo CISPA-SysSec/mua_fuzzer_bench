@@ -164,7 +164,7 @@ struct MutatorPlugin : public ModulePass
         std::mutex builderMutex;
         std::mutex fileMutex;
         // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-
+        populateMutatorVectors();
         //Parsing the string into a json
         std::string segment;
         seglist = json::parse(Mutation);

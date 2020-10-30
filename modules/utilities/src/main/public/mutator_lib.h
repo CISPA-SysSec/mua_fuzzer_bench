@@ -25,6 +25,8 @@ using namespace llvm;
 
 #define ADDITIONAL_INFORMATION_START = 5  //the index of the first additional information argument, in future we should have some json format or so which makes this unnecessary
 
+class PatternMutator;
+void populateMutatorVectors();
 
 bool mutatePattern(
     IRBuilder<>* builder,
@@ -33,7 +35,6 @@ bool mutatePattern(
     std::mutex& builderMutex,
     json *seglist,
     Module& M
-
 );
 
 // The most abstract base class
@@ -48,6 +49,7 @@ class PatternMutator
         std::mutex& builderMutex,
         json *seglist,
         Module& M) = 0;
+    virtual ~PatternMutator() {}
     private:
         bool isMutationDebugLoc(const Instruction *instr, const json &segref);
     protected:

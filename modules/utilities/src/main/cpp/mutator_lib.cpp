@@ -6,6 +6,38 @@
 #include "../public/mutator_lib.h"
 #include "mutations.h"
 
+// smart pointers (unique_ptr) to make garbage collection automatic.
+std::vector<std::unique_ptr<PatternMutator>> CallInstMutators;
+std::vector<std::unique_ptr<PatternMutator>> ICmpInstMutators;
+std::vector<std::unique_ptr<PatternMutator>> MiscInstMutators;
+
+// TODO: maybe refactor this into OOP. Only if required, later on.
+//Add new CallInstMutators here as you add them.
+void populateCallInstMutators(){
+    CallInstMutators.push_back(std::make_unique <PThreadPatternMutator>());
+    CallInstMutators.push_back(std::make_unique <MallocPatternMutator>());
+    CallInstMutators.push_back(std::make_unique <FGetsPatternMutator>());
+}
+
+//Add new populateICmpInstMutators here as you add them.
+void populateICmpInstMutators(){
+    ICmpInstMutators.push_back(std::make_unique <GreaterThanPatternMutator>());
+    ICmpInstMutators.push_back(std::make_unique <LessThanPatternMutator>());
+}
+
+//Add new populateMiscInstMutators here as you add them.
+void populateMiscInstMutators(){
+    MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPatternMutator>());
+    MiscInstMutators.push_back(std::make_unique <CMPXCHGPatternMutator>());
+    MiscInstMutators.push_back(std::make_unique <ATOMICRMWPatternMutator>());
+}
+
+//Global function to call all the vector populators
+void populateMutatorVectors(){
+    populateCallInstMutators();
+    populateICmpInstMutators();
+    populateMiscInstMutators();
+}
 
 bool PatternMutator::isMutationLocation(Instruction* instr, json *seglist, int type) {
     auto segref = *seglist;
@@ -60,33 +92,23 @@ bool mutatePattern(
         Module& M
 )
 {
-    // TODO until further refactoring put call instruction mutations in here
-    // TODO in future we should have one abstract class from which concrete mutators should inherit
-    // TODO we just register the mutators here and call them, same for the pattern finder
     auto mutated = false;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
-            MallocPatternMutator Mmutator;
-            FGetsPatternMutator FGmutator;
-            PThreadPatternMutator PTmutator;
-            mutated |= Mmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
-            mutated |= FGmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
-            mutated |= PTmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+            for (auto &mutator : CallInstMutators){
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+            }
         }
     }
     else if (auto* cmpinst = dyn_cast<ICmpInst>(instr)){
-        GreaterThanPatternMutator GTmutator;
-        LessThanPatternMutator LTmutator;
-        mutated |= GTmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
-        mutated |= LTmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+        for (auto &mutator : ICmpInstMutators){
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+        }
     } else {
-        FreeArgumentReturnPatternMutator FARmutator;
-        CMPXCHGPatternMutator CXCmutator;
-        ATOMICRMWPatternMutator ARMWmutator;
-        mutated |= FARmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
-        mutated |= CXCmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
-        mutated |= ARMWmutator.mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+        for (auto &mutator : MiscInstMutators){
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+        }
     }
     return mutated;
 }
