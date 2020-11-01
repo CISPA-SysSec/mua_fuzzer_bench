@@ -1,0 +1,32 @@
+FROM debian:buster
+
+RUN apt-get update && \
+    apt-get -y install \
+        sudo \
+        wget \
+        lsb-release \
+        software-properties-common \
+        git \
+        gnupg \
+        make \
+        python3-dev \
+        python3-apt \
+        gcc \
+        gcc-*-plugin-dev \
+        g++
+
+WORKDIR /home/eval
+
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    sudo ./llvm.sh 12
+
+RUN bash -c "for FILE in /usr/bin/*-12; do update-alternatives --install \${FILE//-12/} \$(basename \${FILE//-12/}) \$FILE 100; done"
+
+RUN git clone https://github.com/AFLplusplus/AFLplusplus && \
+    cd AFLplusplus && \
+    CC=clang make source-only && \
+    sudo make install
+
+COPY eval/start_aflpp.sh .
+RUN chmod +x start_aflpp.sh
