@@ -31,8 +31,7 @@ class Pattern
         virtual std::vector<std::string> find(const Instruction *instr) = 0;
         virtual ~Pattern() {}
     protected:
-        std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
-        std::set<std::string> pthreadFoundFunctions;
+        static std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
 };
 
 // Abstract base classes for CallInst types of instruction patterns
@@ -56,6 +55,15 @@ class ICmpInstPattern: public Pattern {
         void getpredicate(const Instruction *instr);
 };
 
+// Abstract base classes for Threading types of instruction patterns
+class ThreadingPattern: public Pattern {
+public:
+    // Pure Virtual Function
+    virtual std::vector<std::string> find(const Instruction *instr) = 0;
+protected:
+    std::set<std::string> pthreadFoundFunctions;
+};
+
 // CallInst types of instruction patterns
 class MallocPattern: public CallInstPattern{
     public:
@@ -67,7 +75,7 @@ class FGetsPattern: public CallInstPattern{
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class PThreadPattern: public CallInstPattern{
+class PThreadPattern: public CallInstPattern, public ThreadingPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
 };
@@ -90,14 +98,14 @@ class FreeArgumentReturnPattern: public Pattern{
         std::vector<std::string> find(const Instruction *instr);
 };
 
-class CMPXCHGPattern: public Pattern{
+class CMPXCHGPattern: public ThreadingPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
     private:
         std::set<std::string> cmpxchgFoundFunctions;
 };
 
-class ATOMICRMWPattern: public Pattern{
+class ATOMICRMWPattern: public ThreadingPattern{
     public:
         std::vector<std::string> find(const Instruction *instr);
     private:

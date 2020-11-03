@@ -51,10 +51,10 @@ class PatternMutator
         Module& M) = 0;
     virtual ~PatternMutator() {}
     private:
-        bool isMutationDebugLoc(const Instruction *instr, const json &segref);
+        static bool isMutationDebugLoc(const Instruction *instr, const json &segref);
     protected:
-        bool isMutationLocation(Instruction* instr, json *seglist, int type);
-        bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
+        static bool isMutationLocation(Instruction* instr, json *seglist, int type);
+        static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 };
 
 // CallInst types of instruction mutators

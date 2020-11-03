@@ -4,14 +4,13 @@
 
 #include <iostream>
 #include "../public/pattern_lib.h"
-#include "mutations.h"
 #include "../dependencies/json.hpp"
 using json = nlohmann::json;
 
 
 // smart pointers (unique_ptr) to make garbage collection automatic.
-std::vector<std::unique_ptr<Pattern>> CallInstPatterns;
-std::vector<std::unique_ptr<Pattern>> ICmpInstPatterns;
+std::vector<std::unique_ptr<CallInstPattern>> CallInstPatterns;
+std::vector<std::unique_ptr<ICmpInstPattern>> ICmpInstPatterns;
 std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 
 
@@ -95,7 +94,7 @@ std::vector<std::string> look_for_pattern(
             }
         }
     }
-    else if (auto* icmpinst = dyn_cast<ICmpInst>(instr)){
+    else if (dyn_cast<ICmpInst>(instr)){
         for (auto &patternobject : ICmpInstPatterns){
             for (auto &pattern : patternobject->find(instr)){
                 results.push_back(pattern);

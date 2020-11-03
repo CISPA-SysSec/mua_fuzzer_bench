@@ -4,7 +4,6 @@
 
 #include <iostream>
 #include "../public/mutator_lib.h"
-#include "mutations.h"
 
 // smart pointers (unique_ptr) to make garbage collection automatic.
 std::vector<std::unique_ptr<PatternMutator>> CallInstMutators;
@@ -101,7 +100,7 @@ bool mutatePattern(
             }
         }
     }
-    else if (auto* cmpinst = dyn_cast<ICmpInst>(instr)){
+    else if (dyn_cast<ICmpInst>(instr)){
         for (auto &mutator : ICmpInstMutators){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         }
