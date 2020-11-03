@@ -4,31 +4,32 @@
 
 #include <iostream>
 #include "../public/mutator_lib.h"
+#include "pattern_declarations.h"
 
 // smart pointers (unique_ptr) to make garbage collection automatic.
-std::vector<std::unique_ptr<PatternMutator>> CallInstMutators;
-std::vector<std::unique_ptr<PatternMutator>> ICmpInstMutators;
-std::vector<std::unique_ptr<PatternMutator>> MiscInstMutators;
+std::vector<std::unique_ptr<CallInstPattern>> CallInstMutators;
+std::vector<std::unique_ptr<ICmpInstPattern>> ICmpInstMutators;
+std::vector<std::unique_ptr<Pattern>> MiscInstMutators;
 
 // TODO: maybe refactor the populate functions into OOP. But only if required, later on.
 // Add new CallInstMutator objects here as you add them.
 void populateCallInstMutators(){
-    CallInstMutators.push_back(std::make_unique <PThreadPatternMutator>());
-    CallInstMutators.push_back(std::make_unique <MallocPatternMutator>());
-    CallInstMutators.push_back(std::make_unique <FGetsPatternMutator>());
+    CallInstMutators.push_back(std::make_unique <PThreadPattern>());
+    CallInstMutators.push_back(std::make_unique <MallocPattern>());
+    CallInstMutators.push_back(std::make_unique <FGetsPattern>());
 }
 
 // Add new ICmpInstMutator objects here as you add them.
 void populateICmpInstMutators(){
-    ICmpInstMutators.push_back(std::make_unique <GreaterThanPatternMutator>());
-    ICmpInstMutators.push_back(std::make_unique <LessThanPatternMutator>());
+    ICmpInstMutators.push_back(std::make_unique <GreaterThanPattern>());
+    ICmpInstMutators.push_back(std::make_unique <LessThanEqualToPattern>());
 }
 
 // Add new MiscInstMutator objects here as you add them.
 void populateMiscInstMutators(){
-    MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPatternMutator>());
-    MiscInstMutators.push_back(std::make_unique <CMPXCHGPatternMutator>());
-    MiscInstMutators.push_back(std::make_unique <ATOMICRMWPatternMutator>());
+    MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPattern>());
+    MiscInstMutators.push_back(std::make_unique <CMPXCHGPattern>());
+    MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
 }
 
 // Global function to call all the vector populators
@@ -38,7 +39,7 @@ void populateMutatorVectors(){
     populateMiscInstMutators();
 }
 
-bool PatternMutator::isMutationLocation(Instruction* instr, json *seglist, int type) {
+bool Pattern::isMutationLocation(Instruction* instr, json *seglist, int type) {
     auto segref = *seglist;
     if (segref["type"] == type) {
         return isMutationDebugLoc(instr, segref);
@@ -47,7 +48,7 @@ bool PatternMutator::isMutationLocation(Instruction* instr, json *seglist, int t
     }
 }
 
-bool PatternMutator::isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types) {
+bool Pattern::isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types) {
     auto segref = *seglist;
     int givenType = segref["type"];
     for (auto type : *types) {
@@ -58,7 +59,7 @@ bool PatternMutator::isMutationLocation(Instruction* instr, json *seglist, const
     return false;
 }
 
-bool PatternMutator::isMutationDebugLoc(const Instruction *instr, const json &segref) {
+bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();

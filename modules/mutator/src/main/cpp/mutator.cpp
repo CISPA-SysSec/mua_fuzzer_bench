@@ -23,9 +23,6 @@ cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
 
-//counter which is used to assign for each basic block a unique ID
-int bbIDCounter = 0;
-
 //counter for method calls, each method call gets a unique ID
 int callIDCounter = 1;
 

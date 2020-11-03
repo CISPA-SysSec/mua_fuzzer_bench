@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include "../public/pattern_lib.h"
-#include "../dependencies/json.hpp"
+#include "pattern_declarations.h"
 using json = nlohmann::json;
 
 
