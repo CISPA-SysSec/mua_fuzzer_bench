@@ -20,10 +20,10 @@
 -   remove exception handling, change to generic exception class
 -   throw a more generic exception than needed
 -   remove null checks (also from pointer dereference)
--   remove default case
 -   exchange compare with assignment and reverse
--   remove braces after if condition
--   remove breaks in switch case
+-   :white_check_mark: remove braces after if condition
+-   :white_check_mark: remove breaks in switch case
+-   :white_check_mark: remove default case
 -   change operator precedence
 -   modify length value calculation / add/reduce constant
 -   remove check of function return value
