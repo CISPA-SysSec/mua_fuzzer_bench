@@ -1,10 +1,6 @@
-#include <iostream>
 #include <fstream>
 #include <map>
-#include <set>
 #include <thread>
-#include <sstream>
-#include <string>
 
 #include "mutator_lib.h"
 
@@ -13,12 +9,9 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IntrinsicInst.h>
-#include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Function.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
-#include <llvm/IR/DebugLoc.h>
-#include <llvm/IR/DebugInfoMetadata.h>
 
 
 
@@ -30,9 +23,6 @@ cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
 
-//counter which is used to assign for each basic block a unique ID
-int bbIDCounter = 0;
-
 //counter for method calls, each method call gets a unique ID
 int callIDCounter = 1;
 
@@ -42,7 +32,7 @@ int funcounter = 0;
 
 // the following variables define the location of the mutation as well as the pattern
 // containing in order: Directory, File, line, column, mutation-ID as strings
-std::vector<std::string> seglist;
+json seglist;
 
 std::ofstream mutationLocations;
 
@@ -170,16 +160,11 @@ struct MutatorPlugin : public ModulePass
 
         std::mutex builderMutex;
         std::mutex fileMutex;
-        std::cout << "[INFO] Mutating: " << Mutation << "\n";
-
-        //splitting and storing the parts of the string
+        // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
+        populateMutatorVectors();
+        //Parsing the string into a json
         std::string segment;
-        std::stringstream strs(Mutation);
-        while(std::getline(strs, segment, '|'))
-        {
-            seglist.push_back(segment);
-        }
-
+        seglist = json::parse(Mutation);
         unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
 //        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
@@ -207,7 +192,7 @@ struct MutatorPlugin : public ModulePass
         {
             thread.join();
         }
-
+        // TODO: Where is this opened and where it is used? - abhilashgupta
         mutationLocations.close();
         return true;
     }

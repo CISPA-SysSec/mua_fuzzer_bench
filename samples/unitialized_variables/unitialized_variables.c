@@ -31,6 +31,7 @@ int main() {
                 // Mutation: In the example this would also set aN to -1,
                 // leaving `bN` unitialized. This could be done wherever, not
                 // sure how to limit the amount of mutations.
+                // TODO delete constant assignment
                 bN = -1;
                 break;
         }

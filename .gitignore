@@ -4,6 +4,15 @@ venv/
 gradle/
 gradlew
 gradlew.bat
+modules/utilities/src/main/dependencies/*
+samples/**/mutations/*
+*.ll
+*.mutationlocations
+*.o
+*.bc
+*.out
+# custom exclude since this is on my machine for testing -- BM
+/samples/mjs/
 
 # Created by https://www.gitignore.io/api/macos,clion,gradle
 # Edit at https://www.gitignore.io/?templates=macos,clion,gradle
@@ -147,8 +156,10 @@ gradle-app.setting
 /samples/cwe_362_race_condition/sample
 samples/wrong_sizeof_argument/sizeof_argument
 samples/unitialized_variables/unitialized_variables
-samples/primitive_casting/signed_to_unsigned_conversion_error copy/signed_to_unsigned_conversion_error
+samples/primitive_casting/signed_to_unsigned_conversion_error/signed_to_unsigned_conversion_error
 samples/primitive_casting/unsigned_to_signed_conversion_error/unsigned_to_signed_conversion_error
 samples/primitive_casting/wrap_around_error/wrap_around
 samples/incorrect_block_delimitation/incorrect_block_delimitation
 samples/switch_statement/switch_statement
+tmp/
+.vscode/settings.json

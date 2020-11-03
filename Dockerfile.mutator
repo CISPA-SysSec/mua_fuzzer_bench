@@ -23,7 +23,10 @@ WORKDIR /home/downloads
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN python3 get-pip.py
 
+RUN pip3 install wllvm
+
 ENV PATH "/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/:$PATH"
+ENV LLVM_COMPILER "clang"
 
 RUN wget https://downloads.gradle-dn.com/distributions/gradle-6.6.1-bin.zip
 RUN unzip gradle-6.6.1-bin.zip
@@ -38,15 +41,31 @@ WORKDIR mutator
 COPY modules /home/mutator/modules
 COPY samples /home/mutator/samples
 COPY build.gradle /home/mutator/
-COPY run_mutation.sh /home/mutator/
-RUN chmod +x run_mutation.sh
+COPY run_mutation.py /home/mutator/
+RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
 RUN echo "llvmBinPath=/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/" > gradle.properties
 
 
-RUN gradle clean build
+RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
 
-RUN ./run_mutation.sh samples/cwe_119_bounds_checks-match/bounds_need_to_match.c
+
+# get binutils
+WORKDIR /home/mutator/samples
+RUN wget https://ftp.gnu.org/gnu/binutils/binutils-2.35.tar.gz && tar -xvf binutils-2.35.tar.gz
+WORKDIR /home/mutator/samples/binutils-2.35
+
+# build binutils, extract the bitcode file from objdump and copy the bitcode file to a special folder for running the mutation on it
+RUN CC=wllvm ./configure && \
+    make -j4 && \
+    cd binutils && \
+    extract-bc objdump && \
+    mkdir /home/mutator/samples/binutil && \
+    mv objdump.bc /home/mutator/samples/binutil
+
+WORKDIR /home/mutator
+
+# RUN ./run_mutation.py -p samples/binutil/objdump.bc -bn -bc > mutationlog.txt 2>&1

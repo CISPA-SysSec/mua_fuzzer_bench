@@ -24,7 +24,8 @@ def PkgConfigVariable(variable, library) {
     def outputStream = new StringBuffer()
 
     proc.waitForProcessOutput(outputStream, System.err)
-    return outputStream.toString().replaceAll('\n', ' ').trim().split("\\s+")
+    def output = outputStream.toString()
+    return output.replaceAll('\n', ' ').trim()
 }
 
 tasks.withType(CppCompile).configureEach {
@@ -33,7 +34,9 @@ tasks.withType(CppCompile).configureEach {
     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'
     compilerArgs.addAll llvmConfigVariable('cxxflags')
-
+    // Gotcha: The -fexceptions must always be written after llvmConfigVariable to overwrite -fno-exceptions
+    compilerArgs.add '-fexceptions'
+//     compilerArgs.add PkgConfigVariable('cflags', 'nlohmann_json')
     // Define toolchain-specific compiler options
     compilerArgs.addAll toolChain.map { toolChain ->
         if (Os.isFamily(Os.FAMILY_MAC)) {

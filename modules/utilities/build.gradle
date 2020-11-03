@@ -3,6 +3,8 @@ import org.gradle.internal.os.OperatingSystem
 import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'cpp-library'
+apply plugin: 'xcode'
+apply plugin: 'visual-studio'
 
 def llvmConfigVariable(variable, components = []) {
     if (!file("${llvmBinPath}llvm-config").exists()) {
@@ -23,16 +25,28 @@ def PkgConfigVariable(variable, library) {
     def outputStream = new StringBuffer()
 
     proc.waitForProcessOutput(outputStream, System.err)
-    return outputStream.toString().replaceAll('\n', ' ').trim().split("\\s+")
+    def output = outputStream.toString()
+    return output.replaceAll('\n', ' ').trim()
+}
+def load_dependencies() {
+    def nlohmann_json = file('src/main/dependencies/json.hpp')
+    if (!nlohmann_json.exists()) {
+        println "Downloading dependencies"
+        mkdir "src/main/dependencies/"
+        file('src/main/dependencies/json.hpp').text = new URL('https://github.com/nlohmann/json/releases/download/v3.9.1/json.hpp').getText()
+    }
 }
 
 
 tasks.withType(CppCompile).configureEach {
-
+    load_dependencies()
     // Define a compiler options
     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'
     compilerArgs.addAll llvmConfigVariable('cxxflags')
+    // Gotcha: The -fexceptions must always be written after llvmConfigVariable to overwrite -fno-exceptions
+    compilerArgs.add '-fexceptions'
+//     compilerArgs.add PkgConfigVariable('cflags', 'nlohmann_json')
 
     // Define toolchain-specific compiler options
     compilerArgs.addAll toolChain.map { toolChain ->
@@ -62,3 +76,6 @@ library {
    linkage = [Linkage.SHARED]
 }
 
+clean {
+    delete "src/main/dependencies/"
+}

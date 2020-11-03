@@ -13,8 +13,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
 
-
-
 using namespace llvm;
 
 #define DEBUG_TYPE "mutationfinder"
@@ -27,23 +25,24 @@ cl::opt<std::string> MutationLocationFile("mutation_patterns",
 int number_functions = 0;
 int funcounter = 0;
 
-std::ofstream mutationLocations;
+std::ofstream mutationLocationsstream;
+std::vector<std::string> mutationLocationsvector;
 
 class Worker
 {
 private:
 
     std::mutex& builderMutex;
-    std::mutex& fileMutex;
+    std::mutex& vectorMutex;
     llvm::Module& M;
 
 public:
 
     explicit Worker() = delete;
 
-    Worker(Module& M, std::mutex& builderMutex, std::mutex& fileMutex)
+    Worker(Module& M, std::mutex& builderMutex, std::mutex& vectorMutex)
         : builderMutex(builderMutex)
-        , fileMutex(fileMutex)
+        , vectorMutex(vectorMutex)
         , M(M)
     {
 
@@ -96,9 +95,11 @@ public:
         builderMutex.unlock();
         for (const auto& loc: patternLocations) {
             if (!loc.empty()) {
-                fileMutex.lock();
-                mutationLocations << loc;
-                fileMutex.unlock();
+                // N.B Assuming not a very lot of mutation locations in a file
+                // Otherwise mutationLocationsvector may eat up a lot of RAM.
+                vectorMutex.lock();
+                mutationLocationsvector.push_back(loc);
+                vectorMutex.unlock();
             }
         }
     }
@@ -145,8 +146,9 @@ struct MutatorPlugin : public ModulePass
 
 
         std::mutex builderMutex;
-        std::mutex fileMutex;
-        mutationLocations.open(MutationLocationFile);
+        std::mutex vectorMutex;
+        mutationLocationsstream.open(MutationLocationFile);
+        mutationLocationsstream << "[";
         unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency() * 30);
         std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
@@ -162,20 +164,25 @@ struct MutatorPlugin : public ModulePass
             threadFunctions[i % concurrentThreadsSupported].push_back(&f);
             ++i;
         }
-
+        populatePatternVectors();
         number_functions = i;
         std::vector<std::thread> threads;
         for (auto& functions : threadFunctions)
         {
-            threads.push_back(std::thread(&Worker::findPatternInFunctions, new Worker(M, builderMutex, fileMutex), functions));
+            threads.push_back(std::thread(&Worker::findPatternInFunctions, new Worker(M, builderMutex, vectorMutex), functions));
         }
 
         for (auto& thread : threads)
         {
             thread.join();
         }
-
-        mutationLocations.close();
+        for (int i = 0; i < mutationLocationsvector.size(); i++)
+        {
+            if (i != 0) mutationLocationsstream << ",\n";
+            mutationLocationsstream << mutationLocationsvector[i];
+        }
+        mutationLocationsstream << "]";
+        mutationLocationsstream.close();
         return true;
     }
 };
