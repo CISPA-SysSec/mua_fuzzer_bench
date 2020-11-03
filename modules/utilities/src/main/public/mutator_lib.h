@@ -23,14 +23,15 @@
 using json = nlohmann::json;
 using namespace llvm;
 
-#define ADDITIONAL_INFORMATION_START = 5  //the index of the first additional information argument, in future we should have some json format or so which makes this unnecessary
+void populateMutatorVectors();
 
 bool mutatePattern(
-        IRBuilder<>* builder,
-        IRBuilder<>* nextInstructionBuilder,
-        Instruction* instr,
-        std::mutex& builderMutex,
-        json *seglist,
-        Module& M
+    IRBuilder<>* builder,
+    IRBuilder<>* nextInstructionBuilder,
+    Instruction* instr,
+    std::mutex& builderMutex,
+    json *seglist,
+    Module& M
 );
+
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H

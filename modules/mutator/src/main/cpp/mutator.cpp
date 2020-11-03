@@ -23,9 +23,6 @@ cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
 
-//counter which is used to assign for each basic block a unique ID
-int bbIDCounter = 0;
-
 //counter for method calls, each method call gets a unique ID
 int callIDCounter = 1;
 
@@ -164,7 +161,7 @@ struct MutatorPlugin : public ModulePass
         std::mutex builderMutex;
         std::mutex fileMutex;
         // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-
+        populateMutatorVectors();
         //Parsing the string into a json
         std::string segment;
         seglist = json::parse(Mutation);
@@ -195,7 +192,7 @@ struct MutatorPlugin : public ModulePass
         {
             thread.join();
         }
-        // Where is this opened and where it is used? - Abhilash
+        // TODO: Where is this opened and where it is used? - abhilashgupta
         mutationLocations.close();
         return true;
     }

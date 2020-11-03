@@ -164,7 +164,7 @@ struct MutatorPlugin : public ModulePass
             threadFunctions[i % concurrentThreadsSupported].push_back(&f);
             ++i;
         }
-
+        populatePatternVectors();
         number_functions = i;
         std::vector<std::thread> threads;
         for (auto& functions : threadFunctions)
