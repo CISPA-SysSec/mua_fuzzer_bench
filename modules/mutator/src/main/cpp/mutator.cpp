@@ -34,14 +34,11 @@ int funcounter = 0;
 // containing in order: Directory, File, line, column, mutation-ID as strings
 json seglist;
 
-std::ofstream mutationLocations;
-
 class Worker
 {
 private:
 
     std::mutex& builderMutex;
-    std::mutex& fileMutex;
     llvm::Module& M;
 
 public:
@@ -50,7 +47,6 @@ public:
 
     Worker(Module& M, std::mutex& builderMutex, std::mutex& fileMutex)
         : builderMutex(builderMutex)
-        , fileMutex(fileMutex)
         , M(M)
     {
 
@@ -192,8 +188,6 @@ struct MutatorPlugin : public ModulePass
         {
             thread.join();
         }
-        // TODO: Where is this opened and where it is used? - abhilashgupta
-        mutationLocations.close();
         return true;
     }
 };
