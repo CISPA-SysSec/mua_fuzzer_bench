@@ -3,8 +3,6 @@ import org.gradle.internal.os.OperatingSystem
 import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'cpp-library'
-apply plugin: 'xcode'
-apply plugin: 'visual-studio'
 
 def llvmConfigVariable(variable, components = []) {
     if (!file("${llvmBinPath}llvm-config").exists()) {
@@ -28,6 +26,7 @@ def PkgConfigVariable(variable, library) {
     def output = outputStream.toString()
     return output.replaceAll('\n', ' ').trim()
 }
+
 def load_dependencies() {
     def nlohmann_json = file('src/main/dependencies/json.hpp')
     if (!nlohmann_json.exists()) {

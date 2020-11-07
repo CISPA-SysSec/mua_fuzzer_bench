@@ -1,0 +1,34 @@
+import org.apache.tools.ant.filters.ReplaceTokens
+import org.gradle.internal.os.OperatingSystem
+import org.apache.tools.ant.taskdefs.condition.Os
+
+apply plugin: 'cpp-library'
+
+
+tasks.withType(CppCompile).configureEach {
+    // Define a compiler options
+    compilerArgs.add '-O3'
+    compilerArgs.add '-Werror'
+
+    // Define toolchain-specific compiler options
+    compilerArgs.addAll toolChain.map { toolChain ->
+        if (Os.isFamily(Os.FAMILY_MAC)) {
+            println 'On Mac, adding sysroot and system path'
+            return ['-isysroot', '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/', "-isystem", "/Library/Developer/CommandLineTools/usr/include/c++/v1"]
+        }
+        return []
+    }
+
+}
+
+model {
+    toolChains {
+        clang(Clang) {
+            path "${llvmBinPath}"
+        }
+    }
+}
+
+library {
+   linkage = [Linkage.SHARED]
+}
