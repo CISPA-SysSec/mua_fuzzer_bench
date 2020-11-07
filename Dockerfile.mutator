@@ -68,4 +68,7 @@ RUN CC=wllvm CXX=wllvm make -j5 && \
 
 WORKDIR /home/mutator
 
+
+# ENV TRIGGERED_FILE some/file/to/report/mutation/trigger
+# ENV TRIGGERED_OUTPUT "Some output that indicates mutation triggering. Can be left blank."
 # RUN ./run_mutation.py -p samples/re2/libre2.so.bc -bc > mutationlog.txt 2>&1
