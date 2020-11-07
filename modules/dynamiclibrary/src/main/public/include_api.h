@@ -5,6 +5,14 @@
 #ifndef LLVM_MUTATION_TOOL_INCLUDE_API_H
 #define LLVM_MUTATION_TOOL_INCLUDE_API_H
 
-void signal_triggered_mutation();
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+    void signal_triggered_mutation();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //LLVM_MUTATION_TOOL_INCLUDES_H

@@ -11,6 +11,8 @@ llvm_bindir = "@LLVM_BINDIR@"
 clang = f"{llvm_bindir}/clang"
 opt = f"{llvm_bindir}/opt"
 mutatorplugin = "@MUTATOR_PLUGIN@"
+dynamic_libraries_folder = "@DYN_LIB_FOLDER@"
+linked_libraries = "dynamiclibrary"
 
 sysroot = ""
 progsource = None
@@ -63,10 +65,20 @@ def mutate_file(information):
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-o", f"{mutations_folder}/{progname}.{counter}.mut.bc", "-c", f"{mutations_folder}/{progname}.{counter}.mut.ll"])
 
     if args.binary:
+        arguments = [
+            # "-v",
+            "-o",
+            f"{mutations_folder}/{progname}.{counter}.mut", # output file
+            f"{mutations_folder}/{progname}.{counter}.mut.ll", # input file
+            f"-L{dynamic_libraries_folder}", # points the runtime linker to the location of the included shared library
+            "-lm", "-lz", "-ldl", # some often used libraries
+            f"-l{linked_libraries}", # the library containing all the api functions that were called by mutations
+        ]
+
         if uname.sysname == "Darwin":
-            subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{counter}.mut", f"{mutations_folder}/{progname}.{counter}.mut.ll", "-lm", "-lz", "-ldl"])
+            subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
         else:
-            subprocess.call([clang, "-fno-inline", "-O3", "-o", f"{mutations_folder}/{progname}.{counter}.mut", f"{mutations_folder}/{progname}.{counter}.mut.ll", "-lm", "-lz", "-ldl"])
+            subprocess.call([clang, "-fno-inline", "-O3"] + arguments)
 
     if not args.bitcode_human_readable:
         os.remove(f"{mutations_folder}/{progname}.{counter}.mut.ll")

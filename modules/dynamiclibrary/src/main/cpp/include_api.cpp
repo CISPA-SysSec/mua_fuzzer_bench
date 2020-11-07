@@ -9,6 +9,31 @@
 #include "../public/include_api.h"
 #include "includes.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void signal_triggered_mutation() {
-    cout << "Triggered!";
+    const char* triggeredFilePath = getenv("TRIGGERED_FILE");
+    const char* triggeredOutput = getenv("TRIGGERED_OUTPUT");
+    if (triggeredFilePath) {
+        FILE* triggeredFile = fopen(triggeredFilePath, "w");
+        if (triggeredFile) {
+            if (triggeredOutput) {
+                fputs(triggeredOutput, triggeredFile);
+                fputs("\n", triggeredFile);
+            } else {
+                fputs("Triggered!\n", triggeredFile);
+            }
+        }
+    }
+    if (triggeredOutput) {
+        printf("%s\n", triggeredOutput);
+    } else {
+        printf("Triggered!\n");
+    }
 }
+
+#ifdef __cplusplus
+}
+#endif

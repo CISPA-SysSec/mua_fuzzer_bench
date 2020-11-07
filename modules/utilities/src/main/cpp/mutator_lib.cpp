@@ -110,5 +110,15 @@ bool mutatePattern(
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         }
     }
+    if (mutated) {
+        auto args = std::vector<Value*>();
+        auto signalFunction = M.getFunction("signal_triggered_mutation");
+        builder->CreateCall(signalFunction, args);
+    }
     return mutated;
+}
+
+void insertMutationApiFunctions(Module& M) {
+    LLVMContext &llvmContext = M.getContext();
+    M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext));
 }

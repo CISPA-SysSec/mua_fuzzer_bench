@@ -5,8 +5,7 @@
 #ifndef LLVM_MUTATION_TOOL_INCLUDES_H
 #define LLVM_MUTATION_TOOL_INCLUDES_H
 
-#include <iostream>
-
-using namespace std;
+#include <stdlib.h>
+#include <stdio.h>
 
 #endif //LLVM_MUTATION_TOOL_INCLUDES_H
