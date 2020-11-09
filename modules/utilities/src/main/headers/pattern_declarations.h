@@ -138,6 +138,33 @@ public:
     ) override;
 };
 
+class SignedToUnsigned: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+
+class UnsignedToSigned: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
 // Misc types of instruction patterns
 class FreeArgumentReturnPattern: public Pattern{
 public:
@@ -185,6 +212,20 @@ private:
     */
     static bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder);
     bool foundAtomicRMW = false;
+};
+
+
+class ShiftSwitch: public Pattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
 };
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H

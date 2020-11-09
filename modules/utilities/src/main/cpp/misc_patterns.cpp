@@ -196,6 +196,49 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
             instr->getOperand(1)
     );
     instr->replaceAllUsesWith(newinst);
-    instr->removeFromParent();
+//    instr->removeFromParent();
     return true;
+}
+
+
+std::vector<std::string> ShiftSwitch::find(const Instruction *instr) {
+    std::vector<std::string> results;
+    if (dyn_cast<LShrOperator>(instr) || dyn_cast<LShrOperator>(instr)) {
+        results.push_back(getIdentifierString(instr, SWITCH_SHIFT));
+    }
+    return results;
+}
+
+
+/**
+ * Replaces an arithmetic shift with a logical shift and vice versa.
+ */
+bool ShiftSwitch::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    if (isMutationLocation(instr, seglist, SWITCH_SHIFT)) {
+        if (auto castedlshr = dyn_cast<LShrOperator>(instr)) {
+            builderMutex.lock();
+            auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
+            instr->replaceAllUsesWith(ashr);
+//            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        } else {
+            if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
+                builderMutex.lock();
+                auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
+                instr->replaceAllUsesWith(lshr);
+//                instr->removeFromParent();
+                builderMutex.unlock();
+                return true;
+            }
+        }
+    }
+    return false;
 }

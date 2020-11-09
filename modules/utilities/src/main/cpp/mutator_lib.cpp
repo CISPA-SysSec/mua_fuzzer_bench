@@ -23,6 +23,8 @@ void populateCallInstMutators(){
 void populateICmpInstMutators(){
     ICmpInstMutators.push_back(std::make_unique <GreaterThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <LessThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedToUnsigned>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedToSigned>());
 }
 
 // Add new MiscInstMutator objects here as you add them.
@@ -30,6 +32,7 @@ void populateMiscInstMutators(){
     MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPattern>());
     MiscInstMutators.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
+    MiscInstMutators.push_back(std::make_unique <ShiftSwitch>());
 }
 
 // Global function to call all the vector populators
