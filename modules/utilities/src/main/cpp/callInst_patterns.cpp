@@ -126,9 +126,48 @@ bool PThreadPattern::mutate(
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
         // then we can remove the instruction from the parent
+        // TODO fix and re-enable (issue #8)
 //        instr->removeFromParent();
         builderMutex.unlock();
         return true;
+    }
+    return false;
+}
+
+
+std::vector<std::string> CallocPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getfunNameString(instr);
+    if (funNameString.find("calloc") != std::string::npos) {
+        results.push_back(getIdentifierString(instr, CALLOC));
+    }
+    return results;
+}
+
+/**
+ * On calloc it allocates one byte less memory.
+ */
+bool CallocPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callinst = dyn_cast<CallInst>(instr);
+    auto funNameString = callinst->getCalledFunction()->getName();
+    if (funNameString.find("calloc") != std::string::npos) {
+        if (isMutationLocation(instr, seglist, CALLOC)) {
+            // substract 1 and give the new value to malloc
+            Value* lhs;
+            lhs = callinst->getArgOperand(1);
+            builderMutex.lock();
+            auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
+            builderMutex.unlock();
+            callinst->setOperand(1, newVal);
+            return true;
+        }
     }
     return false;
 }

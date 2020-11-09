@@ -84,6 +84,19 @@ public:
     ) override;
 };
 
+class CallocPattern: public CallInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
 class FGetsPattern: public CallInstPattern{
 public:
     std::vector<std::string> find(const Instruction *instr) override;

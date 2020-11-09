@@ -18,5 +18,6 @@
 #define SIGNED_TO_UNSIGNED 10 // convert a signed comparison to an unsigned one
 #define UNSIGNED_TO_SIGNED 11 // convert an unsigned comparison to a signed one
 #define SWITCH_SHIFT 12 // switch shift from logical to arithmetic or vice versa
+#define CALLOC 13
 
 #endif //LLVM_MUTATION_TOOL_MUTATIONS_H

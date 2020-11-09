@@ -196,6 +196,7 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
             instr->getOperand(1)
     );
     instr->replaceAllUsesWith(newinst);
+    // TODO fix and re-enable (issue #8)
 //    instr->removeFromParent();
     return true;
 }
@@ -226,6 +227,7 @@ bool ShiftSwitch::mutate(
             builderMutex.lock();
             auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
             instr->replaceAllUsesWith(ashr);
+            // TODO fix and re-enable (issue #8)
 //            instr->removeFromParent();
             builderMutex.unlock();
             return true;
@@ -234,6 +236,7 @@ bool ShiftSwitch::mutate(
                 builderMutex.lock();
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
                 instr->replaceAllUsesWith(lshr);
+                // TODO fix and re-enable (issue #8)
 //                instr->removeFromParent();
                 builderMutex.unlock();
                 return true;

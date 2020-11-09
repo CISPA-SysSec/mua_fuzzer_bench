@@ -19,6 +19,7 @@ std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <PThreadPattern>());
     CallInstPatterns.push_back(std::make_unique <MallocPattern>());
+    CallInstPatterns.push_back(std::make_unique <CallocPattern>());
     CallInstPatterns.push_back(std::make_unique <FGetsPattern>());
 }
 

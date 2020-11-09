@@ -16,6 +16,7 @@ std::vector<std::unique_ptr<Pattern>> MiscInstMutators;
 void populateCallInstMutators(){
     CallInstMutators.push_back(std::make_unique <PThreadPattern>());
     CallInstMutators.push_back(std::make_unique <MallocPattern>());
+    CallInstMutators.push_back(std::make_unique <CallocPattern>());
     CallInstMutators.push_back(std::make_unique <FGetsPattern>());
 }
 
