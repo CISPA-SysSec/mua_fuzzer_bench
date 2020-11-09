@@ -95,7 +95,9 @@ std::vector<std::string> PThreadPattern::find (const Instruction *instr) {
         || funNameString.find("pthread_mutex_unlock") != std::string::npos)
     ) {
         pthreadFoundFunctions.insert(funNameStdString);
-        results.push_back(getIdentifierString(instr, PTHREAD_MUTEX, funNameStdString));
+        json j;
+        j["funname"] = funNameStdString;
+        results.push_back(getIdentifierString(instr, PTHREAD_MUTEX, j));
     }
     return results;
 }
@@ -118,7 +120,7 @@ bool PThreadPattern::mutate(
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == PTHREAD_MUTEX
-        && surroundingFunction == segref["additionalInfo"]["extra_arg"]
+        && surroundingFunction == segref["additionalInfo"]["funname"]
         && (funNameString.find("pthread_mutex_lock") != std::string::npos
             || funNameString.find("pthread_mutex_unlock") != std::string::npos)
             ){

@@ -46,7 +46,12 @@ void populatePatternVectors(){
     populateMiscInstPatterns();
 }
 
-std::string Pattern::getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo){
+std::string Pattern::getIdentifierString(const Instruction *instr, int type){
+    json j;
+    return getIdentifierString(instr, type, j);
+}
+
+std::string Pattern::getIdentifierString(const Instruction *instr, int type, json& additionalInfo){
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
@@ -59,7 +64,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, con
         j["line"] = line;
         j["column"] = column;
         j["type"] = type;
-        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
+        j["additionalInfo"] = additionalInfo;
         return j.dump(4);
     } else {
         json j;
@@ -68,7 +73,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, con
         j["line"] = 0;
         j["column"] = 0;
         j["type"] = type;
-        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
+        j["additionalInfo"] = additionalInfo;
         return j.dump(4);
     }
 }

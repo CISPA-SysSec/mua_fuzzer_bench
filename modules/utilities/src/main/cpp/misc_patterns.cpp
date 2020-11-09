@@ -8,7 +8,9 @@ std::vector<std::string> FreeArgumentReturnPattern::find(const Instruction *inst
         const Function *outerFunction = returnInst->getFunction();
         for (auto op = outerFunction->arg_begin(); op != outerFunction->arg_end(); op++) {
             if (op->getType()->isPointerTy()) {
-                results.push_back(getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, std::to_string(op->getArgNo())));
+                json j;
+                j["argnumber"] = op->getArgNo();
+                results.push_back(getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, j));
             }
         }
     }
@@ -33,8 +35,8 @@ bool FreeArgumentReturnPattern::mutate(
             builderMutex.lock();
             LLVMContext &llvmContext = M.getContext();
             // first bitcast to i8* as this is the type free expects
-            std::string extra_arg = segref["additionalInfo"]["extra_arg"];
-            auto funArg = returnInst->getFunction()->getArg(std::stoi(extra_arg));
+            int extra_arg = segref["additionalInfo"]["argnumber"];
+            auto funArg = returnInst->getFunction()->getArg(extra_arg);
             auto bitcasted = builder->CreateBitCast(funArg, Type::getInt8PtrTy(llvmContext));
             auto args = std::vector<Value*>();
             args.push_back(bitcasted);
@@ -60,7 +62,9 @@ std::vector<std::string> CMPXCHGPattern::find(const Instruction *instr) {
     // the classes CMPXCHGPattern and PThreadPattern. Move it accordingly.
     if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
         if (dyn_cast<AtomicCmpXchgInst>(instr)) {
-            results.push_back(getIdentifierString(instr, ATOMIC_CMP_XCHG, funNameStdString));
+            json j;
+            j["funname"] = funNameStdString;
+            results.push_back(getIdentifierString(instr, ATOMIC_CMP_XCHG, j));
         }
     }
     return results;
@@ -82,7 +86,7 @@ bool CMPXCHGPattern::mutate(
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == ATOMIC_CMP_XCHG
-        && surroundingFunction == segref["additionalInfo"]["extra_arg"]
+        && surroundingFunction == segref["additionalInfo"]["funname"]
         && dyn_cast<AtomicCmpXchgInst>(instr))
     {
         builderMutex.lock();

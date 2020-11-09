@@ -46,7 +46,8 @@ protected:
     static bool isMutationLocation(Instruction* instr, json *seglist, int type);
     static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 
-    static std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
+    static std::string getIdentifierString(const Instruction *instr, int type);
+    static std::string getIdentifierString(const Instruction *instr, int type, json& additionalInfo);
 };
 
 // Abstract base classes for CallInst types of instruction patterns
