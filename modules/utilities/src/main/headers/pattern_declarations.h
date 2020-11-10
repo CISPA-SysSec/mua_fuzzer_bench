@@ -17,6 +17,7 @@
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <set>
+#include <iostream>
 #include <../dependencies/json.hpp>
 
 using json = nlohmann::json;
@@ -46,7 +47,10 @@ protected:
     static bool isMutationLocation(Instruction* instr, json *seglist, int type);
     static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 
-    static std::string getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo="");
+    static std::string getIdentifierString(const Instruction *instr, int type);
+    static std::string getIdentifierString(const Instruction *instr, int type, json& additionalInfo);
+
+    static void addMutationFoundSignal(IRBuilder<>* builder, Module& M);
 };
 
 // Abstract base classes for CallInst types of instruction patterns
@@ -72,6 +76,19 @@ protected:
 
 // CallInst types of instruction patterns
 class MallocPattern: public CallInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+class CallocPattern: public CallInstPattern{
 public:
     std::vector<std::string> find(const Instruction *instr) override;
     bool mutate (
@@ -138,6 +155,33 @@ public:
     ) override;
 };
 
+class SignedToUnsigned: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+
+class UnsignedToSigned: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
 // Misc types of instruction patterns
 class FreeArgumentReturnPattern: public Pattern{
 public:
@@ -183,8 +227,38 @@ private:
     * TODO: some versions of atomic instructions are not yet implemented
     * Takes the given atomic instruction and replaces it with its non-atomic counterpart.
     */
-    static bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder);
+    static bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder, Module& M);
     bool foundAtomicRMW = false;
+};
+
+
+class ShiftSwitch: public Pattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+class UnInitLocalVariables: public Pattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+
+private:
+    std::set<StoreInst*> to_delete;
 };
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H
