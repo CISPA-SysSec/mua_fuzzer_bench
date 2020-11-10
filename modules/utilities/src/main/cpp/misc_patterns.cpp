@@ -200,8 +200,7 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
             instr->getOperand(1)
     );
     instr->replaceAllUsesWith(newinst);
-    // TODO fix and re-enable (issue #8)
-//    instr->removeFromParent();
+    instr->removeFromParent();
     return true;
 }
 
@@ -231,8 +230,7 @@ bool ShiftSwitch::mutate(
             builderMutex.lock();
             auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
             instr->replaceAllUsesWith(ashr);
-            // TODO fix and re-enable (issue #8)
-//            instr->removeFromParent();
+            instr->removeFromParent();
             builderMutex.unlock();
             return true;
         } else {
@@ -240,11 +238,66 @@ bool ShiftSwitch::mutate(
                 builderMutex.lock();
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
                 instr->replaceAllUsesWith(lshr);
-                // TODO fix and re-enable (issue #8)
-//                instr->removeFromParent();
+                instr->removeFromParent();
                 builderMutex.unlock();
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+
+std::vector<std::string> UnInitLocalVariables::find(const Instruction *instr) {
+    std::vector<std::string> results;
+    if (dyn_cast<AllocaInst>(instr)) {
+        json j;
+        auto surroundingFunction = instr->getFunction()->getName().str();
+        j["funname"] = surroundingFunction;
+        std::string instructionString;
+        llvm::raw_string_ostream os(instructionString);
+        instr->print(os);
+        j["instr"] = os.str();
+        results.push_back(getIdentifierString(instr, DELETE_LOCAL_STORE, j));
+    }
+    return results;
+}
+
+
+/**
+ * Replaces all stores on a local variable in one function.
+ */
+bool UnInitLocalVariables::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto segref = *seglist;
+    auto surroundingFunction = instr->getFunction()->getName().str();
+    if (segref["additionalInfo"]["funname"] == surroundingFunction) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
+        // get the concrete value to delete by checkin if the instruction string matches and then saving the value
+        std::string instructionString;
+        llvm::raw_string_ostream os(instructionString);
+        instr->print(os);
+        if (segref["additionalInfo"]["instr"] == os.str()) {
+            for(auto user : instr->users()){  // U is of type User*
+                if (auto instrUser = dyn_cast<StoreInst>(user)){
+                    std::string strin;
+                    llvm::raw_string_ostream oss(strin);
+                    user->print(oss);
+                    to_delete.insert(instrUser);
+                }
+            }
+            return false;
+        }
+        auto store = dyn_cast<StoreInst>(instr);
+        // if the operand of the store operation matches the local variable, we delete the store operation
+        if (store && to_delete.find(store) != to_delete.end()) {
+            store->removeFromParent();
+            return true;
         }
     }
     return false;

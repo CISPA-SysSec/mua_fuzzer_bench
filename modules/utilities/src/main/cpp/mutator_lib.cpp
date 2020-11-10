@@ -34,6 +34,7 @@ void populateMiscInstMutators(){
     MiscInstMutators.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
     MiscInstMutators.push_back(std::make_unique <ShiftSwitch>());
+    MiscInstMutators.push_back(std::make_unique <UnInitLocalVariables>());
 }
 
 // Global function to call all the vector populators
@@ -115,9 +116,10 @@ bool mutatePattern(
         }
     }
     if (mutated) {
-        auto args = std::vector<Value*>();
-        auto signalFunction = M.getFunction("signal_triggered_mutation");
-        builder->CreateCall(signalFunction, args);
+        // TODO enable again issue #8
+//        auto args = std::vector<Value*>();
+//        auto signalFunction = M.getFunction("signal_triggered_mutation");
+//        builder->CreateCall(signalFunction, args);
     }
     return mutated;
 }

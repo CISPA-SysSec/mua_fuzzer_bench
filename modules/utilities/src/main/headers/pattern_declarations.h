@@ -17,6 +17,7 @@
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <set>
+#include <iostream>
 #include <../dependencies/json.hpp>
 
 using json = nlohmann::json;
@@ -240,6 +241,22 @@ public:
             json *seglist,
             Module& M
     ) override;
+};
+
+class UnInitLocalVariables: public Pattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+
+private:
+    std::set<StoreInst*> to_delete;
 };
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H

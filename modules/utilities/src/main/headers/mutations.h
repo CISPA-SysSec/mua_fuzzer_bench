@@ -19,5 +19,6 @@
 #define UNSIGNED_TO_SIGNED 11 // convert an unsigned comparison to a signed one
 #define SWITCH_SHIFT 12 // switch shift from logical to arithmetic or vice versa
 #define CALLOC 13
+#define DELETE_LOCAL_STORE 13 // collect local variables and then remove all stores on them in the function
 
 #endif //LLVM_MUTATION_TOOL_MUTATIONS_H

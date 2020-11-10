@@ -128,8 +128,7 @@ bool PThreadPattern::mutate(
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
         // then we can remove the instruction from the parent
-        // TODO fix and re-enable (issue #8)
-//        instr->removeFromParent();
+        instr->removeFromParent();
         builderMutex.unlock();
         return true;
     }
