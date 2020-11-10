@@ -33,6 +33,7 @@ bool FreeArgumentReturnPattern::mutate(
         if (isMutationLocation(instr, seglist, FREE_FUNCTION_ARGUMENT)) {
 
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             LLVMContext &llvmContext = M.getContext();
             // first bitcast to i8* as this is the type free expects
             int extra_arg = segref["additionalInfo"]["argnumber"];
@@ -92,6 +93,7 @@ bool CMPXCHGPattern::mutate(
         builderMutex.lock();
         // we leave the atomicxchg in but always return 1, hence we emulate an always successful exchange
 //        auto returnVal = instr->getOperand(0);
+        addMutationFoundSignal(nextInstructionBuilder, M);
         nextInstructionBuilder->CreateInsertValue(instr, builder->getIntN(1, 1), (uint64_t) 1);
         builderMutex.unlock();
         return true;
@@ -130,7 +132,7 @@ bool ATOMICRMWPattern::mutate(
     {
         builderMutex.lock();
         // we replace the atomicrmw with its non-atomic counterpart
-        auto mutated = convertAtomicBinOpToBinOp(rmw, nextInstructionBuilder);
+        auto mutated = convertAtomicBinOpToBinOp(rmw, nextInstructionBuilder, M);
         builderMutex.unlock();
         return mutated;
     }
@@ -141,7 +143,7 @@ bool ATOMICRMWPattern::mutate(
  * TODO some versions of atomic instructions are not yet implemented
  * Takes the given atomic instruction and replaces it with its non-atomic counterpart.
  */
-bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder) {
+bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder, Module& M) {
     auto operation = instr->getOperation();
     Instruction::BinaryOps operand = llvm::Instruction::BinaryOpsBegin;
     switch (operation) {
@@ -199,6 +201,7 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
             loadResult,
             instr->getOperand(1)
     );
+    addMutationFoundSignal(nextInstructionBuilder, M);
     instr->replaceAllUsesWith(newinst);
     instr->removeFromParent();
     return true;
@@ -228,6 +231,7 @@ bool ShiftSwitch::mutate(
     if (isMutationLocation(instr, seglist, SWITCH_SHIFT)) {
         if (auto castedlshr = dyn_cast<LShrOperator>(instr)) {
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
             instr->replaceAllUsesWith(ashr);
             instr->removeFromParent();
@@ -236,6 +240,7 @@ bool ShiftSwitch::mutate(
         } else {
             if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
                 builderMutex.lock();
+                addMutationFoundSignal(builder, M);
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
                 instr->replaceAllUsesWith(lshr);
                 instr->removeFromParent();
@@ -296,7 +301,10 @@ bool UnInitLocalVariables::mutate(
         auto store = dyn_cast<StoreInst>(instr);
         // if the operand of the store operation matches the local variable, we delete the store operation
         if (store && to_delete.find(store) != to_delete.end()) {
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             store->removeFromParent();
+            builderMutex.unlock();
             return true;
         }
     }

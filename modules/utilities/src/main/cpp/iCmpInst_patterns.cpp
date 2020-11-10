@@ -43,6 +43,7 @@ bool LessThanEqualToPattern::mutate(
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
@@ -84,6 +85,7 @@ bool GreaterThanPattern::mutate(
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
@@ -124,6 +126,9 @@ bool SignedToUnsigned::mutate(
         std::vector<int> typelist {SIGNED_TO_UNSIGNED};
         if (isMutationLocation(instr, seglist, &typelist)) {
             // change from signed to unsigned
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_SGT) {
                 builderMutex.lock();
                 icmpinst->setPredicate(CmpInst::Predicate::ICMP_UGT);
@@ -181,6 +186,9 @@ bool UnsignedToSigned::mutate(
         std::vector<int> typelist {UNSIGNED_TO_SIGNED};
         if (isMutationLocation(instr, seglist, &typelist)) {
             // change from signed to unsigned
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_UGT) {
                 builderMutex.lock();
                 icmpinst->setPredicate(CmpInst::Predicate::ICMP_SGT);

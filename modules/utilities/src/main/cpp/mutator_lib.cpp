@@ -81,6 +81,18 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
 }
 
 /**
+ * A helper function that should be called whenever a mutation is done to signal that the mutation was triggered during
+ * runtime.
+ * @param builder
+ * @param M
+ */
+void Pattern::addMutationFoundSignal(IRBuilder<> *builder, Module& M) {
+        auto args = std::vector<Value*>();
+        auto signalFunction = M.getFunction("signal_triggered_mutation");
+        builder->CreateCall(signalFunction, args);
+}
+
+/**
      * Mutate the given function call if a mutation pattern exists for the function.
      * @param builder the builder to add instruction in front of the call
      * @param nextInstructionBuilder the builder to add instructions after the call
@@ -114,12 +126,6 @@ bool mutatePattern(
         for (auto &mutator : MiscInstMutators){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         }
-    }
-    if (mutated) {
-        // TODO enable again issue #8
-//        auto args = std::vector<Value*>();
-//        auto signalFunction = M.getFunction("signal_triggered_mutation");
-//        builder->CreateCall(signalFunction, args);
     }
     return mutated;
 }

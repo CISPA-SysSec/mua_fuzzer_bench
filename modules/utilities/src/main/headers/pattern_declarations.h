@@ -49,6 +49,8 @@ protected:
 
     static std::string getIdentifierString(const Instruction *instr, int type);
     static std::string getIdentifierString(const Instruction *instr, int type, json& additionalInfo);
+
+    static void addMutationFoundSignal(IRBuilder<>* builder, Module& M);
 };
 
 // Abstract base classes for CallInst types of instruction patterns
@@ -225,7 +227,7 @@ private:
     * TODO: some versions of atomic instructions are not yet implemented
     * Takes the given atomic instruction and replaces it with its non-atomic counterpart.
     */
-    static bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder);
+    static bool convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder, Module& M);
     bool foundAtomicRMW = false;
 };
 

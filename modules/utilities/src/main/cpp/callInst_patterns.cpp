@@ -37,6 +37,7 @@ bool MallocPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(0);
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
             builderMutex.unlock();
             callinst->setOperand(0, newVal);
@@ -76,6 +77,7 @@ bool FGetsPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(1));
             newVal = builder->CreateMul(newVal, builder->getInt64(5));
             builderMutex.unlock();
@@ -125,6 +127,7 @@ bool PThreadPattern::mutate(
             || funNameString.find("pthread_mutex_unlock") != std::string::npos)
             ){
         builderMutex.lock();
+        addMutationFoundSignal(builder, M);
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
         // then we can remove the instruction from the parent
@@ -164,6 +167,7 @@ bool CallocPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
             builderMutex.unlock();
             callinst->setOperand(1, newVal);
