@@ -5,6 +5,7 @@ import subprocess
 import csv
 import sqlite3
 import traceback
+import datetime
 import signal
 import concurrent.futures
 from pathlib import Path
@@ -12,13 +13,13 @@ from pathlib import Path
 import docker
 
 # If container logs should be shown
-SHOW_CONTAINER_LOGS = False
+SHOW_CONTAINER_LOGS = True
 
 # Timeout for the fuzzers in seconds
-TIMEOUT = 60 * 60 * 4
+TIMEOUT = 120 # 60 * 60
 
 # Time interval in which to check the results of a fuzzer
-CHECK_INTERVAL = 5
+CHECK_INTERVAL = 1
 
 # The path where eval data is stored outside of the docker container
 HOST_TMP_PATH = Path(".").resolve()/"tmp/"
@@ -40,7 +41,7 @@ def sigint_handler(signum, frame):
 
 # Eval function for the afl plus plus fuzzer, compiles the mutated program
 # and fuzzes it. Finally the plot data is returned
-def aflpp_eval(workdir, prog_bc, args, core_to_use):
+def aflpp_eval(workdir, prog_bc, compile_args, args, seeds, core_to_use):
     global should_run
     # get access to the docker client to start the container
     docker_client = docker.from_env()
@@ -50,7 +51,7 @@ def aflpp_eval(workdir, prog_bc, args, core_to_use):
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_aflpp", # the image
-        ["/home/eval/start_aflpp.sh", str(prog_bc), str(args)], # the argumetns
+        ["/home/eval/start_aflpp.sh", str(compile_args), str(prog_bc), str(seeds), str(args)], # the arguments
         init=True,
         cpuset_cpus=str(core_to_use),
         ipc_mode="host",
@@ -59,15 +60,20 @@ def aflpp_eval(workdir, prog_bc, args, core_to_use):
         working_dir=str(workdir),
         detach=True)
 
-    if SHOW_CONTAINER_LOGS:
-        logs = container.logs(stream=True)
+    last_logs = datetime.datetime.now()
+    all_logs = container.logs(until=last_logs)
 
     start_time = time.time()
     while time.time() < start_time + TIMEOUT and should_run:
         # Print the next lines outputted by the container
+        now_logs = datetime.datetime.now()
+        new_logs = container.logs(since=last_logs, until=now_logs)
+        all_logs += new_logs
+        last_logs = now_logs
         if SHOW_CONTAINER_LOGS:
-            for output in logs:
-                print(output)
+            if new_logs:
+                print(new_logs)
+
         # check if the process stopped, this should only happen in an error case
         container.reload()
         if container.status not in ["running", "created"]:
@@ -83,16 +89,22 @@ def aflpp_eval(workdir, prog_bc, args, core_to_use):
         # Send sigint to the process
         container.kill(2)
 
+        new_logs = container.logs(since=last_logs)
+        all_logs += new_logs
+
         # Wait up to 10 seconds then send sigkill
         container.stop()
 
+    print(all_logs)
+
     # Get the final stats and report them
-    with open(workdir/"output"/"plot_data") as csvfile:
+    with open(workdir/"output"/"default"/"plot_data") as csvfile:
         plot_data = list(csv.DictReader(csvfile))[:-1]
+        plot_data = [plot_data[-1]]  # only get last row, to reduce memory usage
     
     # Also collect all crashing outputs
     crashing_inputs = []
-    for path in (workdir/"output"/"crashes").iterdir():
+    for path in (workdir/"output"/"default"/"crashes").iterdir():
         if path.is_file():
             crashing_inputs.append((str(path), path.read_bytes()))
         
@@ -114,11 +126,58 @@ FUZZERS = {
 
 # The programs that can be evaluated
 PROGRAMS = {
-    "objdump": {
-        "path": "binutil/binutil/",
-        "args": "--dwarf-check -C -g -f -dwarf -x @@",
+    # "objdump": {
+    #     "include": "",
+    #     "path": "binutil/binutil/",
+    #     "args": "--dwarf-check -C -g -f -dwarf -x @@",
+    # },
+    # "re2": {
+    #     "compile_args": [
+    #         # {'val': "-v", 'action': None},
+    #         # {'val': "-static", 'action': None},
+    #         # {'val': "-std=c++11", 'action': None},
+    #         {'val': "-lpthread", 'action': None},
+    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
+    #         {'val': "-I", 'action': None},
+    #         {'val': "samples/re2-code/", 'action': "prefix_workdir"},
+    #         # {'val': "-lc++", 'action': None},
+    #         # {'val': "-lstdc++", 'action': None},
+    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
+    #     ],
+    #     "path": "samples/re2/",
+    #     "args": "@@",
+    # },
+    "guetzli": {
+        "compile_args": [
+            # {'val': "-v", 'action': None},
+            # {'val': "-static", 'action': None},
+            # {'val': "-std=c++11", 'action': None},
+            # {'val': "-lpthread", 'action': None},
+            # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
+            # {'val': "-I", 'action': None},
+            # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
+            # {'val': "-lc++", 'action': None},
+            # {'val': "-lstdc++", 'action': None},
+            # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
+            # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
+        ],
+        "path": "samples/guetzli/",
+        "seeds": "samples/guetzli_harness/seeds/",
+        "args": "@@",
     },
 }
+
+def build_compile_args(args, workdir):
+    res = ""
+    for arg in args:
+        if arg['action'] is None:
+            res += arg['val'] + " "
+        elif arg['action'] == 'prefix_workdir':
+            res += str(Path(workdir)/arg['val']) + " "
+        else:
+            raise ValueError("Unknown action: {}", arg)
+    return res
+
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
@@ -140,12 +199,16 @@ def get_next_run(stats):
                 # Get the bc file that should be fuzzed (and probably
                 # instrumented).
                 prog_bc = IN_DOCKER_WORKDIR/mutation.relative_to(HOST_TMP_PATH)
+                # Get the path to the file that should be included during compilation
+                compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
                 # Arguments on how to execute the binary
                 args = prog_info['args']
+                # Prepare seeds
+                seeds = IN_DOCKER_WORKDIR/Path(prog_info['seeds'])
                 # Add that run to the database, so that we know it is possible
                 stats.new_run(fuzzer, prog, mutation_id)
                 # Build our list of runs
-                all_runs.append((eval_func, workdir, prog_bc, args, prog, mutation_id))
+                all_runs.append((eval_func, workdir, prog_bc, compile_args, args, prog, seeds, mutation_id))
 
     # Yield the individual eval runs
     for run in all_runs:
@@ -167,11 +230,12 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         except Exception as exc:
             # if there was an exception print it
             print('='*50,
-                '\n%r generated an exception: %s' %
+                '\n%r generated an exception: %s\n' %
                     (data['prog_bc'], exc), # traceback.format_exc()
                 '='*50)
         else:
             # if successful log the run
+            print("success")
             stats.new_aflpp_run(plot_data, data['prog'], data['mutation_id'])
             stats.new_crashing_inputs(crashing_inputs, data['prog'], data['mutation_id'])
         # Set the core for this run to unused
@@ -216,11 +280,11 @@ def main():
             # Set the core as used
             cores_in_use[used_core] = True
             # Unpack the run_data
-            eval_func, workdir, prog_bc, args, prog, mutation_id = run_data
+            eval_func, workdir, prog_bc, compile_args, args, prog, seeds, mutation_id = run_data
             # Add the run to the executor, this starts execution of the eval
             # function. Also associate some information with that run, this
             # is later used to record needed information.
-            runs[executor.submit(eval_func, workdir, prog_bc, args, used_core)] = {
+            runs[executor.submit(eval_func, workdir, prog_bc, compile_args, args, seeds, used_core)] = {
                 "prog_bc": prog_bc, "prog": prog, "mutation_id": mutation_id,
                 "used_core": used_core
             }
