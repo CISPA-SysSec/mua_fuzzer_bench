@@ -138,3 +138,10 @@ RUN gclang++ -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Rele
 WORKDIR /home/mutator
 
 RUN ./run_mutation.py -p samples/guetzli/fuzz_target.bc -bc
+
+################################################################################
+# other stuff
+
+# ENV TRIGGERED_FILE some/file/to/report/mutation/trigger
+# ENV TRIGGERED_OUTPUT "Some output that indicates mutation triggering. Can be left blank."
+# RUN ./run_mutation.py -p samples/re2/libre2.so.bc -bc > mutationlog.txt 2>&1

@@ -19,6 +19,7 @@ std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <PThreadPattern>());
     CallInstPatterns.push_back(std::make_unique <MallocPattern>());
+    CallInstPatterns.push_back(std::make_unique <CallocPattern>());
     CallInstPatterns.push_back(std::make_unique <FGetsPattern>());
 }
 
@@ -26,6 +27,8 @@ void populateCallInstPatterns(){
 void populateICmpInstPatterns(){
     ICmpInstPatterns.push_back(std::make_unique <GreaterThanPattern>());
     ICmpInstPatterns.push_back(std::make_unique <LessThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedToUnsigned>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedToSigned>());
 }
 
 // Add new MiscInstPattern objects here as you add them.
@@ -33,6 +36,8 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <FreeArgumentReturnPattern>());
     MiscInstPatterns.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstPatterns.push_back(std::make_unique <ATOMICRMWPattern>());
+    MiscInstPatterns.push_back(std::make_unique <ShiftSwitch>());
+    MiscInstPatterns.push_back(std::make_unique <UnInitLocalVariables>());
 }
 
 // Global function to call all the vector populators
@@ -42,7 +47,12 @@ void populatePatternVectors(){
     populateMiscInstPatterns();
 }
 
-std::string Pattern::getIdentifierString(const Instruction *instr, int type, const std::string& additionalInfo){
+std::string Pattern::getIdentifierString(const Instruction *instr, int type){
+    json j;
+    return getIdentifierString(instr, type, j);
+}
+
+std::string Pattern::getIdentifierString(const Instruction *instr, int type, json& additionalInfo){
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
@@ -55,7 +65,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, con
         j["line"] = line;
         j["column"] = column;
         j["type"] = type;
-        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
+        j["additionalInfo"] = additionalInfo;
         return j.dump(4);
     } else {
         json j;
@@ -64,7 +74,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, con
         j["line"] = 0;
         j["column"] = 0;
         j["type"] = type;
-        j["additionalInfo"] = { {"extra_arg", additionalInfo} };
+        j["additionalInfo"] = additionalInfo;
         return j.dump(4);
     }
 }

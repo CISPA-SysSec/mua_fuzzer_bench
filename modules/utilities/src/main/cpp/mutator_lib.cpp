@@ -16,6 +16,7 @@ std::vector<std::unique_ptr<Pattern>> MiscInstMutators;
 void populateCallInstMutators(){
     CallInstMutators.push_back(std::make_unique <PThreadPattern>());
     CallInstMutators.push_back(std::make_unique <MallocPattern>());
+    CallInstMutators.push_back(std::make_unique <CallocPattern>());
     CallInstMutators.push_back(std::make_unique <FGetsPattern>());
 }
 
@@ -23,6 +24,8 @@ void populateCallInstMutators(){
 void populateICmpInstMutators(){
     ICmpInstMutators.push_back(std::make_unique <GreaterThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <LessThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedToUnsigned>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedToSigned>());
 }
 
 // Add new MiscInstMutator objects here as you add them.
@@ -30,6 +33,8 @@ void populateMiscInstMutators(){
     MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPattern>());
     MiscInstMutators.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
+    MiscInstMutators.push_back(std::make_unique <ShiftSwitch>());
+    MiscInstMutators.push_back(std::make_unique <UnInitLocalVariables>());
 }
 
 // Global function to call all the vector populators
@@ -76,6 +81,18 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
 }
 
 /**
+ * A helper function that should be called whenever a mutation is done to signal that the mutation was triggered during
+ * runtime.
+ * @param builder
+ * @param M
+ */
+void Pattern::addMutationFoundSignal(IRBuilder<> *builder, Module& M) {
+        auto args = std::vector<Value*>();
+        auto signalFunction = M.getFunction("signal_triggered_mutation");
+        builder->CreateCall(signalFunction, args);
+}
+
+/**
      * Mutate the given function call if a mutation pattern exists for the function.
      * @param builder the builder to add instruction in front of the call
      * @param nextInstructionBuilder the builder to add instructions after the call
@@ -111,4 +128,9 @@ bool mutatePattern(
         }
     }
     return mutated;
+}
+
+void insertMutationApiFunctions(Module& M) {
+    LLVMContext &llvmContext = M.getContext();
+    M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext));
 }

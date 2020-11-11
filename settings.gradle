@@ -10,5 +10,6 @@ def includeProject = { String projectDirName, String projectName ->
 includeProject 'modules', 'mutationfinder'
 includeProject 'modules', 'mutator'
 includeProject 'modules', 'utilities'
+includeProject 'modules', 'dynamiclibrary'
 
 rootProject.name = 'LLVM_Mutation_Tool'

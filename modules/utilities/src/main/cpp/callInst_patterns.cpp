@@ -37,6 +37,7 @@ bool MallocPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(0);
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
             builderMutex.unlock();
             callinst->setOperand(0, newVal);
@@ -76,6 +77,7 @@ bool FGetsPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
+            addMutationFoundSignal(builder, M);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(1));
             newVal = builder->CreateMul(newVal, builder->getInt64(5));
             builderMutex.unlock();
@@ -95,7 +97,9 @@ std::vector<std::string> PThreadPattern::find (const Instruction *instr) {
         || funNameString.find("pthread_mutex_unlock") != std::string::npos)
     ) {
         pthreadFoundFunctions.insert(funNameStdString);
-        results.push_back(getIdentifierString(instr, PTHREAD_MUTEX, funNameStdString));
+        json j;
+        j["funname"] = funNameStdString;
+        results.push_back(getIdentifierString(instr, PTHREAD_MUTEX, j));
     }
     return results;
 }
@@ -118,17 +122,57 @@ bool PThreadPattern::mutate(
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == PTHREAD_MUTEX
-        && surroundingFunction == segref["additionalInfo"]["extra_arg"]
+        && surroundingFunction == segref["additionalInfo"]["funname"]
         && (funNameString.find("pthread_mutex_lock") != std::string::npos
             || funNameString.find("pthread_mutex_unlock") != std::string::npos)
             ){
         builderMutex.lock();
+        addMutationFoundSignal(builder, M);
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
         // then we can remove the instruction from the parent
         instr->removeFromParent();
         builderMutex.unlock();
         return true;
+    }
+    return false;
+}
+
+
+std::vector<std::string> CallocPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getfunNameString(instr);
+    if (funNameString.find("calloc") != std::string::npos) {
+        results.push_back(getIdentifierString(instr, CALLOC));
+    }
+    return results;
+}
+
+/**
+ * On calloc it allocates one byte less memory.
+ */
+bool CallocPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callinst = dyn_cast<CallInst>(instr);
+    auto funNameString = callinst->getCalledFunction()->getName();
+    if (funNameString.find("calloc") != std::string::npos) {
+        if (isMutationLocation(instr, seglist, CALLOC)) {
+            // substract 1 and give the new value to malloc
+            Value* lhs;
+            lhs = callinst->getArgOperand(1);
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
+            builderMutex.unlock();
+            callinst->setOperand(1, newVal);
+            return true;
+        }
     }
     return false;
 }

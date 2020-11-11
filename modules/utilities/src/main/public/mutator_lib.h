@@ -34,4 +34,6 @@ bool mutatePattern(
     Module& M
 );
 
+void insertMutationApiFunctions(Module& M);
+
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H
