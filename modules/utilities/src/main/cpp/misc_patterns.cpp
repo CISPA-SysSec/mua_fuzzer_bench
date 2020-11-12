@@ -281,8 +281,15 @@ bool UnInitLocalVariables::mutate(
         Module& M
 ) {
     auto segref = *seglist;
-    auto surroundingFunction = instr->getFunction()->getName().str();
-    if (segref["additionalInfo"]["funname"] == surroundingFunction) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
+    if (segref["type"] != DELETE_LOCAL_STORE) {
+        return false;
+    }
+    Function *pFunction = instr->getFunction();
+    if (!pFunction) {
+        return false;
+    }
+    auto surroundingFunction = pFunction->getName();
+    if (segref["additionalInfo"]["funname"] == surroundingFunction.str()) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
         // get the concrete value to delete by checkin if the instruction string matches and then saving the value
         std::string instructionString;
         llvm::raw_string_ostream os(instructionString);
@@ -300,12 +307,14 @@ bool UnInitLocalVariables::mutate(
         }
         auto store = dyn_cast<StoreInst>(instr);
         // if the operand of the store operation matches the local variable, we delete the store operation
-        if (store && to_delete.find(store) != to_delete.end()) {
-            builderMutex.lock();
-            addMutationFoundSignal(builder, M);
-            store->removeFromParent();
-            builderMutex.unlock();
-            return true;
+        if (store) {
+            if (to_delete.find(store) != to_delete.end()) {
+                builderMutex.lock();
+                addMutationFoundSignal(builder, M);
+                store->removeFromParent();
+                builderMutex.unlock();
+                return true;
+            }
         }
     }
     return false;
