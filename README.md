@@ -42,6 +42,7 @@ Explanation of optional arguments (at least one must be chosen, otherwise the ou
 -bc: Keeps the mutated bitcode files.
 -ll: Keeps the mutated bitcode files in human readable form.
 -bn: Generates runnable binaries if possible.
+-cpp: Uses clang++ for compilation instead of clang.
 ```
 
 ## Running Mutated Programs
