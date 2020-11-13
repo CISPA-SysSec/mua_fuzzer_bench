@@ -45,6 +45,8 @@ COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
+# on linux gradle looks for ar, so we need to link llvm-ar
+RUN ln /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/llvm-ar /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/ar
 RUN echo "llvmBinPath=/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/" > gradle.properties
 
 
@@ -137,7 +139,7 @@ RUN gclang++ -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Rele
 
 WORKDIR /home/mutator
 
-RUN ./run_mutation.py -p samples/guetzli/fuzz_target.bc -bc
+# RUN ./run_mutation.py -bc -cpp samples/guetzli/fuzz_target.bc
 
 ################################################################################
 # other stuff
