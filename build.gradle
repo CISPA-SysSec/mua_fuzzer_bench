@@ -35,7 +35,7 @@ task getAll() {
             from project('utilities').tasks.getByName('linkDebug')
             from project('mutationfinder').tasks.getByName('linkDebug')
             from project('mutator').tasks.getByName('linkDebug')
-            from project('dynamiclibrary').tasks.getByName('linkDebug')
+            from project('dynamiclibrary').tasks.getByName('createDebug')
             into 'build/install/LLVM_Mutation_Tool/lib/'
         }
     }

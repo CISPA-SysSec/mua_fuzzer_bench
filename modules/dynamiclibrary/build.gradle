@@ -30,5 +30,5 @@ model {
 }
 
 library {
-   linkage = [Linkage.SHARED]
+   linkage = [Linkage.STATIC]
 }
