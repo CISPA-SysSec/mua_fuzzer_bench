@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import os
+import argparse
 
 llvm_bindir = "@LLVM_BINDIR@"
 clang = f"{llvm_bindir}/clang"
@@ -29,8 +30,21 @@ def main():
 
 
 if __name__=="__main__":
-    if len(sys.argv) > 1:
-        progsource = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Mutator Script")
+    parser.add_argument('-bc', "--bitcode", action='store_true', help="Keeps the mutated bitcode files.")
+    parser.add_argument('-ll', "--bitcode_human_readable", action='store_true', help="Keeps the mutated bitcode files as human readable files.")
+    parser.add_argument('-bn', "--binary", action='store_true', help="Creates mutated runnable binaries.")
+    parser.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ instead of clang for compilation.")
+    parser.add_argument('-p', "--program", default="", type=str, required=True,
+                        help="Path to the source file that will be mutated. Use at least one of the arguments [-bc, -ll, -bn] to get "
+                             "resulting files.")
+    args = parser.parse_args(sys.argv[1:])
+
+    if args.cpp:
+        clang = f"{llvm_bindir}/clang++"
+
+    if args.program:
+        progsource = args.program
         sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
         main()
     else:

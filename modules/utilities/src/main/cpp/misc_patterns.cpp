@@ -56,13 +56,10 @@ bool FreeArgumentReturnPattern::mutate(
 
 std::vector<std::string> CMPXCHGPattern::find(const Instruction *instr) {
     std::vector<std::string> results;
-    // TODO: Does the next ling not need a check on the type of instruction? - abhilashgupta
-    const std::string &funNameStdString = instr->getFunction()->getName().str();
-    // TODO: Do we need to update the pthreadFoundFunctions after this check here? -abhilashgupta
-    // Currently pthreadFoundFunctions is a protected member variable of the lowest common ancestor of
-    // the classes CMPXCHGPattern and PThreadPattern. Move it accordingly.
-    if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
-        if (dyn_cast<AtomicCmpXchgInst>(instr)) {
+    if (dyn_cast<AtomicCmpXchgInst>(instr)){
+        const std::string &funNameStdString = instr->getFunction()->getName().str();
+        if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
+            pthreadFoundFunctions.insert(funNameStdString);
             json j;
             j["funname"] = funNameStdString;
             results.push_back(getIdentifierString(instr, ATOMIC_CMP_XCHG, j));
@@ -103,10 +100,10 @@ bool CMPXCHGPattern::mutate(
 
 std::vector<std::string> ATOMICRMWPattern::find(const Instruction *instr) {
     std::vector<std::string> results;
-    // TODO: The bool in the following check is always false. - abhilashgupta
     if (!foundAtomicRMW) { // atomicrmw was not found yet
         if (dyn_cast<AtomicRMWInst>(instr)) {
             results.push_back(getIdentifierString(instr, ATOMICRMW_REPLACE));
+            foundAtomicRMW = true;
         }
     }
     return results;
@@ -210,7 +207,7 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
 
 std::vector<std::string> ShiftSwitch::find(const Instruction *instr) {
     std::vector<std::string> results;
-    if (dyn_cast<LShrOperator>(instr) || dyn_cast<LShrOperator>(instr)) {
+    if (dyn_cast<LShrOperator>(instr) || dyn_cast<AShrOperator>(instr)) {
         results.push_back(getIdentifierString(instr, SWITCH_SHIFT));
     }
     return results;
@@ -281,8 +278,15 @@ bool UnInitLocalVariables::mutate(
         Module& M
 ) {
     auto segref = *seglist;
-    auto surroundingFunction = instr->getFunction()->getName().str();
-    if (segref["additionalInfo"]["funname"] == surroundingFunction) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
+    if (segref["type"] != DELETE_LOCAL_STORE) {
+        return false;
+    }
+    Function *pFunction = instr->getFunction();
+    if (!pFunction) {
+        return false;
+    }
+    auto surroundingFunction = pFunction->getName();
+    if (segref["additionalInfo"]["funname"] == surroundingFunction.str()) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
         // get the concrete value to delete by checkin if the instruction string matches and then saving the value
         std::string instructionString;
         llvm::raw_string_ostream os(instructionString);
@@ -300,12 +304,14 @@ bool UnInitLocalVariables::mutate(
         }
         auto store = dyn_cast<StoreInst>(instr);
         // if the operand of the store operation matches the local variable, we delete the store operation
-        if (store && to_delete.find(store) != to_delete.end()) {
-            builderMutex.lock();
-            addMutationFoundSignal(builder, M);
-            store->removeFromParent();
-            builderMutex.unlock();
-            return true;
+        if (store) {
+            if (to_delete.find(store) != to_delete.end()) {
+                builderMutex.lock();
+                addMutationFoundSignal(builder, M);
+                store->removeFromParent();
+                builderMutex.unlock();
+                return true;
+            }
         }
     }
     return false;

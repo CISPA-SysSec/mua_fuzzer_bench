@@ -1,4 +1,5 @@
 FROM debian:buster
+# FROM mutator_mutator
 
 RUN apt-get update && \
     apt-get -y install \
@@ -13,7 +14,10 @@ RUN apt-get update && \
         python3-apt \
         gcc \
         gcc-*-plugin-dev \
-        g++
+        g++ \
+        libc++-dev \
+        libc++abi-dev \
+        libboost-all-dev
 
 WORKDIR /home/eval
 
@@ -25,7 +29,7 @@ RUN bash -c "for FILE in /usr/bin/*-12; do update-alternatives --install \${FILE
 
 RUN git clone https://github.com/AFLplusplus/AFLplusplus && \
     cd AFLplusplus && \
-    CC=clang make source-only && \
+    make source-only -j`nproc` && \
     sudo make install
 
 COPY eval/start_aflpp.sh .
