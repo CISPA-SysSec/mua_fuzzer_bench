@@ -56,13 +56,10 @@ bool FreeArgumentReturnPattern::mutate(
 
 std::vector<std::string> CMPXCHGPattern::find(const Instruction *instr) {
     std::vector<std::string> results;
-    // TODO: Does the next ling not need a check on the type of instruction? - abhilashgupta
-    const std::string &funNameStdString = instr->getFunction()->getName().str();
-    // TODO: Do we need to update the pthreadFoundFunctions after this check here? -abhilashgupta
-    // Currently pthreadFoundFunctions is a protected member variable of the lowest common ancestor of
-    // the classes CMPXCHGPattern and PThreadPattern. Move it accordingly.
-    if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
-        if (dyn_cast<AtomicCmpXchgInst>(instr)) {
+    if (dyn_cast<AtomicCmpXchgInst>(instr)){
+        const std::string &funNameStdString = instr->getFunction()->getName().str();
+        if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end()) { // function was not used before
+            pthreadFoundFunctions.insert(funNameStdString);
             json j;
             j["funname"] = funNameStdString;
             results.push_back(getIdentifierString(instr, ATOMIC_CMP_XCHG, j));
@@ -103,10 +100,10 @@ bool CMPXCHGPattern::mutate(
 
 std::vector<std::string> ATOMICRMWPattern::find(const Instruction *instr) {
     std::vector<std::string> results;
-    // TODO: The bool in the following check is always false. - abhilashgupta
     if (!foundAtomicRMW) { // atomicrmw was not found yet
         if (dyn_cast<AtomicRMWInst>(instr)) {
             results.push_back(getIdentifierString(instr, ATOMICRMW_REPLACE));
+            foundAtomicRMW = true;
         }
     }
     return results;
@@ -210,7 +207,7 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
 
 std::vector<std::string> ShiftSwitch::find(const Instruction *instr) {
     std::vector<std::string> results;
-    if (dyn_cast<LShrOperator>(instr) || dyn_cast<LShrOperator>(instr)) {
+    if (dyn_cast<LShrOperator>(instr) || dyn_cast<AShrOperator>(instr)) {
         results.push_back(getIdentifierString(instr, SWITCH_SHIFT));
     }
     return results;
