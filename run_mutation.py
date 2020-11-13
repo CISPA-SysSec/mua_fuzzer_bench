@@ -33,12 +33,16 @@ def main(prog: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mutator Script")
-    parser.add_argument('-bc', "--bitcode", action='store_true', help="Keeps the mutated bitcode files.")
-    parser.add_argument('-ll', "--bitcode_human_readable", action='store_true', help="Keeps the mutated bitcode files as human readable files.")
-    parser.add_argument('-bn', "--binary", action='store_true', help="Creates mutated runnable binaries.")
-    parser.add_argument('-p', "--program", default="", type=str, required=True,
-                        help="Path to the source file that will be mutated. Use at least one of the arguments [-bc, -ll, -bn] to get "
-                             "resulting files.")
+    parser.add_argument('-bc', "--bitcode", action='store_true',
+                        help="Keeps the mutated bitcode files.")
+    parser.add_argument('-ll', "--bitcode_human_readable", action='store_true',
+                        help="Keeps the mutated bitcode files as human readable files.")
+    parser.add_argument('-bn', "--binary", action='store_true',
+                        help="Creates mutated runnable binaries.")
+    parser.add_argument("program", type=str,
+                        help="Path to the source file that will be mutated.")
     args = parser.parse_args(sys.argv[1:])
+    if not any([args.bitcode, args.bitcode_human_readable, args.binary]):
+        parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
 
     main(args.program)
