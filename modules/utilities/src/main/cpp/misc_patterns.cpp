@@ -234,7 +234,8 @@ bool ShiftSwitch::mutate(
             instr->removeFromParent();
             builderMutex.unlock();
             return true;
-        } else if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
+        } else {
+            if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
                 builderMutex.lock();
                 addMutationFoundSignal(builder, M);
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
@@ -242,6 +243,7 @@ bool ShiftSwitch::mutate(
                 instr->removeFromParent();
                 builderMutex.unlock();
                 return true;
+            }
         }
     }
     return false;
