@@ -26,7 +26,9 @@ void populateCallInstPatterns(){
 // Add new ICmpInstPattern objects here as you add them.
 void populateICmpInstPatterns(){
     ICmpInstPatterns.push_back(std::make_unique <GreaterThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <GreaterThanEqualToPattern>());
     ICmpInstPatterns.push_back(std::make_unique <LessThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <LessThanPattern>());
     ICmpInstPatterns.push_back(std::make_unique <SignedToUnsigned>());
     ICmpInstPatterns.push_back(std::make_unique <UnsignedToSigned>());
 }

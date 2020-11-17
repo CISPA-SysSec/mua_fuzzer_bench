@@ -142,6 +142,32 @@ public:
     ) override;
 };
 
+class LessThanPattern: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+class GreaterThanEqualToPattern: public ICmpInstPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
 class GreaterThanPattern: public ICmpInstPattern{
 public:
     std::vector<std::string> find(const Instruction *instr) override;
