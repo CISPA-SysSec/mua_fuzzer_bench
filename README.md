@@ -35,7 +35,7 @@ gradle build
 General invoke:
 ```shell script
 # invokes the mutation pipeline, check for details on how to invoke the project in detail
-./run_mutation.py -p <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) [-bc] [-ll] [-bn]
+./run_mutation.py [-bc] [-ll] [-bn] [-cpp] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
 ```
 Explanation of optional arguments (at least one must be chosen, otherwise the output would be empty):
 ```

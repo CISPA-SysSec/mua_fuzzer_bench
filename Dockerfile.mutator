@@ -46,7 +46,7 @@ COPY run_mutation.py /home/mutator/
 RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
 # on linux gradle looks for ar, so we need to link llvm-ar
-RUN ln /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/llvm-ar /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/ar
+# RUN ln /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/llvm-ar /root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/ar
 RUN echo "llvmBinPath=/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/" > gradle.properties
 
 

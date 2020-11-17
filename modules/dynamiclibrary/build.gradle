@@ -4,7 +4,6 @@ import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'cpp-library'
 
-
 tasks.withType(CppCompile).configureEach {
     // Define a compiler options
     compilerArgs.add '-O3'
@@ -25,9 +24,13 @@ model {
     toolChains {
         clang(Clang) {
             path "${llvmBinPath}"
+            eachPlatform {
+                staticLibArchiver.executable = "llvm-ar"
+            }
         }
     }
 }
+
 
 library {
    linkage = [Linkage.STATIC]
