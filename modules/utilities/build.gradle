@@ -40,7 +40,8 @@ def load_dependencies() {
 tasks.withType(CppCompile).configureEach {
     load_dependencies()
     // Define a compiler options
-    compilerArgs.add '-O3'
+    compilerArgs.add '-v'
+//     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'
     compilerArgs.addAll llvmConfigVariable('cxxflags')
     // Gotcha: The -fexceptions must always be written after llvmConfigVariable to overwrite -fno-exceptions
@@ -59,8 +60,12 @@ tasks.withType(CppCompile).configureEach {
 }
 
 tasks.withType(LinkSharedLibrary).configureEach {
+    linkerArgs.add "-v"
+    // Beware!! Only link the llvm libraries dynamically, static linking will cause opt to not register the pass correctly
+    // (even if the compilation itself is successful)!
+    linkerArgs.add "-lLLVM"
     linkerArgs.addAll llvmConfigVariable('ldflags')
-    linkerArgs.addAll llvmConfigVariable('libs', ['core'])
+    linkerArgs.addAll llvmConfigVariable('system-libs')
 }
 
 model {
@@ -69,6 +74,7 @@ model {
             path "${llvmBinPath}"
             // see https://github.com/gradle/gradle-native/issues/859
             eachPlatform {
+//                 linker.executable = "${llvmBinPath}ld64.lld"
                 def useNormalIncludeFlagInsteadOfSystemIncludeFlag = { List<String> args ->
                     ListIterator<String> iter = args.listIterator()
                     while (iter.hasNext()) {

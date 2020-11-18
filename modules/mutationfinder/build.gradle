@@ -31,7 +31,7 @@ def PkgConfigVariable(variable, library) {
 tasks.withType(CppCompile).configureEach {
 
     // Define a compiler options
-    compilerArgs.add '-O3'
+//     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'
     compilerArgs.addAll llvmConfigVariable('cxxflags')
     // Gotcha: The -fexceptions must always be written after llvmConfigVariable to overwrite -fno-exceptions
@@ -49,8 +49,9 @@ tasks.withType(CppCompile).configureEach {
 }
 
 tasks.withType(LinkSharedLibrary).configureEach {
+    linkerArgs.add '-lLLVM'
     linkerArgs.addAll llvmConfigVariable('ldflags')
-    linkerArgs.addAll llvmConfigVariable('libs', ['core'])
+    linkerArgs.addAll llvmConfigVariable('system-libs')
 }
 
 model {

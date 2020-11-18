@@ -13,53 +13,52 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
 
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+
 
 
 using namespace llvm;
 
-#define DEBUG_TYPE "mutationfinder"
+#define DEBUG_TYPE "mutator"
 
 cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
 
+namespace {
 //counter for method calls, each method call gets a unique ID
-int callIDCounter = 1;
+    int callIDCounter = 1;
 
 // a counter and the number of functions to print the current status
-int number_functions = 0;
-int funcounter = 0;
+    int number_functions = 0;
+    int funcounter = 0;
 
 // the following variables define the location of the mutation as well as the pattern
 // containing in order: Directory, File, line, column, mutation-ID as strings
-json seglist;
+    json seglist;
 
-class Worker
-{
-private:
+    class Worker {
+    private:
 
-    std::mutex& builderMutex;
-    llvm::Module& M;
+        std::mutex &builderMutex;
+        llvm::Module &M;
 
-public:
+    public:
 
-    explicit Worker() = delete;
+        explicit Worker() = delete;
 
-    Worker(Module& M, std::mutex& builderMutex, std::mutex& fileMutex)
-        : builderMutex(builderMutex)
-        , M(M)
-    {
+        Worker(Module &M, std::mutex &builderMutex, std::mutex &fileMutex)
+                : builderMutex(builderMutex), M(M) {
 
-    }
+        }
 
-    /**
-     * Instrument all functions given as parameter.
-     * @param functions
-     */
-    void instrumentFunctions(std::vector<Function*> functions)
-    {
-        for (auto F: functions)
-        {
+        /**
+         * Instrument all functions given as parameter.
+         * @param functions
+         */
+        void instrumentFunctions(std::vector<Function *> functions) {
+            for (auto F: functions) {
 //            builderMutex.lock();
 //            std::cout << "[INFO] in thread " << std::this_thread::get_id() << ": "
 //                      << "instrumenting function " << ++funcounter << " of " << number_functions
@@ -67,46 +66,44 @@ public:
 //                      << std::endl;
 //            builderMutex.unlock();
 
-            findPatternInFunction(*F);
-        }
-    }
-
-
-    /**
-     * Instrument the given instruction with the given builders.
-     * @param instr
-     * @param builder
-     * @param nextInstructionBuilder
-     */
-    void handInstructionToPatternMatchers(Instruction* instr, IRBuilder<>* builder, IRBuilder<>* nextInstructionBuilder)
-    {
-        // Call instructions are handled differently
-        if (auto* callinst = dyn_cast<CallInst>(instr))
-        {
-            Function* fun = callinst->getCalledFunction();
-            if (fun != nullptr && fun->isIntrinsic() && !dyn_cast<MemCpyInst>(callinst) && !dyn_cast<MemMoveInst>(callinst)
-                && !dyn_cast<VAStartInst>(callinst) && !dyn_cast<VAArgInst>(callinst) && !dyn_cast<VACopyInst>(callinst)
-                && !dyn_cast<VAEndInst>(callinst))
-            {
-                // skip llvm intrinsic functions other than llvm.memcpy and llvm memmove
-                return;
+                findPatternInFunction(*F);
             }
         }
-        mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
-    }
 
 
-    /**
-     * Instrument one function, i.e. run over all isntructions in that function and instrument them.
-     * @param F the given function
-     * @return true on successful instrumentation
-     */
-    bool findPatternInFunction(Function& F)
-    {
-        std::vector<Instruction*> toInstrument;
-        for (BasicBlock& bb : F)
-        {
-            auto first_insertion_point = bb.getFirstInsertionPt();
+        /**
+         * Instrument the given instruction with the given builders.
+         * @param instr
+         * @param builder
+         * @param nextInstructionBuilder
+         */
+        void handInstructionToPatternMatchers(Instruction *instr, IRBuilder<> *builder,
+                                              IRBuilder<> *nextInstructionBuilder) {
+            // Call instructions are handled differently
+            if (auto *callinst = dyn_cast<CallInst>(instr)) {
+                Function *fun = callinst->getCalledFunction();
+                if (fun != nullptr && fun->isIntrinsic() && !dyn_cast<MemCpyInst>(callinst) &&
+                    !dyn_cast<MemMoveInst>(callinst)
+                    && !dyn_cast<VAStartInst>(callinst) && !dyn_cast<VAArgInst>(callinst) &&
+                    !dyn_cast<VACopyInst>(callinst)
+                    && !dyn_cast<VAEndInst>(callinst)) {
+                    // skip llvm intrinsic functions other than llvm.memcpy and llvm memmove
+                    return;
+                }
+            }
+            mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
+        }
+
+
+        /**
+         * Instrument one function, i.e. run over all isntructions in that function and instrument them.
+         * @param F the given function
+         * @return true on successful instrumentation
+         */
+        bool findPatternInFunction(Function &F) {
+            std::vector<Instruction *> toInstrument;
+            for (BasicBlock &bb : F) {
+                auto first_insertion_point = bb.getFirstInsertionPt();
 //
 //            IRBuilder<> builder(&bb, first_insertion_point);
 //
@@ -121,77 +118,76 @@ public:
 //            builder.CreateCall(tracer("instructionEnd"), {});
 //            builderMutex.unlock();
 
-            for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb)
-            {
-                toInstrument.push_back(&*itr_bb);
+                for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb) {
+                    toInstrument.push_back(&*itr_bb);
+                }
             }
+
+            for (Instruction *instr : toInstrument) {
+                BasicBlock::iterator itr_bb(instr);
+                builderMutex.lock();
+                IRBuilder<> builder(instr->getParent(), itr_bb);
+                IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
+                builderMutex.unlock();
+                handInstructionToPatternMatchers(instr, &builder, &nextInstructionBuilder);
+            }
+
+            return true;
         }
+    };
 
-        for (Instruction* instr : toInstrument)
-        {
-            BasicBlock::iterator itr_bb(instr);
-            builderMutex.lock();
-            IRBuilder<> builder(instr->getParent(), itr_bb);
-            IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
-            builderMutex.unlock();
-            handInstructionToPatternMatchers(instr, &builder, &nextInstructionBuilder);
-        }
+    struct MutatorPlugin : public ModulePass {
+        static char ID; // Pass identification, replacement for typeid
+        MutatorPlugin() : ModulePass(ID) {}
 
-        return true;
-    }
-};
+        bool runOnModule(Module &M) {
+            auto &llvm_context = M.getContext();
 
-struct MutatorPlugin : public ModulePass
-{
-    static char ID; // Pass identification, replacement for typeid
-    MutatorPlugin() : ModulePass(ID) {}
-
-    bool runOnModule(Module& M)
-    {
-        auto& llvm_context = M.getContext();
-
-        // TODO read mutation patterns
+            // TODO read mutation patterns
 
 
 
-        std::mutex builderMutex;
-        std::mutex fileMutex;
-        // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-        populateMutatorVectors();
-        insertMutationApiFunctions(M);
-        //Parsing the string into a json
-        std::string segment;
-        seglist = json::parse(Mutation);
-        unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
+            std::mutex builderMutex;
+            std::mutex fileMutex;
+            // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
+            populateMutatorVectors();
+            insertMutationApiFunctions(M);
+            //Parsing the string into a json
+            std::string segment;
+            seglist = json::parse(Mutation);
+            unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
 //        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
-        std::vector<std::vector<Function*>> threadFunctions(concurrentThreadsSupported);
-        auto i = 0;
-        for (Function& f : M.functions())
-        {
-            if (f.isDeclaration())
-            {
-                continue;
+            std::vector<std::vector<Function *>> threadFunctions(concurrentThreadsSupported);
+            auto i = 0;
+            for (Function &f : M.functions()) {
+                if (f.isDeclaration()) {
+                    continue;
+                }
+
+                threadFunctions[i % concurrentThreadsSupported].push_back(&f);
+                ++i;
             }
 
-            threadFunctions[i % concurrentThreadsSupported].push_back(&f);
-            ++i;
-        }
+            number_functions = i;
+            std::vector<std::thread> threads;
+            for (auto &functions : threadFunctions) {
+                threads.push_back(
+                        std::thread(&Worker::instrumentFunctions, new Worker(M, builderMutex, fileMutex), functions));
+            }
 
-        number_functions = i;
-        std::vector<std::thread> threads;
-        for (auto& functions : threadFunctions)
-        {
-            threads.push_back(std::thread(&Worker::instrumentFunctions, new Worker(M, builderMutex, fileMutex), functions));
+            for (auto &thread : threads) {
+                thread.join();
+            }
+            return true;
         }
-
-        for (auto& thread : threads)
-        {
-            thread.join();
-        }
-        return true;
-    }
-};
+    };
+}
 
 char MutatorPlugin::ID = 0;
-static RegisterPass<MutatorPlugin> X("mutatorplugin", "Plugin to mutate a bitcode file.");
+static RegisterPass<MutatorPlugin> X("mutatorplugin", "Plugin to mutate a bitcode file.", false, false);
+
+static RegisterStandardPasses Y(
+        PassManagerBuilder::EP_OptimizerLast,
+        [](const PassManagerBuilder &Builder,
+           legacy::PassManagerBase &PM) { PM.add(new MutatorPlugin()); });

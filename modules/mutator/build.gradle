@@ -49,8 +49,9 @@ tasks.withType(CppCompile).configureEach {
 }
 
 tasks.withType(LinkSharedLibrary).configureEach {
+    linkerArgs.add '-lLLVM'
     linkerArgs.addAll llvmConfigVariable('ldflags')
-    linkerArgs.addAll llvmConfigVariable('libs', ['core'])
+    linkerArgs.addAll llvmConfigVariable('system-libs')
 }
 
 model {
