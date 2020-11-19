@@ -13,9 +13,10 @@ COPY settings.gradle /home/mutator
 RUN echo "llvmBinPath=/bin/" > gradle.properties
 
 
-# RUN gradle clean && gradle build
+RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
+ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 #ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
 
 
