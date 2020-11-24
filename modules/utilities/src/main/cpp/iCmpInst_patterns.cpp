@@ -7,60 +7,13 @@ void ICmpInstPattern::getpredicate(const Instruction *instr){
     predicate = icmpinst->getPredicate();
 }
 
-std::vector<std::string> LessThanEqualToPattern::find(const Instruction *instr){
+std::vector<std::string> SignedLessThanEqualToPattern::find(const Instruction *instr){
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SLE) {
         results.push_back(getIdentifierString(instr, SIGNED_LESS_THAN_EQUALTO));
     }
     return results;
-}
-
-std::vector<std::string> LessThanPattern::find(const Instruction *instr){
-    std::vector<std::string> results;
-    getpredicate(instr);
-    if (predicate == CmpInst::Predicate::ICMP_SLT) {
-        results.push_back(getIdentifierString(instr, SIGNED_LESS_THAN));
-    }
-    return results;
-}
-
-/**
- * The mutator for ICMP_SLT.
- * It changes one of the operators to cause an off-by-one error.
- * @param builder
- * @param nextInstructionBuilder
- * @param instr
- * @param builderMutex
- * @param seglist
- * @param icmpinst
- * @return
- */
-bool LessThanPattern::mutate(
-        IRBuilder<>* builder,
-        IRBuilder<>* nextInstructionBuilder,
-        Instruction* instr,
-        std::mutex& builderMutex,
-        json *seglist,
-        Module& M
-) {
-    auto* icmpinst = dyn_cast<ICmpInst>(instr);
-    auto predicate = icmpinst->getPredicate();
-    if (predicate == CmpInst::Predicate::ICMP_SLT) {
-        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN)) {
-            // add 1, multiply the whole value by 2 and give the new value to the instruction
-            Value* rhs;
-            builderMutex.lock();
-            addMutationFoundSignal(builder, M);
-            rhs = icmpinst->getOperand(1);
-            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
-            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
-            icmpinst->setOperand(1, newVal);
-            builderMutex.unlock();
-            return true;
-        }
-    }
-    return false;
 }
 
 /**
@@ -74,7 +27,7 @@ bool LessThanPattern::mutate(
  * @param icmpinst
  * @return
  */
-bool LessThanEqualToPattern::mutate(
+bool SignedLessThanEqualToPattern::mutate(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
@@ -101,7 +54,152 @@ bool LessThanEqualToPattern::mutate(
     return false;
 }
 
-std::vector<std::string> GreaterThanPattern::find(const Instruction *instr){
+std::vector<std::string> SignedLessThanPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SLT) {
+        results.push_back(getIdentifierString(instr, SIGNED_LESS_THAN));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_SLT.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool SignedLessThanPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_SLT) {
+        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> UnsignedLessThanEqualToPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_ULE) {
+        results.push_back(getIdentifierString(instr, UNSIGNED_LESS_THAN_EQUALTO));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_ULE.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool UnsignedLessThanEqualToPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_ULE) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_EQUALTO)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+
+std::vector<std::string> UnsignedLessThanPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_ULT) {
+        results.push_back(getIdentifierString(instr, UNSIGNED_LESS_THAN));
+    }
+    return results;
+}
+
+
+
+/**
+ * The mutator for ICMP_ULT.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool UnsignedLessThanPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_ULT) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+
+std::vector<std::string> SignedGreaterThanPattern::find(const Instruction *instr){
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SGT) {
@@ -110,20 +208,11 @@ std::vector<std::string> GreaterThanPattern::find(const Instruction *instr){
     return results;
 }
 
-std::vector<std::string> GreaterThanEqualToPattern::find(const Instruction *instr){
-    std::vector<std::string> results;
-    getpredicate(instr);
-    if (predicate == CmpInst::Predicate::ICMP_SGE) {
-        results.push_back(getIdentifierString(instr, SIGNED_GREATER_THAN_EQUALTO));
-    }
-    return results;
-}
-
 /**
  * The mutator for ICMP_SGT.
  * It changes one of the operators to cause an off-by one error.
  */
-bool GreaterThanPattern::mutate(
+bool SignedGreaterThanPattern::mutate(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
@@ -149,11 +238,20 @@ bool GreaterThanPattern::mutate(
     return false;
 }
 
+std::vector<std::string> SignedGreaterThanEqualToPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SGE) {
+        results.push_back(getIdentifierString(instr, SIGNED_GREATER_THAN_EQUALTO));
+    }
+    return results;
+}
+
 /**
  * The mutator for ICMP_SGE.
  * It changes one of the operators to cause an off-by one error.
  */
-bool GreaterThanEqualToPattern::mutate(
+bool SignedGreaterThanEqualToPattern::mutate(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
@@ -165,6 +263,84 @@ bool GreaterThanEqualToPattern::mutate(
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGE) {
         if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_EQUALTO)) {
+            // substract 1 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> UnsignedGreaterThanPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_UGT) {
+        results.push_back(getIdentifierString(instr, UNSIGNED_GREATER_THAN));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_UGT.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool UnsignedGreaterThanPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_UGT) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN)) {
+            // substract 1 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M);
+            rhs = icmpinst->getOperand(1);
+            auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> UnsignedGreaterThanEqualToPattern::find(const Instruction *instr){
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_UGE) {
+        results.push_back(getIdentifierString(instr, UNSIGNED_GREATER_THAN_EQUALTO));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_UGE.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool UnsignedGreaterThanEqualToPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_UGE) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_EQUALTO)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
