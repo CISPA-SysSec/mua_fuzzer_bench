@@ -1,39 +1,4 @@
-FROM mutator_llvm:901
-
-# get necessary dependencies
-RUN apt-get update
-RUN apt install -y git \
-    curl \
-    zip \
-    nano \
-    htop \
-    python3-distutils \
-    libzmq3-dev \
-    openjdk-11-jdk \
-    pkg-config \
-    libz-dev \
-    libreadline-dev \
-    time \
-    telnet \
-    autoconf \
-    libgnutls28-dev
-
-WORKDIR /home/
-RUN mkdir -p downloads
-WORKDIR /home/downloads
-RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-RUN python3 get-pip.py
-
-RUN pip3 install wllvm
-
-ENV PATH "/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/:$PATH"
-ENV LLVM_COMPILER "clang"
-
-RUN wget https://downloads.gradle-dn.com/distributions/gradle-6.6.1-bin.zip
-RUN unzip gradle-6.6.1-bin.zip
-RUN mv gradle-6.6.1 /usr/local/gradle
-
-ENV PATH "/usr/local/gradle/bin/:$PATH"
+FROM mutator_deps:2004
 
 WORKDIR /home/
 RUN mkdir mutator
@@ -45,22 +10,16 @@ COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
-RUN echo "llvmBinPath=/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/" > gradle.properties
+RUN echo "llvmBinPath=/bin/" > gradle.properties
 
 
 RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
-ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
+ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
+#ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
 
-#### install gllvm
-WORKDIR /root/
 
-RUN wget -q -c https://dl.google.com/go/go1.14.2.linux-amd64.tar.gz -O - | tar -xz -C /usr/local
-
-ENV PATH="${PATH}:/root/.cargo/bin:/usr/local/go/bin:/root/go/bin"
-
-RUN go get github.com/SRI-CSL/gllvm/cmd/...
 
 
 # ################################################################################
@@ -125,6 +84,7 @@ RUN go get github.com/SRI-CSL/gllvm/cmd/...
 # guetzli
 
 RUN apt install -y libpng-dev
+RUN ln /bin/llvm-link-11 /bin/llvm-link
 
 WORKDIR /home/mutator/samples
 RUN git clone https://github.com/google/guetzli.git
@@ -137,7 +97,7 @@ RUN gclang++ -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Rele
 
 WORKDIR /home/mutator
 
-RUN ./run_mutation.py -p samples/guetzli/fuzz_target.bc -bc
+# RUN ./run_mutation.py -bc -cpp samples/guetzli/fuzz_target.bc
 
 ################################################################################
 # other stuff
