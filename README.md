@@ -54,7 +54,7 @@ ln /bin/llvm-ar-11 /bin/llvm-ar
 
 
 # compiles the project and installs it under build/install
-export LD_LIBRARY_PATH=${prober_home}/build/install/Program-Prober/lib/
+export LD_LIBRARY_PATH=${mutation_tool_home}/build/install/LLVM_Mutation_Tool/lib/
 gradle build
 ```
 
