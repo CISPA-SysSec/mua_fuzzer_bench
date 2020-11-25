@@ -111,7 +111,8 @@ std::vector<std::string> ATOMICRMWPattern::find(const Instruction *instr) {
 
 
 /**
- * If we have at least one atomicrmw instruction, we replace the atomicrmw with its non-atomic counterpart.
+ * If we have at least one atomicrmw instruction, we replace all atomicrmw with its non-atomic counterpart in a certain
+ * function.
  */
 bool ATOMICRMWPattern::mutate(
         IRBuilder<>* builder,
@@ -192,13 +193,13 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
 
     // generic code for most binops: first load the lhs, then create a standard binop, then replace values and remove
     // old atomic version
+    addMutationFoundSignal(nextInstructionBuilder, M);
     auto loadResult = nextInstructionBuilder->CreateLoad(instr->getOperand(0));
     auto newinst = nextInstructionBuilder->CreateBinOp(
             operand,
             loadResult,
             instr->getOperand(1)
     );
-    addMutationFoundSignal(nextInstructionBuilder, M);
     instr->replaceAllUsesWith(newinst);
     instr->removeFromParent();
     return true;

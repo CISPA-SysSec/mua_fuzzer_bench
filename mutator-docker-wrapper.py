@@ -10,7 +10,7 @@ import os
 
 llvm_dockerfile = "Dockerfile.llvm"
 mutator_dockerfile = "Dockerfile.mutator"
-llvm_image = "mutator_llvm:901"
+llvm_image = "mutator_deps:2004"
 mutator_image = "mutator_mutator:latest"
 container_name = "mutator_container"
 
