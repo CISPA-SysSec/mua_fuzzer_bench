@@ -9,9 +9,9 @@ trap _term SIGINT
 
 set -Euxo pipefail
 
-pwd
+export LD_LIBRARY_PATH=/home/eval/lib/
 
-afl-clang-fast++ $1 $2
+afl-clang-lto++ /home/eval/lib/libdynamiclibrary.so $1 $2
 
 [[ -d output ]] && rm -rf output
 mkdir output
@@ -23,9 +23,13 @@ SEEDS="$1"
 
 shift
 
+export TRIGGERED_OUTPUT="$@"
+export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
 afl-fuzz -d -i $SEEDS -o output -- ./a.out $@ &
-
 child=$! 
+
+echo "setup done"
+
 wait "$child"
-echo "done"
+echo "fuzzing done"

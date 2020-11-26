@@ -1,36 +1,22 @@
-FROM debian:buster
-# FROM mutator_mutator
+# based on https://github.com/AFLplusplus/AFLplusplus/blob/stable/Dockerfile
+FROM mutator_testing
 
-RUN apt-get update && \
-    apt-get -y install \
-        sudo \
-        wget \
-        lsb-release \
-        software-properties-common \
-        git \
-        gnupg \
-        make \
-        python3-dev \
-        python3-apt \
-        gcc \
-        gcc-*-plugin-dev \
-        g++ \
-        libc++-dev \
-        libc++abi-dev \
-        libboost-all-dev
+ENV LLVM_CONFIG=llvm-config-11
+ENV AFL_SKIP_CPUFREQ=1
 
-WORKDIR /home/eval
+WORKDIR /AFLplusplus
 
-RUN wget https://apt.llvm.org/llvm.sh && \
-    chmod +x llvm.sh && \
-    sudo ./llvm.sh 12
-
-RUN bash -c "for FILE in /usr/bin/*-12; do update-alternatives --install \${FILE//-12/} \$(basename \${FILE//-12/}) \$FILE 100; done"
-
-RUN git clone https://github.com/AFLplusplus/AFLplusplus && \
+RUN git clone https://github.com/AFLplusplus/AFLplusplus --branch=2.68c && \
     cd AFLplusplus && \
-    make source-only -j`nproc` && \
-    sudo make install
+    export REAL_CXX=g++-10 && export CC=gcc-10 && \
+    export CXX=g++-10 && make clean && \
+    make source-only && make install && make clean
+
+ENV IS_DOCKER="1"
+
+WORKDIR /home/eval/
+
+COPY tmp/lib/ ./lib/
 
 COPY eval/start_aflpp.sh .
 RUN chmod +x start_aflpp.sh
