@@ -30,14 +30,11 @@ def main():
 
 
 if __name__=="__main__":
-    parser = argparse.ArgumentParser(description="Mutator Script")
-    parser.add_argument('-bc', "--bitcode", action='store_true', help="Keeps the mutated bitcode files.")
-    parser.add_argument('-ll', "--bitcode_human_readable", action='store_true', help="Keeps the mutated bitcode files as human readable files.")
-    parser.add_argument('-bn', "--binary", action='store_true', help="Creates mutated runnable binaries.")
+    parser = argparse.ArgumentParser(description="Script to find patterns.")
     parser.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ instead of clang for compilation.")
-    parser.add_argument('-p', "--program", default="", type=str, required=True,
-                        help="Path to the source file that will be mutated. Use at least one of the arguments [-bc, -ll, -bn] to get "
-                             "resulting files.")
+    parser.add_argument("program", type=str,
+                        help="Path to the source file in which patterns will be searched.")
+
     args = parser.parse_args(sys.argv[1:])
 
     if args.cpp:
