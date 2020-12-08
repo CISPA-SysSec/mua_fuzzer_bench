@@ -22,8 +22,14 @@ void populateCallInstMutators(){
 
 // Add new ICmpInstMutator objects here as you add them.
 void populateICmpInstMutators(){
-    ICmpInstMutators.push_back(std::make_unique <GreaterThanPattern>());
-    ICmpInstMutators.push_back(std::make_unique <LessThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <SignedLessThanPattern>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanPattern>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
+    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedToUnsigned>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedToSigned>());
 }

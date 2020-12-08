@@ -20,5 +20,9 @@
 #define SWITCH_SHIFT 12 // switch shift from logical to arithmetic or vice versa
 #define CALLOC 13
 #define DELETE_LOCAL_STORE 14 // collect local variables and then remove all stores on them in the function
+#define UNSIGNED_LESS_THAN 15
+#define UNSIGNED_GREATER_THAN 16
+#define UNSIGNED_LESS_THAN_EQUALTO 17
+#define UNSIGNED_GREATER_THAN_EQUALTO 18
 
 #endif //LLVM_MUTATION_TOOL_MUTATIONS_H

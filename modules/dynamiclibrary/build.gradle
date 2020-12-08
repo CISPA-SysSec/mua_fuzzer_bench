@@ -4,7 +4,6 @@ import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'cpp-library'
 
-
 tasks.withType(CppCompile).configureEach {
     // Define a compiler options
     compilerArgs.add '-O3'
@@ -25,10 +24,31 @@ model {
     toolChains {
         clang(Clang) {
             path "${llvmBinPath}"
+            eachPlatform {
+                staticLibArchiver.executable = "llvm-ar"
+                // see https://github.com/gradle/gradle-native/issues/859
+                def useNormalIncludeFlagInsteadOfSystemIncludeFlag = { List<String> args ->
+                    ListIterator<String> iter = args.listIterator()
+                    while (iter.hasNext()) {
+                        String arg = iter.next()
+                        if (arg.startsWith("-isystem")) {
+                            iter.remove()
+                            iter.add(arg.replace("-isystem", "-I"))
+                        }
+                        if (arg.startsWith("-nostdinc")) {
+                            iter.remove()
+                        }
+                    }
+                }
+                cCompiler.withArguments(useNormalIncludeFlagInsteadOfSystemIncludeFlag)
+                cppCompiler.withArguments(useNormalIncludeFlagInsteadOfSystemIncludeFlag)
+                linker.withArguments(useNormalIncludeFlagInsteadOfSystemIncludeFlag)
+            }
         }
     }
 }
 
+
 library {
-   linkage = [Linkage.STATIC]
+   linkage = [Linkage.SHARED]
 }

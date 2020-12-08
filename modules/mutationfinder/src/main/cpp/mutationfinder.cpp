@@ -13,6 +13,9 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
 
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+
 using namespace llvm;
 
 #define DEBUG_TYPE "mutationfinder"
@@ -21,6 +24,7 @@ cl::opt<std::string> MutationLocationFile("mutation_patterns",
                                    cl::desc("file containing the mutation patterns"),
                                    cl::value_desc("filename"));
 
+namespace {
 // a counter and the number of functions to print the current status
 int number_functions = 0;
 int funcounter = 0;
@@ -139,6 +143,7 @@ struct MutatorPlugin : public ModulePass
 
     bool runOnModule(Module& M) override
     {
+        errs() << "test\n";
         auto& llvm_context = M.getContext();
 
         // TODO read mutation patterns
@@ -176,16 +181,23 @@ struct MutatorPlugin : public ModulePass
         {
             thread.join();
         }
-        for (int i = 0; i < mutationLocationsvector.size(); i++)
+        for (int vecSizeCounter = 0; vecSizeCounter < mutationLocationsvector.size(); vecSizeCounter++)
         {
-            if (i != 0) mutationLocationsstream << ",\n";
-            mutationLocationsstream << mutationLocationsvector[i];
+            if (vecSizeCounter != 0) mutationLocationsstream << ",\n";
+            mutationLocationsstream << mutationLocationsvector[vecSizeCounter];
         }
         mutationLocationsstream << "]";
         mutationLocationsstream.close();
         return true;
     }
 };
+}
 
 char MutatorPlugin::ID = 0;
 static RegisterPass<MutatorPlugin> X("mutationfinder", "Plugin to mutate a bitcode file.");
+
+static RegisterStandardPasses Y(
+        PassManagerBuilder::EP_OptimizerLast,
+        [](const PassManagerBuilder &Builder,
+           legacy::PassManagerBase &PM) { PM.add(new MutatorPlugin()); });
+
