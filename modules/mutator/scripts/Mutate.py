@@ -21,8 +21,6 @@ uname = os.uname()
 
 def main(prog: str):
     # "${CLANG}" -g -S -D_FORTIFY_SOURCE=0 "${SYSROOT}" -emit-llvm -include "${INCDIR}/traceinstr/wrapper_libc.h" -o "${PROG_SOURCE}.uninstrumented.bc" -x c "${PROG_SOURCE}"
-    # Macos catalina and newer need sysroot to be defined when compiling
-    # TODO also check for actual version, not only if macos or not
     # "${LLVM}/opt" -S -instnamer -reg2mem -load "${TRACEPLUGIN}" -traceplugin -exclude_functions "${EXCLUDED_FUNCTIONS}" -disable-verify "${PROG_SOURCE}.uninstrumented.bc" -o  "${PROG_SOURCE}.opt_debug.bc"
 
     counter = 0
@@ -50,19 +48,29 @@ def mutate_file(information):
         counter, mutation, folder to put result in, name of program to mutate,
     :return:
     """
+    # Macos catalina and newer need sysroot to be defined when compiling
+    # According to https://en.wikipedia.org/wiki/Darwin_%28operating_system%29#Release_history,
+    # MacOS Catalina corresponds to Darwin's major version number 19.
+    # The uname.release checks below check if the major version number of Darwin is greater than 18
     counter = information[0]
     mutation = information[1] # this contains each line that has been read from the mutationLocations file
     mutations_folder = information[2]
     progname = information[3]
     print(f"[INFO] Mutating {mutation} to file {mutations_folder}/{progname}.{counter}.mut\n")
     with open(f"{progsource}.ll") as progsource_file:
-        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutatorplugin", "-mutation_pattern", mutation, "-disable-verify", "-o", f"{mutations_folder}/{progname}.{counter}.mut.ll"], stdin=progsource_file)
+        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutatorplugin",
+            "-mutation_pattern", mutation, "-disable-verify", "-o",
+            f"{mutations_folder}/{progname}.{counter}.mut.ll"], stdin=progsource_file)
 
     if args.bitcode:
-        if uname.sysname == "Darwin":
-            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-isysroot", f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{counter}.mut.bc", "-c", f"{mutations_folder}/{progname}.{counter}.mut.ll"])
+        if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
+            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-isysroot",
+                f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{counter}.mut.bc",
+                "-c", f"{mutations_folder}/{progname}.{counter}.mut.ll"])
         else:
-            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-o", f"{mutations_folder}/{progname}.{counter}.mut.bc", "-c", f"{mutations_folder}/{progname}.{counter}.mut.ll"])
+            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-o",
+                f"{mutations_folder}/{progname}.{counter}.mut.bc", "-c",
+                f"{mutations_folder}/{progname}.{counter}.mut.ll"])
 
     if args.binary:
         arguments = [
@@ -74,8 +82,7 @@ def mutate_file(information):
             "-lm", "-lz", "-ldl", # some often used libraries
             f"-l{linked_libraries}", # the library containing all the api functions that were called by mutations
         ]
-
-        if uname.sysname == "Darwin":
+        if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
         else:
             subprocess.call([clang, "-fno-inline", "-O3"] + arguments)
