@@ -257,7 +257,6 @@ std::vector<std::string> UnInitLocalVariables::find(const Instruction *instr) {
         // We only store the location if the allocation is not a array type,
         // since array type allocation don't have any corresponding store to mutate on.
         if (allocation_instr->getAllocatedType()->getTypeID() != 16){
-            std::cout<<allocation_instr->getAllocatedType()->getTypeID()<<std::endl;
             json j;
             auto surroundingFunction = instr->getFunction()->getName().str();
             j["funname"] = surroundingFunction;
