@@ -8,7 +8,7 @@ WORKDIR /AFLplusplus
 
 RUN git clone https://github.com/AFLplusplus/AFLplusplus --branch=2.68c && \
     cd AFLplusplus && \
-    export REAL_CXX=g++-10 && export CC=gcc-10 && \
+    export REAL_CXX=g++-10 && export CC=gcc-10 && export AFL_USE_UBSAN=1 && \
     export CXX=g++-10 && make clean && \
     make source-only && make install && make clean
 
@@ -18,5 +18,5 @@ WORKDIR /home/eval/
 
 COPY tmp/lib/ ./lib/
 
-COPY eval/start_aflpp.sh .
-RUN chmod +x start_aflpp.sh
+COPY eval/start_aflppubsan.sh .
+RUN chmod +x start_aflppubsan.sh

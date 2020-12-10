@@ -253,15 +253,19 @@ bool ShiftSwitch::mutate(
 
 std::vector<std::string> UnInitLocalVariables::find(const Instruction *instr) {
     std::vector<std::string> results;
-    if (dyn_cast<AllocaInst>(instr)) {
-        json j;
-        auto surroundingFunction = instr->getFunction()->getName().str();
-        j["funname"] = surroundingFunction;
-        std::string instructionString;
-        llvm::raw_string_ostream os(instructionString);
-        instr->print(os);
-        j["instr"] = os.str();
-        results.push_back(getIdentifierString(instr, DELETE_LOCAL_STORE, j));
+    if (auto allocation_instr = dyn_cast<AllocaInst>(instr)) {
+        // We only store the location if the allocation is not a array type,
+        // since array type allocation don't have any corresponding store to mutate on.
+        if (allocation_instr->getAllocatedType()->getTypeID() != 16){
+            json j;
+            auto surroundingFunction = instr->getFunction()->getName().str();
+            j["funname"] = surroundingFunction;
+            std::string instructionString;
+            llvm::raw_string_ostream os(instructionString);
+            instr->print(os);
+            j["instr"] = os.str();
+            results.push_back(getIdentifierString(instr, DELETE_LOCAL_STORE, j));
+        }
     }
     return results;
 }

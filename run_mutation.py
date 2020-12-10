@@ -20,11 +20,11 @@ def main(prog: str):
         mutate = prog
 
     if args.cpp:
-        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-p", mutate, "-cpp"])
+        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-cpp", mutate])
     else:
-        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-p", mutate])
+        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate])
 
-    arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py", "-p", mutate]
+    arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py"]
     if args.bitcode:
         arguments.append("-bc")
     if args.bitcode_human_readable:
@@ -33,13 +33,14 @@ def main(prog: str):
         arguments.append("-bn")
     if args.cpp:
         arguments.append("-cpp")
+    arguments.append(mutate)
     subprocess.run(arguments)
 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mutator Script. Need at least \
-                one of the arguments [-bc, -ll, -bn] to get resulting files.")
+    parser = argparse.ArgumentParser(description="Script to find and mutate patterns. \
+            Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.")
     parser.add_argument('-bc', "--bitcode", action='store_true',
                         help="Keeps the mutated bitcode files.")
     parser.add_argument('-ll', "--bitcode_human_readable", action='store_true',
