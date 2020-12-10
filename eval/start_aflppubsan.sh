@@ -9,6 +9,7 @@ trap _term SIGINT
 
 set -Euxo pipefail
 
+export AFL_USE_UBSAN=1
 export LD_LIBRARY_PATH=/home/eval/lib/
 
 afl-clang-lto++ /home/eval/lib/libdynamiclibrary.so $1 $2
@@ -26,7 +27,7 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-afl-fuzz -d -i $SEEDS -o output -- ./a.out $@ &
+afl-fuzz -m none -d -i $SEEDS -o output -- ./a.out $@ &
 child=$! 
 
 echo "setup done"
