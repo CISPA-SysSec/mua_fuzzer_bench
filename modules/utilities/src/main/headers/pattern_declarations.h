@@ -74,6 +74,49 @@ protected:
     std::set<std::string> pthreadFoundFunctions;
 };
 
+// Abstract base class for failing calls to the libc.
+// We change the call s.t. it always fails and flip all local checks that try to catch a failing call.
+class LibCFailPattern: public CallInstPattern {
+protected:
+    /**
+     * For the given value find all compare instructions that use this value.
+     */
+    std::set<CmpInst*> findCompareUses(Value* instr);
+    std::set<CmpInst*> foundCompareUses;
+
+    /**
+     * Returns a list of pattern found location if the function name matches.
+     * This list can be directly returned from the find method.
+     * @param instr: the current instruction to check
+     * @param funName: the function name to find
+     * @return
+     */
+    std::vector<std::string> findConcreteFunction(const Instruction *instr, const std::string& funName, int patternID);
+
+    /**
+     * Handles the concrete mutation for each libc function we want to fail
+     * @param builder
+     * @param nextInstructionBuilder
+     * @param instr
+     * @param builderMutex
+     * @param seglist
+     * @param M
+     * @param patternID
+     * @param returnValueForFail: The value returned from the mutated function if it fails.
+     * @return
+     */
+    bool concreteMutate(
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M,
+            int patternID,
+            int returnValueForFail
+    );
+};
+
 // CallInst types of instruction patterns
 class MallocPattern: public CallInstPattern{
 public:
@@ -337,6 +380,19 @@ public:
 
 private:
     std::set<StoreInst*> to_delete;
+};
+
+class INetAddrFailPattern: public LibCFailPattern{
+public:
+    std::vector<std::string> find(const Instruction *instr) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
 };
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H
