@@ -156,6 +156,15 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE executed_runs (
+            prog,
+            mutation_id,
+            fuzzer,
+            covered_file_seen,
+            total_time
+        )''')
+
+        c.execute('''
         CREATE TABLE aflpp_runs (
             prog,
             mutation_id,
@@ -171,9 +180,7 @@ class Stats():
             unique_hangs,
             max_depth,
             execs_per_sec,
-            totals_execs,
-            covered_file_seen,
-            total_time
+            totals_execs
         )''')
 
         c.execute('''
@@ -182,7 +189,7 @@ class Stats():
             mutation_id,
             fuzzer,
             time_found,
-            initial_seed,
+            stage,
             path,
             crashing_input,
             orig_return_code,
@@ -234,13 +241,22 @@ class Stats():
 
     @connection
     def new_aflpp_run(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
+            (
+                prog,
+                mutation_id,
+                fuzzer,
+                cf_seen,
+                total_time,
+            )
+        )
         start_time = None
         for row in plot_data:
             cur_time = int(row['# unix_time'].strip())
             if start_time is None:
                 start_time = cur_time
             cur_time -= start_time
-            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (
                     prog,
                     mutation_id,
@@ -257,8 +273,6 @@ class Stats():
                     row[' max_depth'].strip(),
                     row[' execs_per_sec'].strip(),
                     row[None][0].strip(),
-                    cf_seen,
-                    total_time,
                 )
             )
         self.conn.commit()
@@ -272,7 +286,7 @@ class Stats():
                     mutation_id,
                     fuzzer,
                     data['time_found'],
-                    data['initial_seed'],
+                    data['stage'],
                     path,
                     data['data'],
                     data['orig_returncode'],
@@ -316,7 +330,7 @@ class DockerLogStreamer(threading.Thread):
         self.q.put(None)
 
 @contextlib.contextmanager
-def start_testing_container(core_to_use):
+def start_testing_container(core_to_use, trigger_file):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -342,6 +356,7 @@ def start_testing_container(core_to_use):
         auto_remove=True,
         environment={
             'LD_LIBRARY_PATH': "/workdir/lib/",
+            'TRIGGERED_FILE': str(trigger_file),
         },
         volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
                                       'mode': 'ro'}},
@@ -361,16 +376,30 @@ def run_exec_in_testing_container(container, cmd):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
 
+class CoveredFile:
+    def __init__(self, workdir, start_time) -> None:
+        super().__init__()
+        self.found = None
+        self.path = Path(workdir)/"covered"
+        self.start_time = start_time
+
+        if self.path.is_file():
+            self.path.unlink()
+
+    def check(self):
+        if self.found is None and self.path.is_file():
+            self.found = time.time() - self.start_time
+
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                          orig_bin, mut_bin, args, start_time, stage):
+                          orig_bin, mut_bin, args, start_time, covered, stage):
     if not crash_dir.is_dir():
         return False
 
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
-            if path not in crashing_inputs:
+            if str(path) not in crashing_inputs:
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin]
                 orig_cmd += args.replace("@@", str(path)).split(" ")
@@ -391,6 +420,8 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                     mut_res[1].replace(TRIGGERED_STR, b"")
                 )
                 mut_returncode = proc.returncode
+
+                covered.check()
 
                 try:
                     crash_file_data = path.read_bytes()
@@ -430,8 +461,14 @@ def aflpp_base_eval(run_data, docker_image, executable):
     docker_mut_bin = Path(workdir)/"testing"
     docker_mut_bin.parent.mkdir(parents=True, exist_ok=True)
 
+    # get start time for the eval
+    start_time = time.time()
+
+    # get path for covered file and rm the file if it exists
+    covered = CoveredFile(workdir, start_time)
+
     # start testing container
-    with start_testing_container(core_to_use) as testing_container:
+    with start_testing_container(core_to_use, covered.path) as testing_container:
 
         # compile the compare version of the mutated binary
         compile_mut_bin_res = run_exec_in_testing_container(testing_container,
@@ -446,28 +483,18 @@ def aflpp_base_eval(run_data, docker_image, executable):
         if compile_mut_bin_res.returncode != 0:
             raise ValueError(compile_mut_bin_res)
 
-        # get path for covered file and rm the file if it exists
-        covered_file_seen = None
-        covered_file = Path(workdir)/"covered"
-        if covered_file.is_file():
-            covered_file.unlink()
         # set up data for crashing inputs
         crashing_inputs = {}
         crash_dir = workdir/"output"/"crashes"
         # check if seeds are already crashing
         checked_seeds = {}
-        # get start time for the eval
-        start_time = time.time()
         # do an initial check to see if the seed files are already crashing
         if check_crashing_inputs(testing_container, checked_seeds, seeds,
                                  orig_bin, docker_mut_bin, args, start_time,
-                                 "initial"):
-            # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+                                 covered, "initial"):
             return {
                 'total_time': time.time() - start_time,
-                'covered_file_seen': covered_file_seen,
+                'covered_file_seen': covered.found,
                 'plot_data': [],
                 'crashing_inputs': checked_seeds,
             }
@@ -502,9 +529,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
         DockerLogStreamer(logs_queue, container).start()
 
         while time.time() < start_time + TIMEOUT and should_run:
-            print(".", end="")
-            # Print the next lines outputted by the container
-
             # check if the process stopped, this should only happen in an
             # error case
             try:
@@ -516,13 +540,12 @@ def aflpp_base_eval(run_data, docker_image, executable):
                 break
 
             # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+            covered.check()
 
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
                                      crash_dir, orig_bin, docker_mut_bin, args,
-                                     start_time, "runtime"):
+                                     start_time, covered, "runtime"):
                 break
 
             # Sleep so we only check sometimes and do not busy loop 
@@ -542,8 +565,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # container is dead just continue maybe it worked
             pass
         
-        total_time = time.time() - start_time
-
         all_logs = []
         while True:
             line = logs_queue.get()
@@ -565,11 +586,11 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # Also collect all crashing outputs
             check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                                   orig_bin, docker_mut_bin, args, start_time,
-                                  "final")
+                                  covered, "final")
                 
             return {
-                'total_time': total_time,
-                'covered_file_seen': covered_file_seen,
+                'total_time': time.time() - start_time,
+                'covered_file_seen': covered.found,
                 'plot_data': plot_data,
                 'crashing_inputs': crashing_inputs,
             }
