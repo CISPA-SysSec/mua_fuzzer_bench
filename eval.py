@@ -5,15 +5,12 @@ import subprocess
 import csv
 import sqlite3
 import traceback
-import datetime
 import signal
 import threading
 import queue
 import json
 import shutil
-import tempfile
 import contextlib
-import shlex
 import concurrent.futures
 from pathlib import Path
 
@@ -367,33 +364,28 @@ def run_exec_in_testing_container(container, cmd):
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                          orig_bin, mut_bin, args, start_time, is_seed):
+                          orig_bin, mut_bin, args, start_time, stage):
     if not crash_dir.is_dir():
         return False
 
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
             if path not in crashing_inputs:
-                # Check that does not crash on the original binary
+                # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin]
                 orig_cmd += args.replace("@@", str(path)).split(" ")
                 proc = run_exec_in_testing_container(testing_container, orig_cmd)
-                # proc = subprocess.Popen(orig_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
-                # Check that does not crash on the original binary
+                # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin]
                 mut_cmd += args.replace("@@", str(path)).split(" ")
                 proc = run_exec_in_testing_container(testing_container, mut_cmd)
-                # proc = subprocess.Popen(mut_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 mut_res = (proc.stdout, proc.stderr)
-                num_triggered = len(mut_res[0].split(TRIGGERED_STR))
-                num_triggered += len(mut_res[1].split(TRIGGERED_STR))
+
+                num_triggered = len(mut_res[0].split(TRIGGERED_STR)) - 1
+                num_triggered += len(mut_res[1].split(TRIGGERED_STR)) - 1
                 mut_res = (
                     mut_res[0].replace(TRIGGERED_STR, b""),
                     mut_res[1].replace(TRIGGERED_STR, b"")
@@ -407,7 +399,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
                 crashing_inputs[str(path)] = {
                     'time_found': time.time() - start_time,
-                    'initial_seed': is_seed,
+                    'stage': stage,
                     'data': crash_file_data,
                     'orig_returncode': orig_returncode,
                     'mut_returncode': mut_returncode,
@@ -469,7 +461,7 @@ def aflpp_base_eval(run_data, docker_image, executable):
         # do an initial check to see if the seed files are already crashing
         if check_crashing_inputs(testing_container, checked_seeds, seeds,
                                  orig_bin, docker_mut_bin, args, start_time,
-                                 True):
+                                 "initial"):
             # Check if covered file is seen
             if covered_file_seen is None and covered_file.is_file():
                 covered_file_seen = time.time() - start_time
@@ -510,6 +502,7 @@ def aflpp_base_eval(run_data, docker_image, executable):
         DockerLogStreamer(logs_queue, container).start()
 
         while time.time() < start_time + TIMEOUT and should_run:
+            print(".", end="")
             # Print the next lines outputted by the container
 
             # check if the process stopped, this should only happen in an
@@ -529,7 +522,7 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
                                      crash_dir, orig_bin, docker_mut_bin, args,
-                                     start_time, False):
+                                     start_time, "runtime"):
                 break
 
             # Sleep so we only check sometimes and do not busy loop 
@@ -572,7 +565,7 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # Also collect all crashing outputs
             check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                                   orig_bin, docker_mut_bin, args, start_time,
-                                  False)
+                                  "final")
                 
             return {
                 'total_time': total_time,
@@ -700,9 +693,8 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         try:
             # if there was no exception get the data
             run_result = future.result()
-        except Exception as exc:
+        except Exception:
             # if there was an exception print it
-            prog_bc = data['prog_bc']
             trace = traceback.format_exc()
             stats.run_crashed(data['prog'], data['mutation_id'], data['fuzzer'],
                               trace)
