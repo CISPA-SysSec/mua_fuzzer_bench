@@ -825,5 +825,332 @@ def main():
         print('waiting for the rest')
         wait_for_runs(stats, runs, cores_in_use, False)
 
+
+def parse_afl_paths(paths):
+    if paths is None:
+        return []
+    paths = paths.split('/////')
+    paths_elements = []
+    for path in paths:
+        elements = {}
+        split_path = path.split(',')
+        elements['path'] = split_path[0]
+        for elem in split_path[1:]:
+            parts = elem.split(":")
+            if len(parts) == 2:
+                elements[parts[0]] = parts[1]
+            else:
+                raise ValueError("Unexpected afl path format: ", path)
+        paths_elements.append(elements)
+    return paths_elements
+
+def header():
+    import altair as alt
+
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mutation testing eval</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
+        <script src="https://cdn.jsdelivr.net/npm/vega@{vega_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@{vegalite_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@{vegaembed_version}"></script>
+    <style>
+    table {{
+        border-collapse: collapse;
+    }}
+    th, td {{
+        text-align: left;
+        padding: 7px;
+        border: none;
+    }}
+        tr:nth-child(even){{background-color: lightgray}}
+    th {{
+    }}
+    </style>
+    </head>
+    <body>\n""".format(
+        vega_version=alt.VEGA_VERSION,
+        vegalite_version=alt.VEGALITE_VERSION,
+        vegaembed_version=alt.VEGAEMBED_VERSION,
+    )
+
+def runtime_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
+    print(stats)
+    res = "<h2>Runtime Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def mut_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
+    res = "<h2>Mutation Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_num_muts, time):
+    try:
+        val = crash_ctr['confirmed'] / total_num_muts
+    except ZeroDivisionError:
+        val = 0
+
+    data['total'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+    try:
+        val = crash_ctr['confirmed'] / crash_ctr['covered']
+    except ZeroDivisionError:
+        val = 0
+
+    data['covered'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+def plot(title, mut_type, data):
+    import inspect
+    import types
+    from typing import cast
+    import altair as alt
+    func_name = cast(types.FrameType, inspect.currentframe()).f_code.co_name
+    selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend')
+    color = alt.condition(selection,
+                      alt.Color('fuzzer:O', legend=None),
+                      alt.value('lightgray'))
+    plot = alt.Chart(data).mark_line(
+        interpolate='step-after',
+    ).encode(
+        x='time',
+        y='percentage',
+        color='fuzzer',
+        tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
+    ).properties(
+        title=title,
+        width=600,
+        height=400,
+    )
+
+    plot = plot.mark_point(size=100, opacity=.5, tooltip=alt.TooltipContent("encoding")) + plot
+
+    plot = plot.add_selection(
+        alt.selection_interval(bind='scales')
+    ).transform_filter(
+        selection
+    )
+    
+    plot = (plot |
+    alt.Chart(data).mark_point().encode(
+        x=alt.X('prog', axis=alt.Axis(orient='bottom')),
+        y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
+        color=color
+    ).add_selection(
+        selection
+    ))
+
+    res = f'<div id="{title.replace(" ", "")}{func_name}{mut_type}"></div>'
+    res += '''<script type="text/javascript">
+                vegaEmbed('#{title}{func_name}{mut_id}', {spec1}).catch(console.error);
+              </script>'''.format(title=title.replace(" ", ""), func_name=func_name, mut_id=mut_type,
+                                  spec1=plot.to_json(indent=None))
+    return res
+
+def split_vals(val):
+    if val is None:
+        return []
+    return [float(v) for v in val.split("/////")]
+
+def gather_plot_data(runs, run_results):
+    from collections import defaultdict
+    import pandas as pd
+    if len(run_results) == 0:
+        return None
+
+    data = defaultdict(list)
+    unique_crashes = [] 
+
+    for crash in run_results.itertuples():
+        import math
+        if math.isnan(crash.covered_file_seen):
+            continue
+        unique_crashes.append({
+            'fuzzer': crash.fuzzer,
+            'prog': crash.prog,
+            'mut_type': crash.mut_type,
+            'type': 'covered',
+            'time': crash.covered_file_seen,
+        })
+
+    for crash in run_results.itertuples():
+        if crash.confirmed != 1:
+            continue
+        if crash.stage == 'initial' or crash.stage == 'runtime' or crash.stage == 'final':
+            unique_crashes.append({
+                'fuzzer': crash.fuzzer,
+                'prog': crash.prog,
+                'mut_type': crash.mut_type,
+                'type': 'afl',
+                'time': crash.time_found,
+            })
+        else:
+            print(crash.stage)
+            # nothing found
+            pass
+
+    counters = defaultdict(lambda: {
+        'covered': 0,
+        'confirmed': 0,
+    })
+    max_time = 0
+
+    # for crash in unique_crashes:
+    #     crash_ctr = counters[(
+    #         crash['fuzzer'],
+    #         crash['prog'],
+    #         crash['mut_type'])]
+
+    #     if crash['type'] == 'initial':
+    #         crash_ctr['confirmed'] += 1
+
+    # add initial points
+    for run in runs.itertuples():
+        crash_ctr = counters[(
+            run.fuzzer,
+            run.prog,
+            run.mut_type)]
+        total_runs = run.done
+        add_datapoint(crash_ctr, data, run.mut_type, run.fuzzer, run.prog, total_runs, 0)
+
+    for crash in sorted(unique_crashes, key=lambda x: x['time']):
+        crash_ctr = counters[(
+            crash['fuzzer'],
+            crash['prog'],
+            crash['mut_type'])]
+
+        if crash['time'] > max_time:
+            max_time = crash['time']
+
+        total_runs = int(runs[(runs.fuzzer == crash['fuzzer']) & (runs.prog == crash['prog']) & (runs.mut_type == crash['mut_type'])]['done'].values[0])
+        if crash['type'] == 'covered':
+            crash_ctr['covered'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'initial':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'afl':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        else:
+            raise ValueError("Unknown type")
+
+    # add final points
+    for (fuzzer, prog, mut_type), crash_ctr in counters.items():
+        try:
+            total_runs = int(runs[(runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)]['done'].values[0])
+        except ValueError:
+            total_runs = 0
+        add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_runs, max_time)
+
+    return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
+
+def create_mut_type_plot(mut_type, runs, run_results):
+    plot_data = gather_plot_data(runs, run_results)
+
+    res = f'<h3>Mutation: {mut_type}</h3>'
+    res += runs.to_html()
+    if plot_data is not None:
+        res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
+        res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+    return res
+
+def footer():
+    return """
+    </body>
+    </html>
+    """
+
+def generate_plots():
+    import pandas as pd
+
+    con = sqlite3.connect("/home/philipp/stats.db")
+    con.isolation_level = None
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    with open("eval.sql", "rt") as f:
+        cur.executescript(f.read())
+
+    res = header()
+    res += runtime_stats(con)
+    res += mut_stats(con)
+
+    mut_types = pd.read_sql_query(
+        "SELECT * from mut_types", con)
+    runs = pd.read_sql_query(
+        "select * from run_results_by_mut_type", con)
+    run_results = pd.read_sql_query(
+        "select * from run_results", con)
+    res += "<h2>Plots</h2>"
+    for mut_type in mut_types['mut_type']:
+        print(mut_type)
+        res += create_mut_type_plot(mut_type, 
+            runs[runs.mut_type == mut_type],
+            run_results[run_results.mut_type == mut_type],
+        )
+    res += footer()
+
+    out_path = Path("test_plot.html").resolve()
+    print(f"Writing plots to: {out_path}")
+    with open(out_path, 'w') as f:
+        f.write(res) 
+    print(f"Open: file://{out_path}")
+
+def main():
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--eval", action="store_true",
+        help="run the full evaluation executing"
+             "fuzzers and gathering the resulting data")
+    parser.add_argument("--plots", action="store_true",
+        help="generate plots for the gathered data")
+
+    if len(sys.argv) < 2:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    args = parser.parse_args()
+
+    if args.eval:
+        run_eval()
+    if args.plots:
+        generate_plots()
+
 if __name__ == "__main__":
     main()
