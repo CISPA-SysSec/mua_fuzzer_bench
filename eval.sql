@@ -55,38 +55,32 @@ DROP VIEW IF EXISTS run_results_by_fuzzer;
 CREATE TEMP VIEW run_results_by_fuzzer
 as
 select fuzzer, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type
-group by fuzzer
+group by fuzzer;
 
--- 
--- 
 -- ---------------------------------------------------------------------------------
 -- -- afl++
--- 
--- -- get the last line of the plot data based on time for each mutation_id
--- -- DROP VIEW IF EXISTS aflpp_runs_last_line;
--- -- CREATE TEMP VIEW aflpp_runs_last_line
--- -- as
--- -- select *
--- -- from aflpp_runs a
--- -- inner join (
--- -- 	select mutation_id, max(total_time) total_time
--- -- 	from aflpp_runs
--- -- 	group by mutation_id
--- -- ) b ON a.mutation_id = b.mutation_id and a.total_time = b.total_time;
--- 
--- -- get runtime stats for afl++ based fuzzers
--- DROP VIEW IF EXISTS runtime_stats;
--- CREATE TEMP VIEW runtime_stats
--- as
--- select fuzzer,
--- 	   sum(totals_execs) / 1000000.0 as million_execs,
--- 	   sum(total_time) / (60*60) as cpu_hours,
--- 	   sum(total_time) / (60*60*80) as blade_time,
--- 	   cast(count(nullif(unique_crashes, "0")) as float) / count(*) as percent_crashing_runs,
--- 	   cast(count(nullif(unique_hangs, "0")) as float) / count(*) as percent_hanging_runs,
--- 	   cast(sum(map_size) as float) / count(*) as average_map_size
--- from aflpp_runs_last_line
--- group by fuzzer;
+
+-- get the last line of the plot data based on time for each mutation_id
+DROP VIEW IF EXISTS aflpp_runs_last_line;
+CREATE TEMP VIEW aflpp_runs_last_line
+as
+select * from (
+	select * from aflpp_runs
+	order by totals_execs
+) a
+group by prog, mutation_id, fuzzer;
+
+-- get runtime stats for afl++ based fuzzers
+DROP VIEW IF EXISTS aflpp_runtime_stats;
+CREATE TEMP VIEW aflpp_runtime_stats
+as
+select fuzzer,
+	   sum(totals_execs) / 1000000.0 as million_execs,
+	   cast(count(nullif(unique_crashes, "0")) as float) / count(*) as percent_crashing_runs,
+	   cast(count(nullif(unique_hangs, "0")) as float) / count(*) as percent_hanging_runs,
+	   cast(sum(map_size) as float) / count(*) as average_map_size
+from aflpp_runs_last_line
+group by fuzzer;
 -- 
 -- ---------------------------------------------------------------------------------
 -- -- general stats on mutation types

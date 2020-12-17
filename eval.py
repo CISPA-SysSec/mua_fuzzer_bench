@@ -883,6 +883,9 @@ def header():
         <script src="https://cdn.jsdelivr.net/npm/vega-lite@{vegalite_version}"></script>
         <script src="https://cdn.jsdelivr.net/npm/vega-embed@{vegaembed_version}"></script>
     <style>
+    body {{
+        margin-left:10px
+    }}
     table {{
         border-collapse: collapse;
     }}
@@ -914,6 +917,13 @@ def mut_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
     res = "<h2>Mutation Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def aflpp_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
+    res = "<h2>AFL++ style fuzzers -- Stats</h2>"
     res += stats.to_html()
     return res
 
@@ -961,7 +971,7 @@ def plot(title, mut_type, data):
     plot = alt.Chart(data).mark_line(
         interpolate='step-after',
     ).encode(
-        x='time',
+        x=alt.X('time', scale=alt.Scale(type='symlog')),
         y='percentage',
         color='fuzzer',
         tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
@@ -974,7 +984,7 @@ def plot(title, mut_type, data):
     plot = plot.mark_point(size=100, opacity=.5, tooltip=alt.TooltipContent("encoding")) + plot
 
     plot = plot.add_selection(
-        alt.selection_interval(bind='scales')
+        alt.selection_interval(bind='scales', encodings=['x'])
     ).transform_filter(
         selection
     )
@@ -1128,6 +1138,7 @@ def generate_plots():
 
     res = header()
     res += runtime_stats(con)
+    res += aflpp_stats(con)
     res += mut_stats(con)
 
     mut_types = pd.read_sql_query(
