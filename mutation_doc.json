@@ -1,0 +1,162 @@
+[
+    {
+        "pattern_name": "MALLOC",
+        "typeID": 0,
+        "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
+        "pattern_class": "MallocPattern",
+        "description": "Mutating all malloc calls to achieve buffer overflow/out of bounds errors.",
+        "procedure": "We decrease allocated memory byte_size in the malloc call by 1."
+    },
+    {
+        "pattern_name": "FGETS_MATCH_BUFFER_SIZE",
+        "typeID": 1,
+        "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
+        "pattern_class": "FGetsPattern",
+        "description": "Mutating all fgets calls to achieve buffer overflow errors.",
+        "procedure": "We increase the size (n) parameter in the fgets call by increasing the value by 1 and then multiplying it by 5. E.g. 4->5->25."
+    },
+    {
+        "pattern_name": "SIGNED_LESS_THAN",
+        "typeID": 2,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedLessThanPattern",
+        "description": "Mutating all '<' comparisions between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN",
+        "typeID": 3,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanPattern",
+        "description": "Mutating all '>' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+    },
+    {
+        "pattern_name": "SIGNED_LESS_THAN_EQUALTO",
+        "typeID": 4,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedLessThanEqualToPattern",
+        "description": "Mutating all '<=' comparisions between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN_EQUALTO",
+        "typeID": 5,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanEqualToPattern",
+        "description": "Mutating all '>=' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+    },
+    {
+        "pattern_name": "FREE_FUNCTION_ARGUMENT",
+        "typeID": 6,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "FreeArgumentReturnPattern",
+        "description": "Mutating all functions that receive a pointer type function argument to achieve double free and possibly illegal memory access errors.",
+        "procedure": "We check for functions that receive a pointer type argument. Before returning at the end of the function, one argument per mutant is freed."
+    },
+    {
+        "pattern_name": "PTHREAD_MUTEX",
+        "typeID": 7,
+        "pattern_location": "./modules/utilities/src/main/cpp/callinst_patterns.cpp",
+        "pattern_class": "PThreadPattern",
+        "description": "Mutating all pthread_lock and pthread_unlock calls to achieve data races errors.",
+        "procedure": "We remove all pthread_lock and pthread_unlock calls in a function per mutant."
+    },
+    {
+        "pattern_name": "ATOMIC_CMP_XCHG",
+        "typeID": 8,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "CMPXCHGPattern",
+        "description": "Mutating all atomic compare exchanges to achieve data races.",
+        "procedure": "If we have at least one atomicrmw instruction, we replace all atomicrmw with return value 1 in a certain function."
+    },
+    {
+        "pattern_name": "ATOMICRMW_REPLACE",
+        "typeID": 9,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "ATOMICRMWPattern",
+        "description": "Mutating all atomicrmw instructions to achieve data races.",
+        "procedure": "Takes the given atomic instruction and replaces it with its non-atomic counterpart."
+    },
+    {
+        "pattern_name": "SIGNED_TO_UNSIGNED",
+        "typeID": 10,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedToUnsigned",
+        "description": "Mutating all signed integer comparisions to achieve overflow and out of bound errors.",
+        "procedure": "Each of the four integer comparision predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE are transformed into the corresponding unsigned predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE respectively."
+    },
+    {
+        "pattern_name": "UNSIGNED_TO_SIGNED",
+        "typeID": 11,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnsignedToSigned",
+        "description": "Mutating all unsigned integer comparisions to achieve overflow and out of bounds errors.",
+        "procedure": "Each of the four integer comparision predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE are transformed into the corresponding unsigned predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE respectively."
+    },
+    {
+        "pattern_name": "SWITCH_SHIFT",
+        "typeID": 12,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "ShiftSwitch",
+        "description": "Mutating all shift calls to achieve overflow and out of bounds errors.",
+        "procedure": "Replaces an arithmetic shift with a logical shift and vice versa."
+    },
+    {
+        "pattern_name": "CALLOC",
+        "typeID": 13,
+        "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
+        "pattern_class": "CallocPattern",
+        "description": "Mutating all calloc calls to achieve overflow and out of bounds errors.",
+        "procedure": " The size parameter's value is decreased by 1."
+    },
+    {
+        "pattern_name": "DELETE_LOCAL_STORE",
+        "typeID": 14,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "UnInitLocalVariables",
+        "description": "Mutating all stores on a local variable in one function to achieve uninitialization errors.",
+        "procedure": "The store call is removed."
+    },
+    {
+        "pattern_name": "UNSIGNED_LESS_THAN",
+        "typeID": 15,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnsignedLessThanPattern",
+        "description": "Mutating all '<' comparisions between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN",
+        "typeID": 16,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnsignedGreaterThanPattern",
+        "description": "Mutating all '>' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+    },
+    {
+        "pattern_name": "UNSIGNED_LESS_THAN_EQUALTO",
+        "typeID": 17,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnsignedLessThanEqualToPattern",
+        "description": "Mutating all '<=' comparisions between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO",
+        "typeID": 18,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnsignedGreaterThanEqualToPattern",
+        "description": "Mutating all '>=' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+    },
+    {
+        "pattern_name": "INET_ADDR_FAIL_WITHOUTCHECK",
+        "typeID": 19,
+        "pattern_location": "./modules/utilities/src/main/cpp/libcfail_patterns.cpp",
+        "pattern_class": "INetAddrFailPattern",
+        "description": "Mutating all calls to the libc function inet_addr to achieve unhandled non-established connection errors.",
+        "procedure": "Replaces all uses of the function return value to the failure value. Also removes the function call from the corpus as a fail of the function call should be simulated. Furthermore, the comparison instructions are flipped, s.t. on failure the 'correct' path is taken, i.e. we simulate a missing check for the error return value."
+    }
+]
