@@ -54,6 +54,8 @@ void populatePatternVectors(){
     populateMiscInstPatterns();
 }
 
+int Pattern::PatternIDCounter = 0;
+
 std::string Pattern::getIdentifierString(const Instruction *instr, int type){
     json j;
     return getIdentifierString(instr, type, j);
@@ -73,6 +75,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, jso
         j["column"] = column;
         j["type"] = type;
         j["additionalInfo"] = additionalInfo;
+        j["UID"] = PatternIDCounter++;
         return j.dump(4);
     } else {
         json j;
@@ -82,6 +85,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, jso
         j["column"] = 0;
         j["type"] = type;
         j["additionalInfo"] = additionalInfo;
+        j["UID"] = PatternIDCounter++;
         return j.dump(4);
     }
 }

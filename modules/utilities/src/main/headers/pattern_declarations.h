@@ -39,6 +39,7 @@ public:
 
     virtual std::vector<std::string> find(const Instruction *instr) = 0;
     virtual ~Pattern() = default;
+    static int PatternIDCounter;
 
 private:
 
