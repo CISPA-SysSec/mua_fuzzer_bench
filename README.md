@@ -1,5 +1,10 @@
 # llvm-mutation-tool
 
+## Mutation documentation
+
+The file [mutation_doc.json](mutation_doc.json) contains a documentation about the different mutation types implemented
+in this project as a machine readable json file.
+
 ## Install
 
 ### Docker Install
@@ -86,6 +91,11 @@ export TRIGGERED_OUTPUT="Some output." # can contain any string which will be pr
 export TRIGGERED_FILE="some/file/to/report/mutation/trigger" # a path to a file which will be either created or 
     overwritten if existing and is filled with the TRIGGERED_OUTPUT value or some default string if TRIGGERED_OUTPUT is not defined
 ```
+
+Also, if one wants to test which mutations could be covered, a binary is generated when producing the mutants 
+which will print all covered mutation locations:
+Invoke the binary ```*.opt_mutate``` (e.g. [samples/simple_malloc/malloc.c.opt_mutate](samples/simple_malloc/malloc.c.opt_mutate)) in the respective subject folder, it will print all found locations during
+the run as explained above.
 
 ## Clean
 ```shell script
