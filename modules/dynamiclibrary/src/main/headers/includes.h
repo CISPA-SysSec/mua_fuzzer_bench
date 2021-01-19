@@ -8,4 +8,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+char sprintfbuffer[100];
+
 #endif //LLVM_MUTATION_TOOL_INCLUDES_H

@@ -7,11 +7,13 @@ void ICmpInstPattern::getpredicate(const Instruction *instr){
     predicate = icmpinst->getPredicate();
 }
 
-std::vector<std::string> SignedLessThanEqualToPattern::find(const Instruction *instr){
+std::vector<std::string>
+SignedLessThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                   Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SLE) {
-        results.push_back(getIdentifierString(instr, SIGNED_LESS_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN_EQUALTO));
     }
     return results;
 }
@@ -42,7 +44,8 @@ bool SignedLessThanEqualToPattern::mutate(
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
@@ -54,11 +57,12 @@ bool SignedLessThanEqualToPattern::mutate(
     return false;
 }
 
-std::vector<std::string> SignedLessThanPattern::find(const Instruction *instr){
+std::vector<std::string>
+SignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SLT) {
-        results.push_back(getIdentifierString(instr, SIGNED_LESS_THAN));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN));
     }
     return results;
 }
@@ -89,7 +93,8 @@ bool SignedLessThanPattern::mutate(
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
@@ -101,11 +106,13 @@ bool SignedLessThanPattern::mutate(
     return false;
 }
 
-std::vector<std::string> UnsignedLessThanEqualToPattern::find(const Instruction *instr){
+std::vector<std::string>
+UnsignedLessThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                     Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_ULE) {
-        results.push_back(getIdentifierString(instr, UNSIGNED_LESS_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN_EQUALTO));
     }
     return results;
 }
@@ -136,7 +143,8 @@ bool UnsignedLessThanEqualToPattern::mutate(
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
@@ -149,11 +157,12 @@ bool UnsignedLessThanEqualToPattern::mutate(
 }
 
 
-std::vector<std::string> UnsignedLessThanPattern::find(const Instruction *instr){
+std::vector<std::string>
+UnsignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_ULT) {
-        results.push_back(getIdentifierString(instr, UNSIGNED_LESS_THAN));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN));
     }
     return results;
 }
@@ -186,7 +195,8 @@ bool UnsignedLessThanPattern::mutate(
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
@@ -199,11 +209,12 @@ bool UnsignedLessThanPattern::mutate(
 }
 
 
-std::vector<std::string> SignedGreaterThanPattern::find(const Instruction *instr){
+std::vector<std::string>
+SignedGreaterThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SGT) {
-        results.push_back(getIdentifierString(instr, SIGNED_GREATER_THAN));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN));
     }
     return results;
 }
@@ -227,7 +238,8 @@ bool SignedGreaterThanPattern::mutate(
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
@@ -238,11 +250,13 @@ bool SignedGreaterThanPattern::mutate(
     return false;
 }
 
-std::vector<std::string> SignedGreaterThanEqualToPattern::find(const Instruction *instr){
+std::vector<std::string>
+SignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                      Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SGE) {
-        results.push_back(getIdentifierString(instr, SIGNED_GREATER_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN_EQUALTO));
     }
     return results;
 }
@@ -266,7 +280,8 @@ bool SignedGreaterThanEqualToPattern::mutate(
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
@@ -277,11 +292,12 @@ bool SignedGreaterThanEqualToPattern::mutate(
     return false;
 }
 
-std::vector<std::string> UnsignedGreaterThanPattern::find(const Instruction *instr){
+std::vector<std::string>
+UnsignedGreaterThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_UGT) {
-        results.push_back(getIdentifierString(instr, UNSIGNED_GREATER_THAN));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN));
     }
     return results;
 }
@@ -305,7 +321,8 @@ bool UnsignedGreaterThanPattern::mutate(
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
@@ -316,11 +333,13 @@ bool UnsignedGreaterThanPattern::mutate(
     return false;
 }
 
-std::vector<std::string> UnsignedGreaterThanEqualToPattern::find(const Instruction *instr){
+std::vector<std::string>
+UnsignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                        Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_UGE) {
-        results.push_back(getIdentifierString(instr, UNSIGNED_GREATER_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN_EQUALTO));
     }
     return results;
 }
@@ -344,7 +363,8 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
             icmpinst->setOperand(1, newVal);
@@ -355,12 +375,13 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
     return false;
 }
 
-std::vector<std::string> SignedToUnsigned::find(const Instruction *instr){
+std::vector<std::string>
+SignedToUnsigned::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SGT || predicate == CmpInst::Predicate::ICMP_SGE
     || predicate == CmpInst::Predicate::ICMP_SLT || predicate == CmpInst::Predicate::ICMP_SLE) {
-        results.push_back(getIdentifierString(instr, SIGNED_TO_UNSIGNED));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_TO_UNSIGNED));
     }
     return results;
 }
@@ -385,7 +406,8 @@ bool SignedToUnsigned::mutate(
         if (isMutationLocation(instr, seglist, &typelist)) {
             // change from signed to unsigned
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_SGT) {
                 builderMutex.lock();
@@ -415,12 +437,13 @@ bool SignedToUnsigned::mutate(
 }
 
 
-std::vector<std::string> UnsignedToSigned::find(const Instruction *instr){
+std::vector<std::string>
+UnsignedToSigned::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_UGT || predicate == CmpInst::Predicate::ICMP_UGE
         || predicate == CmpInst::Predicate::ICMP_ULT || predicate == CmpInst::Predicate::ICMP_ULE) {
-        results.push_back(getIdentifierString(instr, UNSIGNED_TO_SIGNED));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_TO_SIGNED));
     }
     return results;
 }
@@ -445,7 +468,8 @@ bool UnsignedToSigned::mutate(
         if (isMutationLocation(instr, seglist, &typelist)) {
             // change from signed to unsigned
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_UGT) {
                 builderMutex.lock();

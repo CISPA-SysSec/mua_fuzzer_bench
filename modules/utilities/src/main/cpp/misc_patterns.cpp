@@ -2,7 +2,8 @@
 #include "mutations.h"
 #include "pattern_declarations.h"
 
-std::vector<std::string> FreeArgumentReturnPattern::find(const Instruction *instr) {
+std::vector<std::string>
+FreeArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
@@ -10,7 +11,7 @@ std::vector<std::string> FreeArgumentReturnPattern::find(const Instruction *inst
             if (op->getType()->isPointerTy()) {
                 json j;
                 j["argnumber"] = op->getArgNo();
-                results.push_back(getIdentifierString(instr, FREE_FUNCTION_ARGUMENT, j));
+                results.push_back(getIdentifierString(instr, builder, builderMutex, M, FREE_FUNCTION_ARGUMENT, j));
             }
         }
     }
@@ -33,7 +34,7 @@ bool FreeArgumentReturnPattern::mutate(
         if (isMutationLocation(instr, seglist, FREE_FUNCTION_ARGUMENT)) {
 
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            addMutationFoundSignal(builder, M, segref["UID"]);
             LLVMContext &llvmContext = M.getContext();
             // first bitcast to i8* as this is the type free expects
             int extra_arg = segref["additionalInfo"]["argnumber"];
@@ -54,7 +55,8 @@ bool FreeArgumentReturnPattern::mutate(
 }
 
 
-std::vector<std::string> CMPXCHGPattern::find(const Instruction *instr) {
+std::vector<std::string>
+CMPXCHGPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (dyn_cast<AtomicCmpXchgInst>(instr)){
         const std::string &funNameStdString = instr->getFunction()->getName().str();
@@ -62,7 +64,7 @@ std::vector<std::string> CMPXCHGPattern::find(const Instruction *instr) {
             pthreadFoundFunctions.insert(funNameStdString);
             json j;
             j["funname"] = funNameStdString;
-            results.push_back(getIdentifierString(instr, ATOMIC_CMP_XCHG, j));
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, ATOMIC_CMP_XCHG, j));
         }
     }
     return results;
@@ -90,7 +92,7 @@ bool CMPXCHGPattern::mutate(
         builderMutex.lock();
         // we leave the atomicxchg in but always return 1, hence we emulate an always successful exchange
 //        auto returnVal = instr->getOperand(0);
-        addMutationFoundSignal(nextInstructionBuilder, M);
+        addMutationFoundSignal(nextInstructionBuilder, M, segref["UID"]);
         nextInstructionBuilder->CreateInsertValue(instr, builder->getIntN(1, 1), (uint64_t) 1);
         builderMutex.unlock();
         return true;
@@ -98,11 +100,12 @@ bool CMPXCHGPattern::mutate(
     return false;
 }
 
-std::vector<std::string> ATOMICRMWPattern::find(const Instruction *instr) {
+std::vector<std::string>
+ATOMICRMWPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (!foundAtomicRMW) { // atomicrmw was not found yet
         if (dyn_cast<AtomicRMWInst>(instr)) {
-            results.push_back(getIdentifierString(instr, ATOMICRMW_REPLACE));
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, ATOMICRMW_REPLACE));
             foundAtomicRMW = true;
         }
     }
@@ -130,7 +133,7 @@ bool ATOMICRMWPattern::mutate(
     {
         builderMutex.lock();
         // we replace the atomicrmw with its non-atomic counterpart
-        auto mutated = convertAtomicBinOpToBinOp(rmw, nextInstructionBuilder, M);
+        auto mutated = convertAtomicBinOpToBinOp(rmw, seglist, nextInstructionBuilder, M);
         builderMutex.unlock();
         return mutated;
     }
@@ -141,7 +144,7 @@ bool ATOMICRMWPattern::mutate(
  * TODO some versions of atomic instructions are not yet implemented
  * Takes the given atomic instruction and replaces it with its non-atomic counterpart.
  */
-bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder<>* nextInstructionBuilder, Module& M) {
+bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, json *seglist, IRBuilder<>* nextInstructionBuilder, Module& M) {
     auto operation = instr->getOperation();
     Instruction::BinaryOps operand = llvm::Instruction::BinaryOpsBegin;
     switch (operation) {
@@ -193,7 +196,8 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
 
     // generic code for most binops: first load the lhs, then create a standard binop, then replace values and remove
     // old atomic version
-    addMutationFoundSignal(nextInstructionBuilder, M);
+    auto segref = *seglist;
+    addMutationFoundSignal(nextInstructionBuilder, M, segref["UID"]);
     auto loadResult = nextInstructionBuilder->CreateLoad(instr->getOperand(0));
     auto newinst = nextInstructionBuilder->CreateBinOp(
             operand,
@@ -206,10 +210,11 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, IRBuilder
 }
 
 
-std::vector<std::string> ShiftSwitch::find(const Instruction *instr) {
+std::vector<std::string>
+ShiftSwitch::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (dyn_cast<LShrOperator>(instr) || dyn_cast<AShrOperator>(instr)) {
-        results.push_back(getIdentifierString(instr, SWITCH_SHIFT));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SWITCH_SHIFT));
     }
     return results;
 }
@@ -229,7 +234,8 @@ bool ShiftSwitch::mutate(
     if (isMutationLocation(instr, seglist, SWITCH_SHIFT)) {
         if (auto castedlshr = dyn_cast<LShrOperator>(instr)) {
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
             instr->replaceAllUsesWith(ashr);
             instr->removeFromParent();
@@ -238,7 +244,8 @@ bool ShiftSwitch::mutate(
         } else {
             if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
                 builderMutex.lock();
-                addMutationFoundSignal(builder, M);
+                auto segref = *seglist;
+                addMutationFoundSignal(builder, M, segref["UID"]);
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
                 instr->replaceAllUsesWith(lshr);
                 instr->removeFromParent();
@@ -251,7 +258,8 @@ bool ShiftSwitch::mutate(
 }
 
 
-std::vector<std::string> UnInitLocalVariables::find(const Instruction *instr) {
+std::vector<std::string>
+UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (auto allocation_instr = dyn_cast<AllocaInst>(instr)) {
         // We only store the location if the allocation is not a array type,
@@ -264,7 +272,7 @@ std::vector<std::string> UnInitLocalVariables::find(const Instruction *instr) {
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
             j["instr"] = os.str();
-            results.push_back(getIdentifierString(instr, DELETE_LOCAL_STORE, j));
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_LOCAL_STORE, j));
         }
     }
     return results;
@@ -312,7 +320,7 @@ bool UnInitLocalVariables::mutate(
         if (store) {
             if (to_delete.find(store) != to_delete.end()) {
                 builderMutex.lock();
-                addMutationFoundSignal(builder, M);
+                addMutationFoundSignal(builder, M, segref["UID"]);
                 store->removeFromParent();
                 builderMutex.unlock();
                 return true;

@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-void signal_triggered_mutation() {
+void signal_triggered_mutation(int64_t UID) {
     const char* triggeredFilePath = getenv("TRIGGERED_FILE");
     const char* triggeredOutput = getenv("TRIGGERED_OUTPUT");
     if (triggeredFilePath) {
@@ -21,16 +21,19 @@ void signal_triggered_mutation() {
         if (triggeredFile) {
             if (triggeredOutput) {
                 fputs(triggeredOutput, triggeredFile);
-                fputs("\n", triggeredFile);
+                sprintf(sprintfbuffer, "\nUID %lld\n", UID);
+                fputs(sprintfbuffer, triggeredFile);
             } else {
-                fputs("Triggered!\n", triggeredFile);
+                fputs("Triggered!", triggeredFile);
+                sprintf(sprintfbuffer, "\nUID %lld\n", UID);
+                fputs(sprintfbuffer, triggeredFile);
             }
         }
     }
     if (triggeredOutput) {
-        printf("%s\n", triggeredOutput);
+        printf("%s\nUID %lld\n", triggeredOutput, UID);
     } else {
-        printf("Triggered!\n");
+        printf("Triggered!\nUID %lld\n", UID);
     }
 }
 

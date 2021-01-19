@@ -93,8 +93,9 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
  * @param builder
  * @param M
  */
-void Pattern::addMutationFoundSignal(IRBuilder<> *builder, Module& M) {
+void Pattern::addMutationFoundSignal(IRBuilder<> *builder, Module& M, int UID) {
         auto args = std::vector<Value*>();
+        args.push_back(builder->getInt64(UID));
         auto signalFunction = M.getFunction("signal_triggered_mutation");
         builder->CreateCall(signalFunction, args);
 }
@@ -139,5 +140,5 @@ bool mutatePattern(
 
 void insertMutationApiFunctions(Module& M) {
     LLVMContext &llvmContext = M.getContext();
-    M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext));
+    M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext), Type::getInt64Ty(llvmContext));
 }

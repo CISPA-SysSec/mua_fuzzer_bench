@@ -56,19 +56,23 @@ void populatePatternVectors(){
 
 int Pattern::PatternIDCounter = 0;
 
-std::string Pattern::getIdentifierString(const Instruction *instr, int type){
+std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type){
     json j;
-    return getIdentifierString(instr, type, j);
+    return getIdentifierString(instr, builder, builderMutex, M, type, j);
 }
 
-std::string Pattern::getIdentifierString(const Instruction *instr, int type, json& additionalInfo){
+std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo){
     const DebugLoc &debugInfo = instr->getDebugLoc();
+    // currently the whole finder is locked
+//    builderMutex.lock();
+    addMutationFoundSignal(builder, M, PatternIDCounter);
+//    builderMutex.unlock();
+    json j;
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
         std::string filePath = debugInfo->getFilename().str();
         uint32_t line = debugInfo->getLine();
         uint32_t column = debugInfo->getColumn();
-        json j;
         j["directory"] = directory;
         j["filePath"] = filePath;
         j["line"] = line;
@@ -76,9 +80,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, jso
         j["type"] = type;
         j["additionalInfo"] = additionalInfo;
         j["UID"] = PatternIDCounter++;
-        return j.dump(4);
     } else {
-        json j;
         j["directory"] = "no_debug_loc";
         j["filePath"] = "no_debug_loc";
         j["line"] = 0;
@@ -86,8 +88,8 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, jso
         j["type"] = type;
         j["additionalInfo"] = additionalInfo;
         j["UID"] = PatternIDCounter++;
-        return j.dump(4);
     }
+    return j.dump(4);
 }
 
 /**
@@ -101,7 +103,11 @@ std::string Pattern::getIdentifierString(const Instruction *instr, int type, jso
 // TODO: Maybe refactor this further to push down the inst check and make it one
 // single loop on a single vector but only if required.
 std::vector<std::string> look_for_pattern(
-        Instruction* instr
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        Module& M
         )
 {
     auto results = std::vector<std::string>();
@@ -109,7 +115,7 @@ std::vector<std::string> look_for_pattern(
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
             for (auto &patternobject : CallInstPatterns){
-                for (auto &pattern : patternobject->find(instr)){
+                for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
                     results.push_back(pattern);
                 }
             }
@@ -117,14 +123,14 @@ std::vector<std::string> look_for_pattern(
     }
     else if (dyn_cast<ICmpInst>(instr)){
         for (auto &patternobject : ICmpInstPatterns){
-            for (auto &pattern : patternobject->find(instr)){
+            for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
                 results.push_back(pattern);
             }
         }
     }
     else{
         for (auto &patternobject : MiscInstPatterns){
-            for (auto &pattern : patternobject->find(instr)){
+            for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
                 results.push_back(pattern);
             }
         }
