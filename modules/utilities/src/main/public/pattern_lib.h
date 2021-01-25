@@ -21,9 +21,13 @@
 
 using namespace llvm;
 
-std::vector<std::string> look_for_pattern(Instruction* instr);
+std::vector<std::string> look_for_pattern(IRBuilder<>* builder,
+                                          IRBuilder<>* nextInstructionBuilder,
+                                          Instruction* instr,
+                                          std::mutex& builderMutex,
+                                          Module& M);
 void populatePatternVectors();
-
+void insertMutationApiFunctions(Module& M);
 
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H

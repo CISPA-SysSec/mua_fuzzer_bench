@@ -6,19 +6,17 @@ int main(int argc, char** argv) {
     fgets(inp, 3, stdin);
     int size = atoi(inp);
     char* buffer = malloc(sizeof(char) * size);
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i <= size - 1; i++) {
+        printf("%d\n", i);
         buffer[i] = 'a';
     }
-    char* buffer2 = malloc(sizeof(char) * size * 2);
-    char* buffer3 = malloc(sizeof(char) * size * 2);
-    char* buffer4 = malloc(sizeof(char) * size * 2);
-    char* buffer5 = malloc(sizeof(char) * size * 2);
-    char* buffer6 = malloc(sizeof(char) * size * 2);
-    char* buffer7 = malloc(sizeof(char) * size * 2);
-    char* buffer8 = malloc(sizeof(char) * size * 2);
-    char* buffer9 = malloc(sizeof(char) * size * 2);
-    for (int i = 0; i < size * 2; i++) {
-        buffer2[i] = 'b';
-    }
+    buffer[size] = 65;
+    printf("%c\n", buffer[size]);
+    buffer[size-1] = 0;
+    printf("%s\n", buffer);
+    buffer[size-1] = 65;
+    buffer[size] = 0;
+    printf("%s\n", buffer);
+    free(buffer);
     return 0;
 }

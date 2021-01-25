@@ -5,15 +5,12 @@ import subprocess
 import csv
 import sqlite3
 import traceback
-import datetime
 import signal
 import threading
 import queue
 import json
 import shutil
-import tempfile
 import contextlib
-import shlex
 import concurrent.futures
 from pathlib import Path
 
@@ -159,6 +156,15 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE executed_runs (
+            prog,
+            mutation_id,
+            fuzzer,
+            covered_file_seen,
+            total_time
+        )''')
+
+        c.execute('''
         CREATE TABLE aflpp_runs (
             prog,
             mutation_id,
@@ -174,9 +180,7 @@ class Stats():
             unique_hangs,
             max_depth,
             execs_per_sec,
-            totals_execs,
-            covered_file_seen,
-            total_time
+            totals_execs
         )''')
 
         c.execute('''
@@ -185,7 +189,7 @@ class Stats():
             mutation_id,
             fuzzer,
             time_found,
-            initial_seed,
+            stage,
             path,
             crashing_input,
             orig_return_code,
@@ -237,13 +241,22 @@ class Stats():
 
     @connection
     def new_aflpp_run(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
+            (
+                prog,
+                mutation_id,
+                fuzzer,
+                cf_seen,
+                total_time,
+            )
+        )
         start_time = None
         for row in plot_data:
             cur_time = int(row['# unix_time'].strip())
             if start_time is None:
                 start_time = cur_time
             cur_time -= start_time
-            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (
                     prog,
                     mutation_id,
@@ -260,8 +273,6 @@ class Stats():
                     row[' max_depth'].strip(),
                     row[' execs_per_sec'].strip(),
                     row[None][0].strip(),
-                    cf_seen,
-                    total_time,
                 )
             )
         self.conn.commit()
@@ -275,7 +286,7 @@ class Stats():
                     mutation_id,
                     fuzzer,
                     data['time_found'],
-                    data['initial_seed'],
+                    data['stage'],
                     path,
                     data['data'],
                     data['orig_returncode'],
@@ -319,7 +330,7 @@ class DockerLogStreamer(threading.Thread):
         self.q.put(None)
 
 @contextlib.contextmanager
-def start_testing_container(core_to_use):
+def start_testing_container(core_to_use, trigger_file):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -345,6 +356,7 @@ def start_testing_container(core_to_use):
         auto_remove=True,
         environment={
             'LD_LIBRARY_PATH': "/workdir/lib/",
+            'TRIGGERED_FILE': str(trigger_file),
         },
         volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
                                       'mode': 'ro'}},
@@ -364,41 +376,52 @@ def run_exec_in_testing_container(container, cmd):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
 
+class CoveredFile:
+    def __init__(self, workdir, start_time) -> None:
+        super().__init__()
+        self.found = None
+        self.path = Path(workdir)/"covered"
+        self.start_time = start_time
+
+        if self.path.is_file():
+            self.path.unlink()
+
+    def check(self):
+        if self.found is None and self.path.is_file():
+            self.found = time.time() - self.start_time
+
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                          orig_bin, mut_bin, args, start_time, is_seed):
+                          orig_bin, mut_bin, args, start_time, covered, stage):
     if not crash_dir.is_dir():
         return False
 
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
-            if path not in crashing_inputs:
-                # Check that does not crash on the original binary
+            if str(path) not in crashing_inputs:
+                # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin]
                 orig_cmd += args.replace("@@", str(path)).split(" ")
                 proc = run_exec_in_testing_container(testing_container, orig_cmd)
-                # proc = subprocess.Popen(orig_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
-                # Check that does not crash on the original binary
+                # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin]
                 mut_cmd += args.replace("@@", str(path)).split(" ")
                 proc = run_exec_in_testing_container(testing_container, mut_cmd)
-                # proc = subprocess.Popen(mut_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 mut_res = (proc.stdout, proc.stderr)
-                num_triggered = len(mut_res[0].split(TRIGGERED_STR))
-                num_triggered += len(mut_res[1].split(TRIGGERED_STR))
+
+                num_triggered = len(mut_res[0].split(TRIGGERED_STR)) - 1
+                num_triggered += len(mut_res[1].split(TRIGGERED_STR)) - 1
                 mut_res = (
                     mut_res[0].replace(TRIGGERED_STR, b""),
                     mut_res[1].replace(TRIGGERED_STR, b"")
                 )
                 mut_returncode = proc.returncode
+
+                covered.check()
 
                 try:
                     crash_file_data = path.read_bytes()
@@ -407,7 +430,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
                 crashing_inputs[str(path)] = {
                     'time_found': time.time() - start_time,
-                    'initial_seed': is_seed,
+                    'stage': stage,
                     'data': crash_file_data,
                     'orig_returncode': orig_returncode,
                     'mut_returncode': mut_returncode,
@@ -438,8 +461,14 @@ def aflpp_base_eval(run_data, docker_image, executable):
     docker_mut_bin = Path(workdir)/"testing"
     docker_mut_bin.parent.mkdir(parents=True, exist_ok=True)
 
+    # get start time for the eval
+    start_time = time.time()
+
+    # get path for covered file and rm the file if it exists
+    covered = CoveredFile(workdir, start_time)
+
     # start testing container
-    with start_testing_container(core_to_use) as testing_container:
+    with start_testing_container(core_to_use, covered.path) as testing_container:
 
         # compile the compare version of the mutated binary
         compile_mut_bin_res = run_exec_in_testing_container(testing_container,
@@ -454,28 +483,18 @@ def aflpp_base_eval(run_data, docker_image, executable):
         if compile_mut_bin_res.returncode != 0:
             raise ValueError(compile_mut_bin_res)
 
-        # get path for covered file and rm the file if it exists
-        covered_file_seen = None
-        covered_file = Path(workdir)/"covered"
-        if covered_file.is_file():
-            covered_file.unlink()
         # set up data for crashing inputs
         crashing_inputs = {}
         crash_dir = workdir/"output"/"crashes"
         # check if seeds are already crashing
         checked_seeds = {}
-        # get start time for the eval
-        start_time = time.time()
         # do an initial check to see if the seed files are already crashing
         if check_crashing_inputs(testing_container, checked_seeds, seeds,
                                  orig_bin, docker_mut_bin, args, start_time,
-                                 True):
-            # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+                                 covered, "initial"):
             return {
                 'total_time': time.time() - start_time,
-                'covered_file_seen': covered_file_seen,
+                'covered_file_seen': covered.found,
                 'plot_data': [],
                 'crashing_inputs': checked_seeds,
             }
@@ -510,8 +529,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
         DockerLogStreamer(logs_queue, container).start()
 
         while time.time() < start_time + TIMEOUT and should_run:
-            # Print the next lines outputted by the container
-
             # check if the process stopped, this should only happen in an
             # error case
             try:
@@ -523,13 +540,12 @@ def aflpp_base_eval(run_data, docker_image, executable):
                 break
 
             # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+            covered.check()
 
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
                                      crash_dir, orig_bin, docker_mut_bin, args,
-                                     start_time, False):
+                                     start_time, covered, "runtime"):
                 break
 
             # Sleep so we only check sometimes and do not busy loop 
@@ -549,8 +565,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # container is dead just continue maybe it worked
             pass
         
-        total_time = time.time() - start_time
-
         all_logs = []
         while True:
             line = logs_queue.get()
@@ -572,11 +586,11 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # Also collect all crashing outputs
             check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                                   orig_bin, docker_mut_bin, args, start_time,
-                                  False)
+                                  covered, "final")
                 
             return {
-                'total_time': total_time,
-                'covered_file_seen': covered_file_seen,
+                'total_time': time.time() - start_time,
+                'covered_file_seen': covered.found,
                 'plot_data': plot_data,
                 'crashing_inputs': crashing_inputs,
             }
@@ -700,9 +714,8 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         try:
             # if there was no exception get the data
             run_result = future.result()
-        except Exception as exc:
+        except Exception:
             # if there was an exception print it
-            prog_bc = data['prog_bc']
             trace = traceback.format_exc()
             stats.run_crashed(data['prog'], data['mutation_id'], data['fuzzer'],
                               trace)
@@ -832,6 +845,344 @@ def main():
         # Wait for all remaining active runs
         print('waiting for the rest')
         wait_for_runs(stats, runs, cores_in_use, False)
+
+
+def parse_afl_paths(paths):
+    if paths is None:
+        return []
+    paths = paths.split('/////')
+    paths_elements = []
+    for path in paths:
+        elements = {}
+        split_path = path.split(',')
+        elements['path'] = split_path[0]
+        for elem in split_path[1:]:
+            parts = elem.split(":")
+            if len(parts) == 2:
+                elements[parts[0]] = parts[1]
+            else:
+                raise ValueError("Unexpected afl path format: ", path)
+        paths_elements.append(elements)
+    return paths_elements
+
+def header():
+    import altair as alt
+
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mutation testing eval</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
+        <script src="https://cdn.jsdelivr.net/npm/vega@{vega_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@{vegalite_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@{vegaembed_version}"></script>
+    <style>
+    body {{
+        margin-left:10px
+    }}
+    table {{
+        border-collapse: collapse;
+    }}
+    th, td {{
+        text-align: left;
+        padding: 7px;
+        border: none;
+    }}
+        tr:nth-child(even){{background-color: lightgray}}
+    th {{
+    }}
+    </style>
+    </head>
+    <body>\n""".format(
+        vega_version=alt.VEGA_VERSION,
+        vegalite_version=alt.VEGALITE_VERSION,
+        vegaembed_version=alt.VEGAEMBED_VERSION,
+    )
+
+def runtime_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
+    print(stats)
+    res = "<h2>Runtime Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def mut_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
+    res = "<h2>Mutation Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def aflpp_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
+    res = "<h2>AFL++ style fuzzers -- Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_num_muts, time):
+    try:
+        val = crash_ctr['confirmed'] / total_num_muts
+    except ZeroDivisionError:
+        val = 0
+
+    data['total'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+    try:
+        val = crash_ctr['confirmed'] / crash_ctr['covered']
+    except ZeroDivisionError:
+        val = 0
+
+    data['covered'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+def plot(title, mut_type, data):
+    import inspect
+    import types
+    from typing import cast
+    import altair as alt
+    func_name = cast(types.FrameType, inspect.currentframe()).f_code.co_name
+    selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend')
+    color = alt.condition(selection,
+                      alt.Color('fuzzer:O', legend=None),
+                      alt.value('lightgray'))
+    plot = alt.Chart(data).mark_line(
+        interpolate='step-after',
+    ).encode(
+        x=alt.X('time', scale=alt.Scale(type='symlog')),
+        y='percentage',
+        color='fuzzer',
+        tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
+    ).properties(
+        title=title,
+        width=600,
+        height=400,
+    )
+
+    plot = plot.mark_point(size=100, opacity=.5, tooltip=alt.TooltipContent("encoding")) + plot
+
+    plot = plot.add_selection(
+        alt.selection_interval(bind='scales', encodings=['x'])
+    ).transform_filter(
+        selection
+    )
+    
+    plot = (plot |
+    alt.Chart(data).mark_point().encode(
+        x=alt.X('prog', axis=alt.Axis(orient='bottom')),
+        y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
+        color=color
+    ).add_selection(
+        selection
+    ))
+
+    res = f'<div id="{title.replace(" ", "")}{func_name}{mut_type}"></div>'
+    res += '''<script type="text/javascript">
+                vegaEmbed('#{title}{func_name}{mut_id}', {spec1}).catch(console.error);
+              </script>'''.format(title=title.replace(" ", ""), func_name=func_name, mut_id=mut_type,
+                                  spec1=plot.to_json(indent=None))
+    return res
+
+def split_vals(val):
+    if val is None:
+        return []
+    return [float(v) for v in val.split("/////")]
+
+def gather_plot_data(runs, run_results):
+    from collections import defaultdict
+    import pandas as pd
+    if len(run_results) == 0:
+        return None
+
+    data = defaultdict(list)
+    unique_crashes = [] 
+
+    for crash in run_results.itertuples():
+        import math
+        if math.isnan(crash.covered_file_seen):
+            continue
+        unique_crashes.append({
+            'fuzzer': crash.fuzzer,
+            'prog': crash.prog,
+            'mut_type': crash.mut_type,
+            'type': 'covered',
+            'time': crash.covered_file_seen,
+        })
+
+    for crash in run_results.itertuples():
+        if crash.confirmed != 1:
+            continue
+        if crash.stage == 'initial' or crash.stage == 'runtime' or crash.stage == 'final':
+            unique_crashes.append({
+                'fuzzer': crash.fuzzer,
+                'prog': crash.prog,
+                'mut_type': crash.mut_type,
+                'type': 'afl',
+                'time': crash.time_found,
+            })
+        else:
+            print(crash.stage)
+            # nothing found
+            pass
+
+    counters = defaultdict(lambda: {
+        'covered': 0,
+        'confirmed': 0,
+    })
+    max_time = 0
+
+    # for crash in unique_crashes:
+    #     crash_ctr = counters[(
+    #         crash['fuzzer'],
+    #         crash['prog'],
+    #         crash['mut_type'])]
+
+    #     if crash['type'] == 'initial':
+    #         crash_ctr['confirmed'] += 1
+
+    # add initial points
+    for run in runs.itertuples():
+        crash_ctr = counters[(
+            run.fuzzer,
+            run.prog,
+            run.mut_type)]
+        total_runs = run.done
+        add_datapoint(crash_ctr, data, run.mut_type, run.fuzzer, run.prog, total_runs, 0)
+
+    for crash in sorted(unique_crashes, key=lambda x: x['time']):
+        crash_ctr = counters[(
+            crash['fuzzer'],
+            crash['prog'],
+            crash['mut_type'])]
+
+        if crash['time'] > max_time:
+            max_time = crash['time']
+
+        total_runs = int(runs[(runs.fuzzer == crash['fuzzer']) & (runs.prog == crash['prog']) & (runs.mut_type == crash['mut_type'])]['done'].values[0])
+        if crash['type'] == 'covered':
+            crash_ctr['covered'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'initial':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'afl':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        else:
+            raise ValueError("Unknown type")
+
+    # add final points
+    for (fuzzer, prog, mut_type), crash_ctr in counters.items():
+        try:
+            total_runs = int(runs[(runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)]['done'].values[0])
+        except ValueError:
+            total_runs = 0
+        add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_runs, max_time)
+
+    return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
+
+def create_mut_type_plot(mut_type, runs, run_results):
+    plot_data = gather_plot_data(runs, run_results)
+
+    res = f'<h3>Mutation: {mut_type}</h3>'
+    res += runs.to_html()
+    if plot_data is not None:
+        res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
+        res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+    return res
+
+def footer():
+    return """
+    </body>
+    </html>
+    """
+
+def generate_plots():
+    import pandas as pd
+
+    con = sqlite3.connect("/home/philipp/stats.db")
+    con.isolation_level = None
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    with open("eval.sql", "rt") as f:
+        cur.executescript(f.read())
+
+    res = header()
+    res += runtime_stats(con)
+    res += aflpp_stats(con)
+    res += mut_stats(con)
+
+    mut_types = pd.read_sql_query(
+        "SELECT * from mut_types", con)
+    runs = pd.read_sql_query(
+        "select * from run_results_by_mut_type", con)
+    run_results = pd.read_sql_query(
+        "select * from run_results", con)
+    res += "<h2>Plots</h2>"
+    for mut_type in mut_types['mut_type']:
+        print(mut_type)
+        res += create_mut_type_plot(mut_type, 
+            runs[runs.mut_type == mut_type],
+            run_results[run_results.mut_type == mut_type],
+        )
+    res += footer()
+
+    out_path = Path("test_plot.html").resolve()
+    print(f"Writing plots to: {out_path}")
+    with open(out_path, 'w') as f:
+        f.write(res) 
+    print(f"Open: file://{out_path}")
+
+def main():
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--eval", action="store_true",
+        help="run the full evaluation executing"
+             "fuzzers and gathering the resulting data")
+    parser.add_argument("--plots", action="store_true",
+        help="generate plots for the gathered data")
+
+    if len(sys.argv) < 2:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    args = parser.parse_args()
+
+    if args.eval:
+        run_eval()
+    if args.plots:
+        generate_plots()
 
 if __name__ == "__main__":
     main()

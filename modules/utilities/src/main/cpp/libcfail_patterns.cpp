@@ -2,11 +2,11 @@
 #include "mutations.h"
 #include "pattern_declarations.h"
 
-std::vector<std::string> LibCFailPattern::findConcreteFunction(const Instruction *instr, const std::string& funName, int patternID) {
+std::vector<std::string> LibCFailPattern::findConcreteFunction(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find(funName) != std::string::npos) {
-        results.push_back(getIdentifierString(instr, patternID));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, patternID));
     }
     return results;
 }
@@ -25,7 +25,7 @@ bool LibCFailPattern::concreteMutate(
     if (isMutationLocation(instr, seglist, patternID)) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
         // get the concrete value to delete by checkin if the instruction string matches and then saving the value
         std::cout << "found mutation location!" << "\n";
-        addMutationFoundSignal(builder, M);
+        addMutationFoundSignal(builder, M, segref["UID"]);
         for(auto user : instr->users()){  // U is of type User*
             std::cout << "found mutation location!" << "\n";
             if (auto instrUser = dyn_cast<CmpInst>(user)){
@@ -77,6 +77,7 @@ bool INetAddrFailPattern::mutate(
 }
 
 
-std::vector<std::string> INetAddrFailPattern::find(const Instruction *instr) {
-    return findConcreteFunction(instr, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
+std::vector<std::string>
+INetAddrFailPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, builder, builderMutex, M, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
 }
