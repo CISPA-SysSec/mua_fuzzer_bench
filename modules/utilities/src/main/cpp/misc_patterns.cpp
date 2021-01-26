@@ -305,7 +305,7 @@ bool UnInitLocalVariables::mutate(
         llvm::raw_string_ostream os(instructionString);
         instr->print(os);
         if (segref["additionalInfo"]["instr"] == os.str()) {
-            for(auto user : instr->users()){  // U is of type User*
+            for(auto user : instr->users()){  // user is of type User*
                 if (auto instrUser = dyn_cast<StoreInst>(user)){
                     std::string strin;
                     llvm::raw_string_ostream oss(strin);
@@ -324,6 +324,81 @@ bool UnInitLocalVariables::mutate(
                 store->removeFromParent();
                 builderMutex.unlock();
                 return true;
+            }
+        }
+    }
+    return false;
+}
+
+/*
+ * The find method for ICMP_EQ.
+ * A previous load instruction needs to be changed into a store instruction.
+ * We consider only the load instructions which
+ * 1) has an user that is ICmpInst with ICMP_EQ predicate
+ * 2) is the first operand in the ICmpInst (to eliminate double counting in case
+ * second operand is also a load instruction)
+ */
+std::vector<std::string>
+CompareEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    if (auto loadInstr = dyn_cast<LoadInst>(instr)) {
+        for(auto user : loadInstr->users()){  // user is of type User*
+            if (auto iCmpInstr = dyn_cast<ICmpInst>(user)){
+                //we only note one mutationlocation. The second check ensures
+                //this in case the RHS of the comparision is also a variable.
+                if (iCmpInstr->getPredicate() == CmpInst::Predicate::ICMP_EQ &&
+                    iCmpInstr->getOperand(0) == loadInstr){
+                    json j;
+                    std::string instructionString;
+                    llvm::raw_string_ostream os(instructionString);
+                    iCmpInstr->print(os);
+                    j["ICmpinstr"] = os.str();
+                    results.push_back(getIdentifierString(instr,  builder, builderMutex, M, COMPARE_EQUAL_TO, j));
+                }
+            }
+        }
+    }
+    return results;
+}
+
+/*
+ * The mutator for ICMP_EQ.
+ * A previous load instruction needs to be changed into a store instruction.
+ * Which is why this isn't a ICmpPattern subclass.
+ * It changes the "==" sign to "=" in a comparision.
+ */
+bool CompareEqualToPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto segref = *seglist;
+    // std::cout << segref.dump(4) << std::endl;
+    if (isMutationLocation(instr, seglist, COMPARE_EQUAL_TO)) {
+        if (auto loadInstr =  dyn_cast<LoadInst>(instr)){
+            for(auto user : loadInstr->users()){  // user is of type User*
+                if (auto iCmpInstr = dyn_cast<ICmpInst>(user)){
+                    //This check ensures we don't consider mutation a second time
+                    //for the second load (in case RHS is also a variable)
+                    std::string instructionString;
+                    llvm::raw_string_ostream os(instructionString);
+                    iCmpInstr->print(os);
+                    if (segref["additionalInfo"]["ICmpinstr"] == os.str()){
+                        builderMutex.lock();
+                        addMutationFoundSignal(nextInstructionBuilder, M, segref["UID"]);
+                        auto storeInst = new StoreInst(iCmpInstr->getOperand(1), loadInstr->getPointerOperand(), iCmpInstr);
+                        auto newVal = builder->getIntN(iCmpInstr->getOperand(0)->getType()->getIntegerBitWidth(), 0);
+                        iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
+                        iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
+                        loadInstr->removeFromParent();
+                        iCmpInstr->setOperand(1, newVal);
+                        builderMutex.unlock();
+                        return true;
+                    }
+                }
             }
         }
     }
