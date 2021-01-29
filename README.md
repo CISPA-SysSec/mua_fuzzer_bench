@@ -88,8 +88,8 @@ export TRIGGERED_OUTPUT="Some output." # can contain any string which will be pr
     and written to the file TRIGGERED_FILE if it is defined and could be created; a default value is printed if
     this environment variable is not defined
 
-export TRIGGERED_FILE="some/file/to/report/mutation/trigger" # a path to a file which will be either created or 
-    overwritten if existing and is filled with the TRIGGERED_OUTPUT value or some default string if TRIGGERED_OUTPUT is not defined
+export TRIGGERED_FOLDER="some/file/to/report/mutation/trigger_signal" # a path to a folder which will for each mutation UID
+contain a file which indicates that the mutation was triggered. If not defined the files will be written to ./triggered_signal
 ```
 
 Also, if one wants to test which mutations could be covered, a binary is generated when producing the mutants 

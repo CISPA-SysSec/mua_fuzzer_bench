@@ -13,27 +13,24 @@
 extern "C" {
 #endif
 
+
+struct stat st = {0};
+
 void signal_triggered_mutation(int64_t UID) {
-    const char* triggeredFilePath = getenv("TRIGGERED_FILE");
+    const char* triggeredFolderPath = getenv("TRIGGERED_FOLDER");
     const char* triggeredOutput = getenv("TRIGGERED_OUTPUT");
-    if (triggeredFilePath) {
-        FILE* triggeredFile = fopen(triggeredFilePath, "w");
-        if (triggeredFile) {
-            if (triggeredOutput) {
-                fputs(triggeredOutput, triggeredFile);
-                sprintf(sprintfbuffer, "\nUID %lld\n", UID);
-                fputs(sprintfbuffer, triggeredFile);
-            } else {
-                fputs("Triggered!", triggeredFile);
-                sprintf(sprintfbuffer, "\nUID %lld\n", UID);
-                fputs(sprintfbuffer, triggeredFile);
-            }
-        }
+    if (!triggeredFolderPath) {
+        triggeredFolderPath = "./trigger_signal";
     }
-    if (triggeredOutput) {
-        printf("%s\nUID %lld\n", triggeredOutput, UID);
-    } else {
-        printf("Triggered!\nUID %lld\n", UID);
+    // check if folder exists, if not create it
+    if (stat(triggeredFolderPath, &st) == -1) {
+        mkdir(triggeredFolderPath, 0700);
+    }
+    // check if folder exists now, if so place file in it
+    if (stat(triggeredFolderPath, &st) != -1) {
+        char* filename = (char*) malloc(strlen(triggeredFolderPath) + 100);
+        sprintf(filename, "%s/%lld", triggeredFolderPath, UID);
+        open(filename, O_CREAT);
     }
 }
 

@@ -8,6 +8,7 @@ tasks.withType(CppCompile).configureEach {
     // Define a compiler options
     compilerArgs.add '-O3'
     compilerArgs.add '-Werror'
+    compilerArgs.add '-Wno-nullability-completeness'
 
     // Define toolchain-specific compiler options
     compilerArgs.addAll toolChain.map { toolChain ->
