@@ -29,7 +29,7 @@ void signal_triggered_mutation(int64_t UID) {
     // check if folder exists now, if so place file in it
     if (stat(triggeredFolderPath, &st) != -1) {
         char* filename = (char*) malloc(strlen(triggeredFolderPath) + 100);
-        sprintf(filename, "%s/%lld", triggeredFolderPath, UID);
+        sprintf(filename, "%s/%" PRId64, triggeredFolderPath, UID);
         open(filename, O_CREAT);
     }
 }

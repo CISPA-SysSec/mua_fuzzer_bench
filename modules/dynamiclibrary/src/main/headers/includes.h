@@ -11,7 +11,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <libc.h>
+#include <fcntl.h>
+#include <inttypes.h>
 
 char sprintfbuffer[100];
 
