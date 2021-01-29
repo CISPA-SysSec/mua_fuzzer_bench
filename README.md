@@ -68,15 +68,20 @@ gradle build
 General invoke:
 ```shell script
 # invokes the mutation pipeline, check for details on how to invoke the project in detail
-./run_mutation.py [-bc] [-ll] [-bn] [-cpp] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
+./run_mutation.py [-bc] [-ll] [-bn] [-cpp] [-m <int>] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
 ```
 Explanation of optional arguments (at least one must be chosen, otherwise the output would be empty):
 ```
 -bc: Keeps the mutated bitcode files.
 -ll: Keeps the mutated bitcode files in human readable form.
 -bn: Generates runnable binaries if possible.
+-m <int>: Defines the mutation ID that should be applied, -1 for all mutations, 
+    -2 or left out for just generation the mutationlocations file and a binary that prints
+    covered mutations to the defined folder.
 -cpp: Uses clang++ for compilation instead of clang.
 ```
+
+**If a new mutant is generated all already generated mutants are deleted!**
 
 ## Running Mutated Programs
 
