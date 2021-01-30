@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from json import decoder
 import os
 import time
 import subprocess
@@ -10,6 +11,7 @@ import threading
 import queue
 import json
 import shutil
+from typing import Counter
 import psutil
 import contextlib
 import concurrent.futures
@@ -32,6 +34,9 @@ TIMEOUT = 60 * 60  # one hour
 
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
+
+# If true redetect which mutations are used
+DETECT_MUTATIONS = True
 
 # Flag if the fuzzed seeds should be used
 USE_GATHERED_SEEDS = False
@@ -87,8 +92,8 @@ PROGRAMS = {
             # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
             # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
         ],
-        "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target").absolute()),
-        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc").absolute()),
+        "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
+        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
         "path": "samples/guetzli/",
         "seeds": "samples/guetzli_harness/seeds/",
         "args": "@@",
@@ -376,8 +381,31 @@ def start_testing_container(core_to_use, trigger_file):
     )
     yield container
     container.stop()
+
+@contextlib.contextmanager
+def start_mutation_container(core_to_use):
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+
+    # Start and run the container
+    container = docker_client.containers.run(
+        "mutator_mutator", # the image
+        ["sleep", str(TIMEOUT * 2 + 120)], # the arguments
+        init=True,
+        ipc_mode="host",
+        auto_remove=True,
+        volumes={str(HOST_TMP_PATH): {'bind': "/home/mutator/tmp/",
+                                      'mode': 'rw'}},
+        cpuset_cpus=str(core_to_use),
+        mem_limit="10g",
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+    yield container
+    container.stop()
         
-def run_exec_in_testing_container(container, cmd):
+def run_exec_in_container(container, cmd):
     sub_cmd = ["docker", "exec", "-it",
         container.name,
         *cmd]
@@ -398,6 +426,7 @@ class CoveredFile:
     def check(self):
         if self.found is None and self.path.is_file():
             self.found = time.time() - self.start_time
+
 
 
 # Seed gathering function for the afl plus plus fuzzer, instruments the target
@@ -544,7 +573,7 @@ def get_seed_runs(prog_name, prog_info):
         workdir = SEED_BASE_DIR/prog_name/fuzzer
         # Get the bc file that should be fuzzed (and probably
         # instrumented).
-        prog_bc = prog_info['orig_bc']
+        prog_bc = prog_info['orig_bc'].absolute()
         # Get the path to the file that should be included during compilation
         compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
         # Arguments on how to execute the binary
@@ -683,7 +712,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 args = args.replace("@@", str(path))
                 args = args.replace("___FILE___", str(path))
                 orig_cmd += shlex.split(args)
-                proc = run_exec_in_testing_container(testing_container, orig_cmd)
+                proc = run_exec_in_container(testing_container, orig_cmd)
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
@@ -692,7 +721,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 args = args.replace("@@", str(path))
                 args = args.replace("___FILE___", str(path))
                 mut_cmd += shlex.split(args)
-                proc = run_exec_in_testing_container(testing_container, mut_cmd)
+                proc = run_exec_in_container(testing_container, mut_cmd)
                 mut_res = (proc.stdout, proc.stderr)
 
                 num_triggered = len(mut_res[0].split(TRIGGERED_STR)) - 1
@@ -735,7 +764,7 @@ def base_eval(run_data, docker_image, executable):
     # extract used values
     workdir = run_data['workdir']
     crash_dir = workdir/run_data['crash_dir']
-    prog_bc = IN_DOCKER_WORKDIR/run_data['prog_bc'].relative_to(HOST_TMP_PATH)
+    prog_bc = run_data['prog_bc']
     compile_args = run_data['compile_args']
     args = run_data['args']
     seeds = run_data['seeds']
@@ -754,7 +783,7 @@ def base_eval(run_data, docker_image, executable):
     with start_testing_container(core_to_use, covered.path) as testing_container:
 
         # compile the compare version of the mutated binary
-        compile_mut_bin_res = run_exec_in_testing_container(testing_container,
+        compile_mut_bin_res = run_exec_in_container(testing_container,
             [
                 "/usr/bin/clang++-11",
                 "-v",
@@ -975,12 +1004,33 @@ FUZZERS = {
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
-def get_next_run(stats):
+def get_next_run(stats, mutator):
     all_runs = []
     # For all programs that can be done by our evaluation
     for prog, prog_info in PROGRAMS.items():
-        # Get all mutations that are possible with that program
-        mutations = list((HOST_TMP_PATH/prog_info['path']/"mutations").glob("*.mut.bc"))
+
+        # Run the seeds through the mutation detector
+        mutation_list_dir = Path("/dev/shm/mutation_detection")/prog
+        # Get the right seeds
+        if USE_GATHERED_SEEDS:
+            seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
+        else:
+            seeds = Path(prog_info['seeds'])
+
+        if DETECT_MUTATIONS:
+            # Compile the mutation location detector for the prog.
+            run_exec_in_container(mutator, ["./run_mutation.py", "-bc", "-cpp", prog_info['orig_bc']])
+
+            # Prepare the folder where the number of the generated seeds is put.
+            shutil.rmtree(mutation_list_dir, ignore_errors=True)
+            mutation_list_dir.mkdir(parents=True)
+            # Run the seeds through the detector binary.
+            detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
+            run_exec_in_container(mutator, ["./iterate_seeds.sh", mutation_list_dir, detector_bin, seeds])
+
+        # Get all mutations that are possible with that program, they are identified by the file names
+        # in the mutation_list_dir
+        mutations = list(p.name for p in mutation_list_dir.glob("*"))
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('*.ll.mutationlocations'))
@@ -989,34 +1039,31 @@ def get_next_run(stats):
         with open(mut_data_path, 'rt') as f:
             mutation_data = json.load(f)
         # Go through the mutations
-        for mutation in mutations:
+        for mutation_id in mutations:
             # For each fuzzer gather all information needed to start a eval run
             for fuzzer, eval_func in FUZZERS.items():
-                # Get the mutation id from the file path
-                mutation_id = str(mutation).split(".")[-3]
                 # Get the working directory based on program and mutation id and
                 # fuzzer, which is a unique path for each run
                 workdir = Path("/dev/shm/mutator/")/prog/mutation_id/fuzzer
                 # Get the bc file that should be fuzzed (and probably
                 # instrumented).
-                prog_bc = mutation
+                prog_bc_base = Path("/dev/shm/mutated_bcs/")/prog
+                prog_bc_base.mkdir(parents=True, exist_ok=True)
+                prog_bc = prog_bc_base/(Path(prog_info['orig_bc']).with_suffix(f".ll.{mutation_id}.mut.bc").name)
                 # Get the path to the file that should be included during compilation
                 compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
                 # Arguments on how to execute the binary
                 args = prog_info['args']
                 # Prepare seeds
-                if USE_GATHERED_SEEDS:
-                    seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
-                else:
-                    seeds = Path(prog_info['seeds'])
                 # Original binary to check if crashing inputs also crash on
                 # unmodified version
-                orig_bin = prog_info['orig_bin']
+                orig_bin = str(Path(prog_info['orig_bin']).absolute())
                 # gather all info
                 run_data = {
                     'fuzzer': fuzzer,
                     'eval_func': eval_func,
                     'workdir': workdir,
+                    'orig_bc': prog_info['orig_bc'],
                     'prog_bc': prog_bc,
                     'compile_args': compile_args,
                     'args': args,
@@ -1038,7 +1085,7 @@ def get_next_run(stats):
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
-def wait_for_runs(stats, runs, cores_in_use, break_after_one):
+def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
     # wait for the futures to complete
     for future in concurrent.futures.as_completed(runs):
         # get the associated data for that future
@@ -1068,6 +1115,12 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
                 data['mutation_id'], data['fuzzer'])
         # Set the core for this run to unused
         cores_in_use[data['used_core']] = False
+        # Update mutant reference count and remove if needed
+        active_mutants[data['prog_bc']] -= 1
+        if active_mutants[data['prog_bc']] == 0:
+            data['prog_bc'].unlink()
+        elif active_mutants[data['prog_bc']] < 0:
+            print("error negative mutant reference count")
         # Delete the working directory as it is not needed anymore
         if RM_WORKDIR:
             workdir = Path(data['workdir'])
@@ -1086,14 +1139,6 @@ def run_eval():
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator")
     base_shm_dir.mkdir(parents=True, exist_ok=True)
-
-    # set the number of allowed files, this is needed for larger numbers of
-    # concurrent runs, this doesn't work here ..., needs to be done in shell
-    # os.system("ulimit -n 50000")
-    # also set number of available shared memory
-    # sudo bash -c "echo 134217728 > /proc/sys/kernel/shmmni"
-    # also set core pattern
-    # sudo bash -c "echo core >/proc/sys/kernel/core_pattern"
 
     # Initialize the stats object
     stats = Stats("/dev/shm/mutator/stats.db")
@@ -1130,18 +1175,38 @@ def run_eval():
             print(f"Could not build {tag} image.", proc)
             exit(1)
 
+    # Keep a list of which cores can be used
+    cores_in_use = [False]*NUM_CPUS
+    # Get a free core, this will throw an exception if there is none
+    mutation_core = cores_in_use.index(False)
+    # Set the core as used
+    cores_in_use[mutation_core] = True
+
+    # mutants in use
+    active_mutants = Counter()
+
     # for each mutation and for each fuzzer do a run
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor, \
+         start_mutation_container(mutation_core) as mutator:
         # keep a list of all runs
         runs = {}
         # start time
         start_time = time.time()
-        # Keep a list of which cores can be used
-        cores_in_use = [False]*NUM_CPUS
         # Get each run
-        for ii, run_data in enumerate(get_next_run(stats)):
+        for ii, run_data in enumerate(get_next_run(stats, mutator)):
             print("" + str(ii) + " @ " + str(int((time.time() - start_time)//60)),
                   end=', ', flush=True)
+            # Create the mutant if reference count is 0
+            if active_mutants[run_data['prog_bc']] == 0:
+                run_exec_in_container(mutator, ["./run_mutation.py", "-bc", "-cpp",
+                                                "-m", run_data['mutation_id'],
+                                                run_data['orig_bc']])
+                run_exec_in_container(mutator, ["bash", "-c",
+                    "cp " + \
+                        str(Path(run_data['orig_bc']).parent/"mutations")+ "/*" + " " + \
+                        str(Path(run_data['prog_bc']).parent)+"/"])
+            # Update mutant count
+            active_mutants[run_data['prog_bc']] += 1
             # If we should stop, do so now to not create any new run.
             if not should_run:
                 break
@@ -1160,10 +1225,10 @@ def run_eval():
             if False in cores_in_use:
                 continue
             # Wait for a single run to complete, after which we can start another
-            wait_for_runs(stats, runs, cores_in_use, True)
+            wait_for_runs(stats, runs, cores_in_use, active_mutants, True)
         # Wait for all remaining active runs
         print('waiting for the rest')
-        wait_for_runs(stats, runs, cores_in_use, False)
+        wait_for_runs(stats, runs, cores_in_use, active_mutants, False)
 
 
 def parse_afl_paths(paths):
