@@ -157,6 +157,16 @@ class Stats():
         c = self.conn.cursor()
 
         c.execute('''
+        CREATE TABLE mutation_types (
+            pattern_name,
+            mut_type,
+            pattern_location,
+            pattern_class,
+            description,
+            procedure
+        )''')
+
+        c.execute('''
         CREATE TABLE runs (
             prog,
             mutation_id,
@@ -234,6 +244,26 @@ class Stats():
         self.conn.commit()
 
     def commit(self):
+        self.conn.commit()
+
+    @connection
+    def new_mutation_type(self, c, mutation_type):
+            # pattern_type,
+            # mut_type,
+            # pattern_location,
+            # pattern_class,
+            # description,
+            # procedure,
+        c.execute('INSERT INTO mutation_types VALUES (?, ?, ?, ?, ?, ?)',
+            (
+                mutation_type['pattern_name'],
+                mutation_type['typeID'],
+                mutation_type['pattern_location'],
+                mutation_type['pattern_class'],
+                mutation_type['description'],
+                mutation_type['procedure'],
+            )
+        )
         self.conn.commit()
 
     @connection
@@ -383,7 +413,7 @@ def start_testing_container(core_to_use, trigger_file):
     container.stop()
 
 @contextlib.contextmanager
-def start_mutation_container(core_to_use):
+def start_mutation_container():
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -396,7 +426,6 @@ def start_mutation_container(core_to_use):
         auto_remove=True,
         volumes={str(HOST_TMP_PATH): {'bind': "/home/mutator/tmp/",
                                       'mode': 'rw'}},
-        cpuset_cpus=str(core_to_use),
         mem_limit="10g",
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
@@ -1143,6 +1172,11 @@ def run_eval():
     # Initialize the stats object
     stats = Stats("/dev/shm/mutator/stats.db")
 
+    with open("mutation_doc.json", "rt") as f:
+        mutation_types = json.load(f)
+        for mt in mutation_types:
+            stats.new_mutation_type(mt)
+
     # build testing image
     proc = subprocess.run([
             "docker", "build",
@@ -1177,17 +1211,13 @@ def run_eval():
 
     # Keep a list of which cores can be used
     cores_in_use = [False]*NUM_CPUS
-    # Get a free core, this will throw an exception if there is none
-    mutation_core = cores_in_use.index(False)
-    # Set the core as used
-    cores_in_use[mutation_core] = True
 
     # mutants in use
     active_mutants = Counter()
 
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor, \
-         start_mutation_container(mutation_core) as mutator:
+         start_mutation_container() as mutator:
         # keep a list of all runs
         runs = {}
         # start time
