@@ -10,23 +10,31 @@ import threading
 import queue
 import json
 import shutil
+import psutil
 import contextlib
 import concurrent.futures
+import shlex
 from pathlib import Path
 
 import docker
 
 # set the number of concurrent runs
-NUM_CPUS = os.cpu_count()
+NUM_CPUS = psutil.cpu_count(logical=False)
 
 # If container logs should be shown
 SHOW_CONTAINER_LOGS = False
+
+# Remove the working directory after a run
+RM_WORKDIR = True
 
 # Timeout for the fuzzers in seconds
 TIMEOUT = 60 * 60  # one hour
 
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
+
+# Flag if the fuzzed seeds should be used
+USE_GATHERED_SEEDS = False
 
 # Time interval in seconds in which to check the results of a fuzzer
 CHECK_INTERVAL = 5
@@ -258,30 +266,35 @@ class Stats():
             )
         )
         start_time = None
-        for row in plot_data:
-            cur_time = int(row['# unix_time'].strip())
-            if start_time is None:
-                start_time = cur_time
-            cur_time -= start_time
-            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    prog,
-                    mutation_id,
-                    fuzzer,
-                    cur_time,
-                    row[' cycles_done'].strip(),
-                    row[' cur_path'].strip(),
-                    row[' paths_total'].strip(),
-                    row[' pending_total'].strip(),
-                    row[' pending_favs'].strip(),
-                    row[' map_size'].strip(),
-                    row[' unique_crashes'].strip(),
-                    row[' unique_hangs'].strip(),
-                    row[' max_depth'].strip(),
-                    row[' execs_per_sec'].strip(),
-                    row[None][0].strip(),
+        if plot_data is not None:
+            for row in plot_data:
+                cur_time = int(row['# unix_time'].strip())
+                if start_time is None:
+                    start_time = cur_time
+                cur_time -= start_time
+                try:
+                    rest = row[None][0].strip()
+                except:
+                    rest = None
+                c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        prog,
+                        mutation_id,
+                        fuzzer,
+                        cur_time,
+                        row[' cycles_done'].strip(),
+                        row[' cur_path'].strip(),
+                        row[' paths_total'].strip(),
+                        row[' pending_total'].strip(),
+                        row[' pending_favs'].strip(),
+                        row[' map_size'].strip(),
+                        row[' unique_crashes'].strip(),
+                        row[' unique_hangs'].strip(),
+                        row[' max_depth'].strip(),
+                        row[' execs_per_sec'].strip(),
+                        rest,
+                    )
                 )
-            )
         self.conn.commit()
 
     @connection
@@ -340,19 +353,6 @@ class DockerLogStreamer(threading.Thread):
 def start_testing_container(core_to_use, trigger_file):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
-
-    # build testing image
-    proc = subprocess.run([
-            "docker", "build",
-            "-t", "mutator_testing",
-            "-f", "eval/Dockerfile.testing",
-            "."
-        ],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
-    if proc.returncode != 0:
-        print("Could not build testing image.", proc)
-        raise ValueError(proc)
 
     # Start and run the container
     container = docker_client.containers.run(
@@ -680,14 +680,18 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
             if str(path) not in crashing_inputs:
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin]
-                orig_cmd += args.replace("@@", str(path)).split(" ")
+                args = args.replace("@@", str(path))
+                args = args.replace("___FILE___", str(path))
+                orig_cmd += shlex.split(args)
                 proc = run_exec_in_testing_container(testing_container, orig_cmd)
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin]
-                mut_cmd += args.replace("@@", str(path)).split(" ")
+                args = args.replace("@@", str(path))
+                args = args.replace("___FILE___", str(path))
+                mut_cmd += shlex.split(args)
                 proc = run_exec_in_testing_container(testing_container, mut_cmd)
                 mut_res = (proc.stdout, proc.stderr)
 
@@ -726,10 +730,11 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
 # Eval function for the afl plus plus fuzzer, compiles the mutated program
 # and fuzzes it. Finally various eval data is returned
-def aflpp_base_eval(run_data, docker_image, executable):
+def base_eval(run_data, docker_image, executable):
     global should_run
     # extract used values
     workdir = run_data['workdir']
+    crash_dir = workdir/run_data['crash_dir']
     prog_bc = IN_DOCKER_WORKDIR/run_data['prog_bc'].relative_to(HOST_TMP_PATH)
     compile_args = run_data['compile_args']
     args = run_data['args']
@@ -763,7 +768,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
 
         # set up data for crashing inputs
         crashing_inputs = {}
-        crash_dir = workdir/"output"/"crashes"
         # check if seeds are already crashing
         checked_seeds = {}
         # do an initial check to see if the seed files are already crashing
@@ -773,9 +777,10 @@ def aflpp_base_eval(run_data, docker_image, executable):
             return {
                 'total_time': time.time() - start_time,
                 'covered_file_seen': covered.found,
-                'plot_data': [],
                 'crashing_inputs': checked_seeds,
+                'all_logs': ["found crashing seed input"]
             }
+
         # get access to the docker client to start the container
         docker_client = docker.from_env()
         # Start and run the container
@@ -794,10 +799,11 @@ def aflpp_base_eval(run_data, docker_image, executable):
             },
             init=True,
             cpuset_cpus=str(core_to_use),
-            ipc_mode="host",
             auto_remove=True,
-            volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
-                                          'mode': 'ro'}},
+            volumes={
+                str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR), 'mode': 'ro'},
+                "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            },
             working_dir=str(workdir),
             mem_limit="1g",
             log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
@@ -852,47 +858,90 @@ def aflpp_base_eval(run_data, docker_image, executable):
                 break
             all_logs.append(line)
 
-        try:
-                
+
+        # Also collect all crashing outputs
+        check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
+                                orig_bin, docker_mut_bin, args, start_time,
+                                covered, "final")
+            
+        return {
+            'total_time': time.time() - start_time,
+            'covered_file_seen': covered.found,
+            'crashing_inputs': crashing_inputs,
+            'all_logs': all_logs,
+        }
+
+def get_aflpp_logs(workdir, all_logs):
+    try:
+        plot_path = list(Path(workdir).glob("**/plot_data"))
+        if len(plot_path) == 1:
             # Get the final stats and report them
-            with open(workdir/"output"/"plot_data") as csvfile:
+            with open(plot_path[0]) as csvfile:
                 plot_data = list(csv.DictReader(csvfile))
                 # only get last row, to reduce memory usage
                 try:
                     plot_data = [plot_data[-2]]
                 except IndexError:
                     plot_data = [plot_data[-1]]
+        else:
+            # Did not find a plot
+            plot_Data = []
 
-            # Also collect all crashing outputs
-            check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                                  orig_bin, docker_mut_bin, args, start_time,
-                                  covered, "final")
-                
-            return {
-                'total_time': time.time() - start_time,
-                'covered_file_seen': covered.found,
-                'plot_data': plot_data,
-                'crashing_inputs': crashing_inputs,
-            }
-
-        except Exception as exc:
-            raise ValueError(''.join(all_logs)) from exc
+    except Exception as exc:
+        raise ValueError(''.join(all_logs)) from exc
 
 def aflpp_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflpp", "/home/eval/start_aflpp.sh")
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflpp", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppasan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppasan", "/home/eval/start_aflppasan.sh")
+def afl_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-afl", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppubsan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppubsan", "/home/eval/start_aflppubsan.sh")
+def aflppfastexploit_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflppfastexploit", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppmsan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppmsan", "/home/eval/start_aflppmsan.sh")
+def aflppmopt_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflppmopt", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def fairfuzz_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-fairfuzz", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def honggfuzz_eval(run_data):
+    run_data['crash_dir'] = "crashes"
+    run_data['args'] = run_data['args'].replace("@@", "___FILE___")
+    result = base_eval(run_data, "mutation-testing-honggfuzz", "/home/user/eval.sh")
+    result['plot_data'] = []
+    return result
+
+def libfuzzer_eval(run_data):
+    result = base_eval(run_data, "mutation-testing-libfuzzer", "/home/user/eval.sh")
+    return result
+
+# def aflppasan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppasan", "/home/user/eval.sh")
+
+# def aflppubsan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppubsan", "/home/user/eval.sh")
+
+# def aflppmsan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppmsan", "/home/user/eval.sh")
 
 def build_compile_args(args, workdir):
     res = ""
@@ -917,9 +966,11 @@ def build_compile_args(args, workdir):
     # mutated binary
 FUZZERS = {
     "aflpp": aflpp_eval,
-    "aflppasan": aflppasan_eval,
-    "aflppubsan": aflppubsan_eval,
-    "aflppmsan": aflppmsan_eval,
+    "afl": afl_eval,
+    "aflpp_fast_exploit": aflppfastexploit_eval,
+    "aflpp_mopt": aflppmopt_eval,
+    "afl_fairfuzz": fairfuzz_eval,
+    "honggfuzz": honggfuzz_eval,
 }
 
 # Generator that first collects all possible runs and adds them to stats.
@@ -954,8 +1005,10 @@ def get_next_run(stats):
                 # Arguments on how to execute the binary
                 args = prog_info['args']
                 # Prepare seeds
-                # vanilla seeds: seeds = Path(prog_info['seeds'])
-                seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
+                if USE_GATHERED_SEEDS:
+                    seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
+                else:
+                    seeds = Path(prog_info['seeds'])
                 # Original binary to check if crashing inputs also crash on
                 # unmodified version
                 orig_bin = prog_info['orig_bin']
@@ -1016,9 +1069,14 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         # Set the core for this run to unused
         cores_in_use[data['used_core']] = False
         # Delete the working directory as it is not needed anymore
-        workdir = Path(data['workdir'])
-        if workdir.is_dir():
-            shutil.rmtree(workdir)
+        if RM_WORKDIR:
+            workdir = Path(data['workdir'])
+            if workdir.is_dir():
+                shutil.rmtree(workdir)
+            try:
+                workdir.parent.rmdir()
+            except Exception:
+                pass
         # If we only wanted to wait for one run, break here to return
         if break_after_one:
             break
@@ -1040,51 +1098,37 @@ def run_eval():
     # Initialize the stats object
     stats = Stats("/dev/shm/mutator/stats.db")
 
-    # build the fuzzer docker images
+    # build testing image
     proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_testing",
-        "-f", "eval/Dockerfile.testing",
-        "."])
+            "docker", "build",
+            "-t", "mutator_testing",
+            "-f", "eval/Dockerfile.testing",
+            "."
+        ])
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
         exit(1)
 
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflpp",
-        "-f", "eval/Dockerfile.aflpp",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflpp image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppasan",
-        "-f", "eval/Dockerfile.aflppasan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppasan image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppubsan",
-        "-f", "eval/Dockerfile.aflppubsan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppubsan image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppmsan",
-        "-f", "eval/Dockerfile.aflppmsan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppmsan image.", proc)
-        exit(1)
+    # build the fuzzer docker images
+    for tag, name in [
+        ("mutation-testing-system", "system"),
+        ("mutation-testing-afl", "afl"),
+        ("mutation-testing-aflpp", "aflpp"),
+        ("mutation-testing-aflppmopt", "aflppmopt"),
+        ("mutation-testing-aflppfastexploit", "aflppfastexploit"),
+        ("mutation-testing-fairfuzz", "fairfuzz"),
+        ("mutation-testing-honggfuzz", "honggfuzz"),
+        ("mutation-testing-libfuzzer", "libfuzzer"),
+    ]:
+        proc = subprocess.run([
+            "docker", "build",
+            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
+            "--tag", tag,
+            "-f", f"eval/{name}/Dockerfile",
+            "."])
+        if proc.returncode != 0:
+            print(f"Could not build {tag} image.", proc)
+            exit(1)
 
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
