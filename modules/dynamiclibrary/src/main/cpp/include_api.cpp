@@ -24,9 +24,8 @@ void signal_triggered_mutation(int64_t UID) {
         if (triggered[UID]) {
             return;
         }
-    } else {
-        return;
     }
+    triggered[UID] = true;
     const char* triggeredFolderPath = getenv("TRIGGERED_FOLDER");
     const char* triggeredOutput = getenv("TRIGGERED_OUTPUT");
     if (!triggeredFolderPath) {
