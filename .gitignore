@@ -169,3 +169,5 @@ samples/missing_result_checks/missing_return_check/missing_return_check
 samples/uncontrolled_format_string/uncontrolled_format_string
 samples/use_of_incorrect_operator/use_of_incorrect_operator
 test_plot.html
+eval/build_test_suite.py.old
+eval/build.sh.old
