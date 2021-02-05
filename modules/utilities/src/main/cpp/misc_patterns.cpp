@@ -390,11 +390,21 @@ bool CompareEqualToPattern::mutate(
                         builderMutex.lock();
                         addMutationFoundSignal(nextInstructionBuilder, M, segref["UID"]);
                         auto storeInst = new StoreInst(iCmpInstr->getOperand(1), loadInstr->getPointerOperand(), iCmpInstr);
-                        auto newVal = builder->getIntN(iCmpInstr->getOperand(0)->getType()->getIntegerBitWidth(), 0);
-                        iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
-                        iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
-                        loadInstr->removeFromParent();
-                        iCmpInstr->setOperand(1, newVal);
+                        if (iCmpInstr->getOperand(0)->getType()->isIntegerTy()) {
+                            // if the operand is an integer type do this
+                            auto newVal = builder->getIntN(iCmpInstr->getOperand(0)->getType()->getIntegerBitWidth(), 0);
+                            iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
+                            iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
+                            loadInstr->removeFromParent();
+                            iCmpInstr->setOperand(1, newVal);
+                        } else {
+                            // otherwise the operand is a pointer type, so we check against nullptr
+                            auto newVal = Constant::getNullValue(iCmpInstr->getOperand(0)->getType());
+                            iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
+                            iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
+                            loadInstr->removeFromParent();
+                            iCmpInstr->setOperand(1, newVal);
+                        }
                         builderMutex.unlock();
                         return true;
                     }
