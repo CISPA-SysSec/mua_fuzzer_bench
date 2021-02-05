@@ -5,34 +5,45 @@ import subprocess
 import csv
 import sqlite3
 import traceback
-import datetime
 import signal
 import threading
 import queue
 import json
 import shutil
-import tempfile
+import psutil
 import contextlib
-import shlex
 import concurrent.futures
+import shlex
 from pathlib import Path
 
 import docker
 
 # set the number of concurrent runs
-NUM_CPUS = os.cpu_count()
+NUM_CPUS = psutil.cpu_count(logical=False)
 
 # If container logs should be shown
 SHOW_CONTAINER_LOGS = False
 
-# Timeout for the fuzzers in seconds
-TIMEOUT = 60 * 60
+# Remove the working directory after a run
+RM_WORKDIR = True
 
-# Time interval in which to check the results of a fuzzer
+# Timeout for the fuzzers in seconds
+TIMEOUT = 60 * 60  # one hour
+
+# Timeout for the fuzzers during seed gathering in seconds
+SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
+
+# Flag if the fuzzed seeds should be used
+USE_GATHERED_SEEDS = False
+
+# Time interval in seconds in which to check the results of a fuzzer
 CHECK_INTERVAL = 5
 
 # The path where eval data is stored outside of the docker container
 HOST_TMP_PATH = Path(".").resolve()/"tmp/"
+
+# The path where all seed files are collected
+SEED_BASE_DIR = Path("/dev/shm/seeds/")
 
 # The location where the eval data is mapped to inside the docker container
 IN_DOCKER_WORKDIR = "/workdir/"
@@ -77,6 +88,7 @@ PROGRAMS = {
             # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
         ],
         "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target").absolute()),
+        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc").absolute()),
         "path": "samples/guetzli/",
         "seeds": "samples/guetzli_harness/seeds/",
         "args": "@@",
@@ -159,6 +171,15 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE executed_runs (
+            prog,
+            mutation_id,
+            fuzzer,
+            covered_file_seen,
+            total_time
+        )''')
+
+        c.execute('''
         CREATE TABLE aflpp_runs (
             prog,
             mutation_id,
@@ -174,9 +195,7 @@ class Stats():
             unique_hangs,
             max_depth,
             execs_per_sec,
-            totals_execs,
-            covered_file_seen,
-            total_time
+            totals_execs
         )''')
 
         c.execute('''
@@ -185,7 +204,7 @@ class Stats():
             mutation_id,
             fuzzer,
             time_found,
-            initial_seed,
+            stage,
             path,
             crashing_input,
             orig_return_code,
@@ -237,33 +256,45 @@ class Stats():
 
     @connection
     def new_aflpp_run(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
-        start_time = None
-        for row in plot_data:
-            cur_time = int(row['# unix_time'].strip())
-            if start_time is None:
-                start_time = cur_time
-            cur_time -= start_time
-            c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    prog,
-                    mutation_id,
-                    fuzzer,
-                    cur_time,
-                    row[' cycles_done'].strip(),
-                    row[' cur_path'].strip(),
-                    row[' paths_total'].strip(),
-                    row[' pending_total'].strip(),
-                    row[' pending_favs'].strip(),
-                    row[' map_size'].strip(),
-                    row[' unique_crashes'].strip(),
-                    row[' unique_hangs'].strip(),
-                    row[' max_depth'].strip(),
-                    row[' execs_per_sec'].strip(),
-                    row[None][0].strip(),
-                    cf_seen,
-                    total_time,
-                )
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
+            (
+                prog,
+                mutation_id,
+                fuzzer,
+                cf_seen,
+                total_time,
             )
+        )
+        start_time = None
+        if plot_data is not None:
+            for row in plot_data:
+                cur_time = int(row['# unix_time'].strip())
+                if start_time is None:
+                    start_time = cur_time
+                cur_time -= start_time
+                try:
+                    rest = row[None][0].strip()
+                except:
+                    rest = None
+                c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        prog,
+                        mutation_id,
+                        fuzzer,
+                        cur_time,
+                        row[' cycles_done'].strip(),
+                        row[' cur_path'].strip(),
+                        row[' paths_total'].strip(),
+                        row[' pending_total'].strip(),
+                        row[' pending_favs'].strip(),
+                        row[' map_size'].strip(),
+                        row[' unique_crashes'].strip(),
+                        row[' unique_hangs'].strip(),
+                        row[' max_depth'].strip(),
+                        row[' execs_per_sec'].strip(),
+                        rest,
+                    )
+                )
         self.conn.commit()
 
     @connection
@@ -275,7 +306,7 @@ class Stats():
                     mutation_id,
                     fuzzer,
                     data['time_found'],
-                    data['initial_seed'],
+                    data['stage'],
                     path,
                     data['data'],
                     data['orig_returncode'],
@@ -319,22 +350,9 @@ class DockerLogStreamer(threading.Thread):
         self.q.put(None)
 
 @contextlib.contextmanager
-def start_testing_container(core_to_use):
+def start_testing_container(core_to_use, trigger_file):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
-
-    # build testing image
-    proc = subprocess.run([
-            "docker", "build",
-            "-t", "mutator_testing",
-            "-f", "eval/Dockerfile.testing",
-            "."
-        ],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
-    if proc.returncode != 0:
-        print("Could not build testing image.", proc)
-        raise ValueError(proc)
 
     # Start and run the container
     container = docker_client.containers.run(
@@ -345,12 +363,15 @@ def start_testing_container(core_to_use):
         auto_remove=True,
         environment={
             'LD_LIBRARY_PATH': "/workdir/lib/",
+            'TRIGGERED_FILE': str(trigger_file),
         },
         volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
                                       'mode': 'ro'}},
         working_dir=str(IN_DOCKER_WORKDIR),
         cpuset_cpus=str(core_to_use),
         mem_limit="1g",
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
         detach=True
     )
     yield container
@@ -364,41 +385,325 @@ def run_exec_in_testing_container(container, cmd):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
 
+class CoveredFile:
+    def __init__(self, workdir, start_time) -> None:
+        super().__init__()
+        self.found = None
+        self.path = Path(workdir)/"covered"
+        self.start_time = start_time
+
+        if self.path.is_file():
+            self.path.unlink()
+
+    def check(self):
+        if self.found is None and self.path.is_file():
+            self.found = time.time() - self.start_time
+
+
+# Seed gathering function for the afl plus plus fuzzer, instruments the target
+# program and fuzzes it.
+def seed_func_aflpp(run_data):
+    global should_run
+    # extract used values
+    workdir = run_data['workdir']
+    prog_bc = Path(IN_DOCKER_WORKDIR)/Path(run_data['prog_bc']).relative_to(HOST_TMP_PATH)
+    compile_args = run_data['compile_args']
+    aflpp_args = run_data['fuzzer_args']
+    args = run_data['args']
+    environment = run_data['env']
+    seeds = run_data['seeds']
+    core_to_use = run_data['used_core']
+
+    # get start time for the seed gathering
+    start_time = time.time()
+
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+    # Start and run the container
+    container = docker_client.containers.run(
+        "mutator_seed_aflpp", # the image
+        [
+            "/home/eval/start_aflpp_seed.sh",
+            str(compile_args),
+            str(prog_bc),
+            str(IN_DOCKER_WORKDIR/seeds),
+            str(aflpp_args),
+            str(args)
+        ], # the arguments
+        environment=environment,
+        init=True,
+        cpuset_cpus=str(core_to_use),
+        ipc_mode="host",
+        auto_remove=True,
+        volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
+                                      'mode': 'ro'}},
+        working_dir=str(workdir),
+        mem_limit="1g",
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+
+    logs_queue = queue.Queue()
+    DockerLogStreamer(logs_queue, container).start()
+
+    while time.time() < start_time + SEED_TIMEOUT and should_run:
+        # check if the process stopped, this should only happen in an
+        # error case
+        try:
+            container.reload()
+        except docker.errors.NotFound:
+            # container is dead stop waiting
+            break
+        if container.status not in ["running", "created"]:
+            break
+
+        # Sleep so we only check sometimes and do not busy loop 
+        time.sleep(CHECK_INTERVAL)
+
+    # Check if container is still running, if it is, kill it.
+    try:
+        container.reload()
+        if container.status in ["running", "created"]:
+
+            # Send sigint to the process
+            container.kill(2)
+
+            # Wait up to 10 seconds then send sigkill
+            container.stop()
+    except docker.errors.NotFound:
+        # container is dead just continue maybe it worked
+        pass
+
+    all_logs = []
+    while True:
+        line = logs_queue.get()
+        if line == None:
+            break
+        all_logs.append(line)
+
+    return '\n'.join(all_logs)
+
+SEED_FUZZERS = {
+    "aflpp_main": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-M main",
+        'env': {},
+    },
+    "aflpp_cmplog": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-S cmplog",
+        'env': {'CMPLOG:': '1'},
+    },
+    "aflpp_asan": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-S asan",
+        'env': {'AFL_USE_ASAN:': '1'},
+    },
+    "aflpp_ubsan": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-S ubsan",
+        'env': {'AFL_USE_UBSAN:': '1'},
+    },
+    "aflpp_cfisan": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-S cfisan",
+        'env': {'AFL_USE_CFISAN:': '1'},
+    },
+    "aflpp_msan": {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': "-S msan",
+        'env': {'AFL_USE_MSAN:': '1'},
+    },
+}
+
+POWER_SCHEDULES = ["fast", "coe", "lin", "quad", "exploit", "mmopt", "rare", "seek"]
+
+for ii in range(17):
+    ps = POWER_SCHEDULES[ii % len(POWER_SCHEDULES)]
+    SEED_FUZZERS[f"aflpp_vanilla_{ii}"] = {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': f"-S vanilla_{ii} -p {ps}",
+        'env': {},
+    }
+
+for ii in range(17):
+    ps = POWER_SCHEDULES[ii % len(POWER_SCHEDULES)]
+    SEED_FUZZERS[f"aflpp_mopt_{ii}"] = {
+        'seed_func': seed_func_aflpp,
+        'fuzzer_args': f"-S mopt_{ii} -L 0 -p {ps}",
+        'env': {},
+    }
+
+# get all fuzzer instances to run for the prog
+def get_seed_runs(prog_name, prog_info):
+    shutil.rmtree(SEED_BASE_DIR/prog_name)
+    for fuzzer, fuzzer_info in SEED_FUZZERS.items():
+        # Get the working directory based on program and mutation id and
+        # fuzzer, which is a unique path for each run
+        workdir = SEED_BASE_DIR/prog_name/fuzzer
+        # Get the bc file that should be fuzzed (and probably
+        # instrumented).
+        prog_bc = prog_info['orig_bc']
+        # Get the path to the file that should be included during compilation
+        compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
+        # Arguments on how to execute the binary
+        args = prog_info['args']
+        # Prepare seeds
+        seeds = Path(prog_info['seeds'])
+        # seed function
+        # gather all info
+        run_data = {
+            'fuzzer': fuzzer,
+            'seed_func': fuzzer_info['seed_func'],
+            'fuzzer_args': fuzzer_info['fuzzer_args'],
+            'env': fuzzer_info['env'],
+            'workdir': workdir,
+            'prog_bc': prog_bc,
+            'compile_args': compile_args,
+            'args': args,
+            'seeds': seeds,
+        }
+        yield run_data
+
+
+# wait for a run to complete
+def wait_for_seed_runs(runs, cores_in_use, break_after_one):
+    # wait for the futures to complete
+    for future in concurrent.futures.as_completed(runs):
+        # get the associated data for that future
+        data = runs[future]
+        # we are not interested in this run anymore
+        del runs[future]
+        try:
+            # if there was no exception get the data
+            run_result = future.result()
+            print(f"run_result: {run_result}")
+        except Exception:
+            # if there was an exception print it
+            trace = traceback.format_exc()
+            print('='*50,
+                '\n%r generated an exception: %s\n' %
+                    (data, trace), # exc
+                '='*50)
+        print(runs)
+        # Set the core for this run to unused
+        cores_in_use[data['used_core']] = False
+        print(cores_in_use)
+        # If we only wanted to wait for one run, break here to return
+        if break_after_one:
+            break
+
+
+# run a multi-core fuzzing campaign to get a large set of interesting seed files
+# for each program
+def gather_seeds():
+    # build docker images
+    proc = subprocess.run([
+        "docker", "build",
+        "-t", "mutator_testing",
+        "-f", "eval/Dockerfile.testing",
+        "."])
+    if proc.returncode != 0:
+        print("Could not build testing image.", proc)
+        exit(1)
+
+    proc = subprocess.run([
+        "docker", "build",
+        "-t", "mutator_seed_aflpp",
+        "-f", "eval/Dockerfile.seed",
+        "."])
+    if proc.returncode != 0:
+        print("Could not build mutator_seed_aflpp image.", proc)
+        exit(1)
+    
+    # for each program gather the seeds
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
+        for prog_name, prog_vals in PROGRAMS.items():
+            # keep a list of all runs
+            runs = {}
+            # start each fuzzing instance in a container, for each core
+            # Keep a list of which cores can be used
+            cores_in_use = [False]*NUM_CPUS
+            # Get each run
+            for ii, run_data in enumerate(get_seed_runs(prog_name, prog_vals)):
+                # If we should stop, do so now to not create any new run.
+                if not should_run:
+                    break
+                # Get a free core, this will throw an exception if there is none
+                used_core = cores_in_use.index(False)
+                # Set the core as used
+                cores_in_use[used_core] = True
+                print(cores_in_use)
+                # Unpack the run_data
+                # Add the run to the executor, this starts execution of the eval
+                # function. Also associate some information with that run, this
+                # is later used to record needed information.
+                run_data['used_core'] = used_core
+                runs[executor.submit(run_data['seed_func'], run_data)] = run_data
+                # Do not wait for a run, if we can start more runs do so first and
+                # only wait when all cores are in use.
+                if False in cores_in_use:
+                    continue
+                # Wait for a single run to complete, after which we can start another
+                wait_for_seed_runs(runs, cores_in_use, True)
+
+            # wait for all containers to be done
+            wait_for_seed_runs(runs, cores_in_use, False)
+
+            # only continue with next program if we should continue running
+            if not should_run:
+                break
+
+            # collect the resulting seeds into one folder
+            base_dir = SEED_BASE_DIR.joinpath(prog_name)
+            seed_dir = base_dir.joinpath("seeds")
+            if seed_dir.is_dir():
+                shutil.rmtree(seed_dir)
+            seed_dir.mkdir()
+
+            for queue_file in base_dir.joinpath("output/main/queue").iterdir():
+                if queue_file.is_dir():
+                    continue
+                shutil.copy(queue_file, seed_dir.joinpath(queue_file.name))
+
+
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                          orig_bin, mut_bin, args, start_time, is_seed):
+                          orig_bin, mut_bin, args, start_time, covered, stage):
     if not crash_dir.is_dir():
         return False
 
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
-            if path not in crashing_inputs:
-                # Check that does not crash on the original binary
+            if str(path) not in crashing_inputs:
+                # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin]
-                orig_cmd += args.replace("@@", str(path)).split(" ")
+                args = args.replace("@@", str(path))
+                args = args.replace("___FILE___", str(path))
+                orig_cmd += shlex.split(args)
                 proc = run_exec_in_testing_container(testing_container, orig_cmd)
-                # proc = subprocess.Popen(orig_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
-                # Check that does not crash on the original binary
+                # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin]
-                mut_cmd += args.replace("@@", str(path)).split(" ")
+                args = args.replace("@@", str(path))
+                args = args.replace("___FILE___", str(path))
+                mut_cmd += shlex.split(args)
                 proc = run_exec_in_testing_container(testing_container, mut_cmd)
-                # proc = subprocess.Popen(mut_cmd,
-                #     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                #     env={'LD_LIBRARY_PATH': "/workdir/lib/"})
                 mut_res = (proc.stdout, proc.stderr)
-                num_triggered = len(mut_res[0].split(TRIGGERED_STR))
-                num_triggered += len(mut_res[1].split(TRIGGERED_STR))
+
+                num_triggered = len(mut_res[0].split(TRIGGERED_STR)) - 1
+                num_triggered += len(mut_res[1].split(TRIGGERED_STR)) - 1
                 mut_res = (
                     mut_res[0].replace(TRIGGERED_STR, b""),
                     mut_res[1].replace(TRIGGERED_STR, b"")
                 )
                 mut_returncode = proc.returncode
+
+                covered.check()
 
                 try:
                     crash_file_data = path.read_bytes()
@@ -407,7 +712,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
                 crashing_inputs[str(path)] = {
                     'time_found': time.time() - start_time,
-                    'initial_seed': is_seed,
+                    'stage': stage,
                     'data': crash_file_data,
                     'orig_returncode': orig_returncode,
                     'mut_returncode': mut_returncode,
@@ -425,10 +730,11 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
 # Eval function for the afl plus plus fuzzer, compiles the mutated program
 # and fuzzes it. Finally various eval data is returned
-def aflpp_base_eval(run_data, docker_image, executable):
+def base_eval(run_data, docker_image, executable):
     global should_run
     # extract used values
     workdir = run_data['workdir']
+    crash_dir = workdir/run_data['crash_dir']
     prog_bc = IN_DOCKER_WORKDIR/run_data['prog_bc'].relative_to(HOST_TMP_PATH)
     compile_args = run_data['compile_args']
     args = run_data['args']
@@ -438,8 +744,14 @@ def aflpp_base_eval(run_data, docker_image, executable):
     docker_mut_bin = Path(workdir)/"testing"
     docker_mut_bin.parent.mkdir(parents=True, exist_ok=True)
 
+    # get start time for the eval
+    start_time = time.time()
+
+    # get path for covered file and rm the file if it exists
+    covered = CoveredFile(workdir, start_time)
+
     # start testing container
-    with start_testing_container(core_to_use) as testing_container:
+    with start_testing_container(core_to_use, covered.path) as testing_container:
 
         # compile the compare version of the mutated binary
         compile_mut_bin_res = run_exec_in_testing_container(testing_container,
@@ -454,31 +766,21 @@ def aflpp_base_eval(run_data, docker_image, executable):
         if compile_mut_bin_res.returncode != 0:
             raise ValueError(compile_mut_bin_res)
 
-        # get path for covered file and rm the file if it exists
-        covered_file_seen = None
-        covered_file = Path(workdir)/"covered"
-        if covered_file.is_file():
-            covered_file.unlink()
         # set up data for crashing inputs
         crashing_inputs = {}
-        crash_dir = workdir/"output"/"crashes"
         # check if seeds are already crashing
         checked_seeds = {}
-        # get start time for the eval
-        start_time = time.time()
         # do an initial check to see if the seed files are already crashing
         if check_crashing_inputs(testing_container, checked_seeds, seeds,
                                  orig_bin, docker_mut_bin, args, start_time,
-                                 True):
-            # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+                                 covered, "initial"):
             return {
                 'total_time': time.time() - start_time,
-                'covered_file_seen': covered_file_seen,
-                'plot_data': [],
+                'covered_file_seen': covered.found,
                 'crashing_inputs': checked_seeds,
+                'all_logs': ["found crashing seed input"]
             }
+
         # get access to the docker client to start the container
         docker_client = docker.from_env()
         # Start and run the container
@@ -497,12 +799,15 @@ def aflpp_base_eval(run_data, docker_image, executable):
             },
             init=True,
             cpuset_cpus=str(core_to_use),
-            ipc_mode="host",
             auto_remove=True,
-            volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
-                                          'mode': 'ro'}},
+            volumes={
+                str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR), 'mode': 'ro'},
+                "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            },
             working_dir=str(workdir),
             mem_limit="1g",
+            log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+                config={'max-size': '10m'}),
             detach=True
         )
 
@@ -510,8 +815,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
         DockerLogStreamer(logs_queue, container).start()
 
         while time.time() < start_time + TIMEOUT and should_run:
-            # Print the next lines outputted by the container
-
             # check if the process stopped, this should only happen in an
             # error case
             try:
@@ -523,13 +826,12 @@ def aflpp_base_eval(run_data, docker_image, executable):
                 break
 
             # Check if covered file is seen
-            if covered_file_seen is None and covered_file.is_file():
-                covered_file_seen = time.time() - start_time
+            covered.check()
 
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
                                      crash_dir, orig_bin, docker_mut_bin, args,
-                                     start_time, False):
+                                     start_time, covered, "runtime"):
                 break
 
             # Sleep so we only check sometimes and do not busy loop 
@@ -549,8 +851,6 @@ def aflpp_base_eval(run_data, docker_image, executable):
             # container is dead just continue maybe it worked
             pass
         
-        total_time = time.time() - start_time
-
         all_logs = []
         while True:
             line = logs_queue.get()
@@ -558,47 +858,90 @@ def aflpp_base_eval(run_data, docker_image, executable):
                 break
             all_logs.append(line)
 
-        try:
-                
+
+        # Also collect all crashing outputs
+        check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
+                                orig_bin, docker_mut_bin, args, start_time,
+                                covered, "final")
+            
+        return {
+            'total_time': time.time() - start_time,
+            'covered_file_seen': covered.found,
+            'crashing_inputs': crashing_inputs,
+            'all_logs': all_logs,
+        }
+
+def get_aflpp_logs(workdir, all_logs):
+    try:
+        plot_path = list(Path(workdir).glob("**/plot_data"))
+        if len(plot_path) == 1:
             # Get the final stats and report them
-            with open(workdir/"output"/"plot_data") as csvfile:
+            with open(plot_path[0]) as csvfile:
                 plot_data = list(csv.DictReader(csvfile))
                 # only get last row, to reduce memory usage
                 try:
                     plot_data = [plot_data[-2]]
                 except IndexError:
                     plot_data = [plot_data[-1]]
+        else:
+            # Did not find a plot
+            plot_Data = []
 
-            # Also collect all crashing outputs
-            check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                                  orig_bin, docker_mut_bin, args, start_time,
-                                  False)
-                
-            return {
-                'total_time': total_time,
-                'covered_file_seen': covered_file_seen,
-                'plot_data': plot_data,
-                'crashing_inputs': crashing_inputs,
-            }
-
-        except Exception as exc:
-            raise ValueError(''.join(all_logs)) from exc
+    except Exception as exc:
+        raise ValueError(''.join(all_logs)) from exc
 
 def aflpp_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflpp", "/home/eval/start_aflpp.sh")
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflpp", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppasan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppasan", "/home/eval/start_aflppasan.sh")
+def afl_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-afl", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppubsan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppubsan", "/home/eval/start_aflppubsan.sh")
+def aflppfastexploit_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflppfastexploit", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
 
-def aflppmsan_eval(run_data):
-    return aflpp_base_eval(
-        run_data, "mutator_aflppmsan", "/home/eval/start_aflppmsan.sh")
+def aflppmopt_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-aflppmopt", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def fairfuzz_eval(run_data):
+    run_data['crash_dir'] = "output/crashes"
+    result = base_eval(run_data, "mutation-testing-fairfuzz", "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def honggfuzz_eval(run_data):
+    run_data['crash_dir'] = "crashes"
+    run_data['args'] = run_data['args'].replace("@@", "___FILE___")
+    result = base_eval(run_data, "mutation-testing-honggfuzz", "/home/user/eval.sh")
+    result['plot_data'] = []
+    return result
+
+def libfuzzer_eval(run_data):
+    result = base_eval(run_data, "mutation-testing-libfuzzer", "/home/user/eval.sh")
+    return result
+
+# def aflppasan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppasan", "/home/user/eval.sh")
+
+# def aflppubsan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppubsan", "/home/user/eval.sh")
+
+# def aflppmsan_eval(run_data):
+#     return aflpp_base_eval(
+#         run_data, "mutator_aflppmsan", "/home/user/eval.sh")
 
 def build_compile_args(args, workdir):
     res = ""
@@ -623,9 +966,11 @@ def build_compile_args(args, workdir):
     # mutated binary
 FUZZERS = {
     "aflpp": aflpp_eval,
-    "aflppasan": aflppasan_eval,
-    "aflppubsan": aflppubsan_eval,
-    "aflppmsan": aflppmsan_eval,
+    "afl": afl_eval,
+    "aflpp_fast_exploit": aflppfastexploit_eval,
+    "aflpp_mopt": aflppmopt_eval,
+    "afl_fairfuzz": fairfuzz_eval,
+    "honggfuzz": honggfuzz_eval,
 }
 
 # Generator that first collects all possible runs and adds them to stats.
@@ -660,7 +1005,10 @@ def get_next_run(stats):
                 # Arguments on how to execute the binary
                 args = prog_info['args']
                 # Prepare seeds
-                seeds = Path(prog_info['seeds'])
+                if USE_GATHERED_SEEDS:
+                    seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
+                else:
+                    seeds = Path(prog_info['seeds'])
                 # Original binary to check if crashing inputs also crash on
                 # unmodified version
                 orig_bin = prog_info['orig_bin']
@@ -700,16 +1048,11 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         try:
             # if there was no exception get the data
             run_result = future.result()
-        except Exception as exc:
+        except Exception:
             # if there was an exception print it
-            prog_bc = data['prog_bc']
             trace = traceback.format_exc()
             stats.run_crashed(data['prog'], data['mutation_id'], data['fuzzer'],
                               trace)
-            # print('='*50,
-            #     '\n%r generated an exception: %s\n' %
-            #         (prog_bc, trace), # exc
-            #     '='*50)
         else:
             # if successful log the run
             # print("success")
@@ -726,14 +1069,19 @@ def wait_for_runs(stats, runs, cores_in_use, break_after_one):
         # Set the core for this run to unused
         cores_in_use[data['used_core']] = False
         # Delete the working directory as it is not needed anymore
-        workdir = Path(data['workdir'])
-        if workdir.is_dir():
-            shutil.rmtree(workdir)
+        if RM_WORKDIR:
+            workdir = Path(data['workdir'])
+            if workdir.is_dir():
+                shutil.rmtree(workdir)
+            try:
+                workdir.parent.rmdir()
+            except Exception:
+                pass
         # If we only wanted to wait for one run, break here to return
         if break_after_one:
             break
 
-def main():
+def run_eval():
     global should_run
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator")
@@ -747,56 +1095,40 @@ def main():
     # also set core pattern
     # sudo bash -c "echo core >/proc/sys/kernel/core_pattern"
 
-    # set signal handler for keyboard interrupt
-    signal.signal(signal.SIGINT, sigint_handler)
     # Initialize the stats object
     stats = Stats("/dev/shm/mutator/stats.db")
 
-    # build the fuzzer docker images
+    # build testing image
     proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_testing",
-        "-f", "eval/Dockerfile.testing",
-        "."])
+            "docker", "build",
+            "-t", "mutator_testing",
+            "-f", "eval/Dockerfile.testing",
+            "."
+        ])
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
         exit(1)
 
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflpp",
-        "-f", "eval/Dockerfile.aflpp",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflpp image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppasan",
-        "-f", "eval/Dockerfile.aflppasan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppasan image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppubsan",
-        "-f", "eval/Dockerfile.aflppubsan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppubsan image.", proc)
-        exit(1)
-
-    proc = subprocess.run([
-        "docker", "build",
-        "-t", "mutator_aflppmsan",
-        "-f", "eval/Dockerfile.aflppmsan",
-        "."])
-    if proc.returncode != 0:
-        print("Could not build aflppmsan image.", proc)
-        exit(1)
+    # build the fuzzer docker images
+    for tag, name in [
+        ("mutation-testing-system", "system"),
+        ("mutation-testing-afl", "afl"),
+        ("mutation-testing-aflpp", "aflpp"),
+        ("mutation-testing-aflppmopt", "aflppmopt"),
+        ("mutation-testing-aflppfastexploit", "aflppfastexploit"),
+        ("mutation-testing-fairfuzz", "fairfuzz"),
+        ("mutation-testing-honggfuzz", "honggfuzz"),
+        ("mutation-testing-libfuzzer", "libfuzzer"),
+    ]:
+        proc = subprocess.run([
+            "docker", "build",
+            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
+            "--tag", tag,
+            "-f", f"eval/{name}/Dockerfile",
+            "."])
+        if proc.returncode != 0:
+            print(f"Could not build {tag} image.", proc)
+            exit(1)
 
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
@@ -832,6 +1164,356 @@ def main():
         # Wait for all remaining active runs
         print('waiting for the rest')
         wait_for_runs(stats, runs, cores_in_use, False)
+
+
+def parse_afl_paths(paths):
+    if paths is None:
+        return []
+    paths = paths.split('/////')
+    paths_elements = []
+    for path in paths:
+        elements = {}
+        split_path = path.split(',')
+        elements['path'] = split_path[0]
+        for elem in split_path[1:]:
+            parts = elem.split(":")
+            if len(parts) == 2:
+                elements[parts[0]] = parts[1]
+            else:
+                raise ValueError("Unexpected afl path format: ", path)
+        paths_elements.append(elements)
+    return paths_elements
+
+def header():
+    import altair as alt
+
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Mutation testing eval</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
+        <script src="https://cdn.jsdelivr.net/npm/vega@{vega_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@{vegalite_version}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@{vegaembed_version}"></script>
+    <style>
+    body {{
+        margin-left:10px
+    }}
+    table {{
+        border-collapse: collapse;
+    }}
+    th, td {{
+        text-align: left;
+        padding: 7px;
+        border: none;
+    }}
+        tr:nth-child(even){{background-color: lightgray}}
+    th {{
+    }}
+    </style>
+    </head>
+    <body>\n""".format(
+        vega_version=alt.VEGA_VERSION,
+        vegalite_version=alt.VEGALITE_VERSION,
+        vegaembed_version=alt.VEGAEMBED_VERSION,
+    )
+
+def runtime_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
+    print(stats)
+    res = "<h2>Runtime Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def mut_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
+    res = "<h2>Mutation Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def aflpp_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
+    res = "<h2>AFL++ style fuzzers -- Stats</h2>"
+    res += stats.to_html()
+    return res
+
+def add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_num_muts, time):
+    try:
+        val = crash_ctr['confirmed'] / total_num_muts
+    except ZeroDivisionError:
+        val = 0
+
+    data['total'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+    try:
+        val = crash_ctr['confirmed'] / crash_ctr['covered']
+    except ZeroDivisionError:
+        val = 0
+
+    data['covered'].append({
+        'fuzzer': fuzzer,
+        'prog': prog,
+        'time': time,
+        'confirmed': crash_ctr['confirmed'],
+        'covered': crash_ctr['covered'],
+        'total': total_num_muts,
+        'percentage': val * 100,
+    })
+
+def plot(title, mut_type, data):
+    import inspect
+    import types
+    from typing import cast
+    import altair as alt
+    func_name = cast(types.FrameType, inspect.currentframe()).f_code.co_name
+    selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend')
+    color = alt.condition(selection,
+                      alt.Color('fuzzer:O', legend=None),
+                      alt.value('lightgray'))
+    plot = alt.Chart(data).mark_line(
+        interpolate='step-after',
+    ).encode(
+        x=alt.X('time', scale=alt.Scale(type='symlog')),
+        y='percentage',
+        color='fuzzer',
+        tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
+    ).properties(
+        title=title,
+        width=600,
+        height=400,
+    )
+
+    plot = plot.mark_point(size=100, opacity=.5, tooltip=alt.TooltipContent("encoding")) + plot
+
+    plot = plot.add_selection(
+        alt.selection_interval(bind='scales', encodings=['x'])
+    ).transform_filter(
+        selection
+    )
+    
+    plot = (plot |
+    alt.Chart(data).mark_point().encode(
+        x=alt.X('prog', axis=alt.Axis(orient='bottom')),
+        y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
+        color=color
+    ).add_selection(
+        selection
+    ))
+
+    res = f'<div id="{title.replace(" ", "")}{func_name}{mut_type}"></div>'
+    res += '''<script type="text/javascript">
+                vegaEmbed('#{title}{func_name}{mut_id}', {spec1}).catch(console.error);
+              </script>'''.format(title=title.replace(" ", ""), func_name=func_name, mut_id=mut_type,
+                                  spec1=plot.to_json(indent=None))
+    return res
+
+def split_vals(val):
+    if val is None:
+        return []
+    return [float(v) for v in val.split("/////")]
+
+def gather_plot_data(runs, run_results):
+    from collections import defaultdict
+    import pandas as pd
+    if len(run_results) == 0:
+        return None
+
+    data = defaultdict(list)
+    unique_crashes = [] 
+
+    for crash in run_results.itertuples():
+        import math
+        if math.isnan(crash.covered_file_seen):
+            continue
+        unique_crashes.append({
+            'fuzzer': crash.fuzzer,
+            'prog': crash.prog,
+            'mut_type': crash.mut_type,
+            'type': 'covered',
+            'time': crash.covered_file_seen,
+        })
+
+    for crash in run_results.itertuples():
+        if crash.confirmed != 1:
+            continue
+        if crash.stage == 'initial' or crash.stage == 'runtime' or crash.stage == 'final':
+            unique_crashes.append({
+                'fuzzer': crash.fuzzer,
+                'prog': crash.prog,
+                'mut_type': crash.mut_type,
+                'type': 'afl',
+                'time': crash.time_found,
+            })
+        else:
+            print(crash.stage)
+            # nothing found
+            pass
+
+    counters = defaultdict(lambda: {
+        'covered': 0,
+        'confirmed': 0,
+    })
+    max_time = 0
+
+    # for crash in unique_crashes:
+    #     crash_ctr = counters[(
+    #         crash['fuzzer'],
+    #         crash['prog'],
+    #         crash['mut_type'])]
+
+    #     if crash['type'] == 'initial':
+    #         crash_ctr['confirmed'] += 1
+
+    # add initial points
+    for run in runs.itertuples():
+        crash_ctr = counters[(
+            run.fuzzer,
+            run.prog,
+            run.mut_type)]
+        total_runs = run.done
+        add_datapoint(crash_ctr, data, run.mut_type, run.fuzzer, run.prog, total_runs, 0)
+
+    for crash in sorted(unique_crashes, key=lambda x: x['time']):
+        crash_ctr = counters[(
+            crash['fuzzer'],
+            crash['prog'],
+            crash['mut_type'])]
+
+        if crash['time'] > max_time:
+            max_time = crash['time']
+
+        total_runs = int(runs[(runs.fuzzer == crash['fuzzer']) & (runs.prog == crash['prog']) & (runs.mut_type == crash['mut_type'])]['done'].values[0])
+        if crash['type'] == 'covered':
+            crash_ctr['covered'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'initial':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        elif crash['type'] == 'afl':
+            crash_ctr['confirmed'] += 1
+            add_datapoint(crash_ctr, data, crash['mut_type'],
+                      crash['fuzzer'], crash['prog'],
+                      total_runs, crash['time'])
+        else:
+            raise ValueError("Unknown type")
+
+    # add final points
+    for (fuzzer, prog, mut_type), crash_ctr in counters.items():
+        try:
+            total_runs = int(runs[(runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)]['done'].values[0])
+        except ValueError:
+            total_runs = 0
+        add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_runs, max_time)
+
+    return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
+
+def create_mut_type_plot(mut_type, runs, run_results):
+    plot_data = gather_plot_data(runs, run_results)
+
+    res = f'<h3>Mutation: {mut_type}</h3>'
+    res += runs.to_html()
+    if plot_data is not None:
+        res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
+        res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+    return res
+
+def footer():
+    return """
+    </body>
+    </html>
+    """
+
+def generate_plots():
+    import pandas as pd
+
+    con = sqlite3.connect("/home/philipp/stats.db")
+    con.isolation_level = None
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    with open("eval.sql", "rt") as f:
+        cur.executescript(f.read())
+
+    res = header()
+    res += runtime_stats(con)
+    res += aflpp_stats(con)
+    res += mut_stats(con)
+
+    mut_types = pd.read_sql_query(
+        "SELECT * from mut_types", con)
+    runs = pd.read_sql_query(
+        "select * from run_results_by_mut_type", con)
+    run_results = pd.read_sql_query(
+        "select * from run_results", con)
+    res += "<h2>Plots</h2>"
+    for mut_type in mut_types['mut_type']:
+        print(mut_type)
+        res += create_mut_type_plot(mut_type, 
+            runs[runs.mut_type == mut_type],
+            run_results[run_results.mut_type == mut_type],
+        )
+    res += footer()
+
+    out_path = Path("test_plot.html").resolve()
+    print(f"Writing plots to: {out_path}")
+    with open(out_path, 'w') as f:
+        f.write(res) 
+    print(f"Open: file://{out_path}")
+
+def main():
+    import sys
+    import argparse
+
+    # set signal handler for keyboard interrupt
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", action="store_true",
+        help="run a seed gathering stage, to gather seed that are shared by all "
+             "fuzzers")
+    parser.add_argument("--eval", action="store_true",
+        help="run the full evaluation executing"
+             "fuzzers and gathering the resulting data")
+    parser.add_argument("--plots", action="store_true",
+        help="generate plots for the gathered data")
+
+    if len(sys.argv) < 2:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    args = parser.parse_args()
+
+    if args.seed:
+        gather_seeds()
+    if not should_run:
+        return
+    if args.eval:
+        run_eval()
+    if not should_run:
+        return
+    if args.plots:
+        generate_plots()
 
 if __name__ == "__main__":
     main()

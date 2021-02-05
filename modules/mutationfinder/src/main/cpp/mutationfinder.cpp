@@ -95,7 +95,10 @@ public:
 
         }
         builderMutex.lock();
-        auto patternLocations = look_for_pattern(instr);
+        BasicBlock::iterator itr_bb(instr);
+        IRBuilder<> builder(instr->getParent(), itr_bb);
+        IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
+        auto patternLocations = look_for_pattern(&builder, &nextInstructionBuilder, instr, builderMutex, M);
         builderMutex.unlock();
         for (const auto& loc: patternLocations) {
             if (!loc.empty()) {
@@ -170,6 +173,7 @@ struct MutatorPlugin : public ModulePass
             ++i;
         }
         populatePatternVectors();
+        insertMutationApiFunctions(M);
         number_functions = i;
         std::vector<std::thread> threads;
         for (auto& functions : threadFunctions)
