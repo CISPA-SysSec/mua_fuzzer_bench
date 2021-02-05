@@ -24,9 +24,9 @@ bool LibCFailPattern::concreteMutate(
     auto segref = *seglist;
     if (isMutationLocation(instr, seglist, patternID)) {  // no check for concrete mutation location as the alloca instructions are added by LLVM
         // get the concrete value to delete by checkin if the instruction string matches and then saving the value
-        std::cout << "found mutation location!" << "\n";
+        std::cout << "found mutation location!" << "\n"; // TODO: Do we need this and the next cout in 4 lines?
         addMutationFoundSignal(builder, M, segref["UID"]);
-        for(auto user : instr->users()){  // U is of type User*
+        for(auto user : instr->users()){  // user is of type User*
             std::cout << "found mutation location!" << "\n";
             if (auto instrUser = dyn_cast<CmpInst>(user)){
                 std::string strin;

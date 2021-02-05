@@ -158,5 +158,13 @@
         "pattern_class": "INetAddrFailPattern",
         "description": "Mutating all calls to the libc function inet_addr to achieve unhandled non-established connection errors.",
         "procedure": "Replaces all uses of the function return value to the failure value. Also removes the function call from the corpus as a fail of the function call should be simulated. Furthermore, the comparison instructions are flipped, s.t. on failure the 'correct' path is taken, i.e. we simulate a missing check for the error return value."
+    },
+    {
+        "pattern_name": "COMPARE_EQUAL_TO",
+        "typeID": 20,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "CompareEqualToPattern",
+        "description": "Mutating all '==' comparisions between two integers to '='.",
+        "procedure": "The value of integer on the right hand side is assigned to the variable on the left. The condition passes and the inside block is executed as long as the value on the RHS is not equal to 0."
     }
 ]
