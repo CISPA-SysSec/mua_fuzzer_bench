@@ -16,7 +16,16 @@ extern "C" {
 
 struct stat st = {0};
 
+const int64_t TRIGGEREDUIDSIZE = 1000000;
+bool triggered[TRIGGEREDUIDSIZE] = { false };
+
 void signal_triggered_mutation(int64_t UID) {
+    if (UID < TRIGGEREDUIDSIZE) {
+        if (triggered[UID]) {
+            return;
+        }
+    }
+    triggered[UID] = true;
     const char* triggeredFolderPath = getenv("TRIGGERED_FOLDER");
     const char* triggeredOutput = getenv("TRIGGERED_OUTPUT");
     if (!triggeredFolderPath) {
