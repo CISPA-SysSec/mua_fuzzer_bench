@@ -420,7 +420,7 @@ def start_mutation_container():
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_mutator", # the image
-        ["sleep", str(TIMEOUT * 2 + 120)], # the arguments
+        ["sleep", "infinity"], # the arguments
         init=True,
         ipc_mode="host",
         auto_remove=True,
@@ -1147,7 +1147,10 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
         # Update mutant reference count and remove if needed
         active_mutants[data['prog_bc']] -= 1
         if active_mutants[data['prog_bc']] == 0:
-            data['prog_bc'].unlink()
+            try:
+                data['prog_bc'].unlink()
+            except FileNotFoundError:
+                print("Trying to remove:", data['prog_bc'], "but it does not exist.")
         elif active_mutants[data['prog_bc']] < 0:
             print("error negative mutant reference count")
         # Delete the working directory as it is not needed anymore
@@ -1228,13 +1231,20 @@ def run_eval():
                   end=', ', flush=True)
             # Create the mutant if reference count is 0
             if active_mutants[run_data['prog_bc']] == 0:
-                run_exec_in_container(mutator, ["./run_mutation.py", "-bc", "-cpp",
-                                                "-m", run_data['mutation_id'],
-                                                run_data['orig_bc']])
-                run_exec_in_container(mutator, ["bash", "-c",
-                    "cp " + \
-                        str(Path(run_data['orig_bc']).parent/"mutations")+ "/*" + " " + \
-                        str(Path(run_data['prog_bc']).parent)+"/"])
+                res = run_exec_in_container(mutator,
+                    ["./run_mutation.py", "-bc", "-cpp",
+                     "-m", run_data['mutation_id'], run_data['orig_bc']])
+                if res.returncode != 0:
+                    print(res.stdout.decode())
+                    print(res.stderr.decode())
+                mut_name = Path(run_data['prog_bc']).name
+                res = run_exec_in_container(mutator,
+                    ["cp",
+                     str(Path(run_data['orig_bc']).parent/"mutations"/mut_name),
+                     str(Path(run_data['prog_bc']))])
+                if res.returncode != 0:
+                    print(res.stdout.decode())
+                    print(res.stderr.decode())
             # Update mutant count
             active_mutants[run_data['prog_bc']] += 1
             # If we should stop, do so now to not create any new run.
