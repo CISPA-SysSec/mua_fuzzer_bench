@@ -10,7 +10,7 @@ order by mut_type;
 DROP VIEW IF EXISTS run_results;
 CREATE TEMP VIEW run_results
 as
-select executed_runs.fuzzer, mut_type, executed_runs.prog, covered_file_seen, time_found, total_time, orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed, stage from executed_runs
+select executed_runs.fuzzer, mut_type, executed_runs.mutation_id as mut_id, executed_runs.prog, covered_file_seen, time_found, total_time, orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed, stage from executed_runs
 inner join runs on
 	executed_runs.prog = runs.prog and
 	executed_runs.mutation_id = runs.mutation_id and
@@ -26,13 +26,21 @@ group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
 DROP VIEW IF EXISTS run_results_by_mut_type;
 CREATE TEMP VIEW run_results_by_mut_type
 as
-select runs_mut_type.mut_type, runs_mut_type.fuzzer, runs_mut_type.prog, total, done, covered, found, ifnull(crashed, 0) as crashed, total_time from (
+select runs_mut_type.mut_type, runs_mut_type.fuzzer, runs_mut_type.prog, total, done, covered, found, by_seed, ifnull(crashed, 0) as crashed, total_time from (
 	select mut_type, fuzzer, prog, count(*) as total
 	from runs
 	group by mut_type, fuzzer, prog
 ) runs_mut_type
 left join (
-	select mut_type, fuzzer, prog, count(*) as done, count(covered_file_seen) as covered, count(time_found) as found, sum(total_time) as total_time from run_results
+	select mut_type,
+	       fuzzer,
+		   prog,
+		   count(*) as done,
+		   count(covered_file_seen) as covered,
+		   count(time_found) as found,
+		   count(case when stage = "initial" then 1 else null end) as by_seed,
+		   sum(total_time) as total_time
+    from run_results
 	group by mut_type, fuzzer, prog
 ) res on
 	runs_mut_type.mut_type = res.mut_type and
@@ -81,6 +89,28 @@ select fuzzer,
 	   cast(sum(map_size) as float) / count(*) as average_map_size
 from aflpp_runs_last_line
 group by fuzzer;
+
+-- get the number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers, grouped by mutation type
+DROP VIEW IF EXISTS unique_finds;
+CREATE TEMP VIEW unique_finds
+as
+select mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, count(case when (a.found == 1 and b.found == 0) then 1 else NULL end) as finds from (
+	select mut_id,
+		   mut_type,
+		   fuzzer,
+		   case when time_found is null then 0 else 1 end as found
+	from run_results
+) a
+join (
+	select mut_id,
+		   fuzzer,
+		   case when time_found is null then 0 else 1 end as found
+	from run_results
+) b
+on a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
+group by mut_type, a.fuzzer, b.fuzzer;
+
+
 -- 
 -- ---------------------------------------------------------------------------------
 -- -- general stats on mutation types
