@@ -8,6 +8,9 @@ clang = f"{llvm_bindir}/clang"
 opt = f"{llvm_bindir}/opt"
 mutatorplugin = "@MUTATOR_PLUGIN@"
 
+dynamic_libraries_folder = "@DYN_LIB_FOLDER@"
+linked_libraries = "dynamiclibrary"
+
 sysroot = ""
 progsource = None
 
@@ -32,6 +35,22 @@ def main():
         subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutationfinder",
             "-mutation_patterns", f"{progsource}.mutationlocations",  "-disable-verify",
             "-o", f"{progsource}.opt_mutate.ll"], stdin=progsource_file)
+
+    # compile to a binary to find out what mutations could possibly be triggered
+    print("Now Compile!")
+    arguments = [
+        # "-v",
+        "-o",
+        f"{progsource}.opt_mutate", # output file
+        f"{progsource}.opt_mutate.ll", # input file
+        f"-L{dynamic_libraries_folder}", # points the runtime linker to the location of the included shared library
+        "-lm", "-lz", "-ldl", # some often used libraries
+        f"-l{linked_libraries}", # the library containing all the api functions that were called by mutations
+    ]
+    if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
+        subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
+    else:
+        subprocess.call([clang, "-fno-inline", "-O3"] + arguments)
 
 
 

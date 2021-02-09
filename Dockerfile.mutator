@@ -17,7 +17,6 @@ RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
-#ENV LD_LIBRARY_PATH "/home/mutator/build/install/LLVM_Mutation_Tool/lib/:/root/toolchains/llvm+clang-901-x86_64-linux-gnu/lib/"
 
 
 
@@ -105,3 +104,6 @@ WORKDIR /home/mutator
 # ENV TRIGGERED_FILE some/file/to/report/mutation/trigger
 # ENV TRIGGERED_OUTPUT "Some output that indicates mutation triggering. Can be left blank."
 # RUN ./run_mutation.py -p samples/re2/libre2.so.bc -bc > mutationlog.txt 2>&1
+
+WORKDIR /home/mutator
+COPY iterate_seeds.sh /home/mutator/

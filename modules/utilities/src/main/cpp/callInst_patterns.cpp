@@ -9,11 +9,12 @@ void CallInstPattern::getfunNameString(const Instruction *instr){
     funNameString = fNString;
 }
 
-std::vector<std::string> MallocPattern::find(const Instruction *instr){
+std::vector<std::string>
+MallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find("malloc") != std::string::npos) {
-        results.push_back(getIdentifierString(instr, MALLOC));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, MALLOC));
     }
     return results;
 }
@@ -37,7 +38,8 @@ bool MallocPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(0);
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
             builderMutex.unlock();
             callinst->setOperand(0, newVal);
@@ -47,11 +49,12 @@ bool MallocPattern::mutate(
     return false;
 }
 
-std::vector<std::string> FGetsPattern::find (const Instruction *instr) {
+std::vector<std::string>
+FGetsPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find("fgets") != std::string::npos) {
-        results.push_back(getIdentifierString(instr, FGETS_MATCH_BUFFER_SIZE));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, FGETS_MATCH_BUFFER_SIZE));
     }
     return results;
 }
@@ -77,7 +80,8 @@ bool FGetsPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(1));
             newVal = builder->CreateMul(newVal, builder->getInt64(5));
             builderMutex.unlock();
@@ -88,7 +92,8 @@ bool FGetsPattern::mutate(
     return false;
 }
 
-std::vector<std::string> PThreadPattern::find (const Instruction *instr) {
+std::vector<std::string>
+PThreadPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     const std::string &funNameStdString = instr->getFunction()->getName().str();
@@ -99,7 +104,7 @@ std::vector<std::string> PThreadPattern::find (const Instruction *instr) {
         pthreadFoundFunctions.insert(funNameStdString);
         json j;
         j["funname"] = funNameStdString;
-        results.push_back(getIdentifierString(instr, PTHREAD_MUTEX, j));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, PTHREAD_MUTEX, j));
     }
     return results;
 }
@@ -127,7 +132,7 @@ bool PThreadPattern::mutate(
             || funNameString.find("pthread_mutex_unlock") != std::string::npos)
             ){
         builderMutex.lock();
-        addMutationFoundSignal(builder, M);
+        addMutationFoundSignal(builder, M, segref["UID"]);
         // the return value of the locking could be used somewhere, hence we need to make sure that this value still exists and simulates a successful lock
         instr->replaceAllUsesWith(builder->getInt32(1));
         // then we can remove the instruction from the parent
@@ -139,11 +144,12 @@ bool PThreadPattern::mutate(
 }
 
 
-std::vector<std::string> CallocPattern::find(const Instruction *instr){
+std::vector<std::string>
+CallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.find("calloc") != std::string::npos) {
-        results.push_back(getIdentifierString(instr, CALLOC));
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, CALLOC));
     }
     return results;
 }
@@ -167,7 +173,8 @@ bool CallocPattern::mutate(
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
-            addMutationFoundSignal(builder, M);
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getInt64(-1));
             builderMutex.unlock();
             callinst->setOperand(1, newVal);

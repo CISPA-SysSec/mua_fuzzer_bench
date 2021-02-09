@@ -6,6 +6,7 @@ import sys
 import subprocess
 import argparse
 
+
 def main(prog: str):
     """
     Takes the program as argument, checks if it is in a compilable form, converts it to an .ll file if necessary and
@@ -14,28 +15,35 @@ def main(prog: str):
     :return:
     """
     if prog.endswith(".bc"):
-        subprocess.run(["clang", "-S", "-emit-llvm", prog, "-o", f"{prog[:-3]}.ll"])
+        # only run the pre computation algorithm if no mutation should be done
+        if args.mutate == -2:
+            subprocess.run(["clang", "-S", "-emit-llvm", prog, "-o", f"{prog[:-3]}.ll"])
         mutate = f"{prog[:-3]}.ll"
     else:
         mutate = prog
 
-    if args.cpp:
-        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-cpp", mutate])
-    else:
-        subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate])
+    # only run the find algorithm if no mutation should be done
+    if args.mutate == -2:
+        if args.cpp:
+            subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-cpp", mutate])
+        else:
+            subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate])
 
-    arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py"]
-    if args.bitcode:
-        arguments.append("-bc")
-    if args.bitcode_human_readable:
-        arguments.append("-ll")
-    if args.binary:
-        arguments.append("-bn")
-    if args.cpp:
-        arguments.append("-cpp")
-    arguments.append(mutate)
-    subprocess.run(arguments)
-
+    # only mutate if a specific mutation id is given
+    if args.mutate != -2:
+        arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/Mutate.py"]
+        if args.bitcode:
+            arguments.append("-bc")
+        if args.bitcode_human_readable:
+            arguments.append("-ll")
+        if args.binary:
+            arguments.append("-bn")
+        if args.cpp:
+            arguments.append("-cpp")
+        arguments.append("-m")
+        arguments.append(str(args.mutate))  # type must be string when running the subprocess
+        arguments.append(mutate)
+        subprocess.run(arguments)
 
 
 if __name__ == "__main__":
@@ -49,6 +57,8 @@ if __name__ == "__main__":
                         help="Creates mutated runnable binaries.")
     parser.add_argument('-cpp', "--cpp", action='store_true',
                         help="Uses clang++ instead of clang for compilation.")
+    parser.add_argument("-m", "--mutate", type=int, default=-2,
+                        help="Defines which mutation should be applied, -1 if all should be applied.")
     parser.add_argument("program", type=str,
                         help="Path to the source file that will be mutated.")
 
