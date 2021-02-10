@@ -77,18 +77,21 @@ std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* 
         j["filePath"] = filePath;
         j["line"] = line;
         j["column"] = column;
-        j["type"] = type;
-        j["additionalInfo"] = additionalInfo;
-        j["UID"] = PatternIDCounter++;
     } else {
         j["directory"] = "no_debug_loc";
         j["filePath"] = "no_debug_loc";
         j["line"] = 0;
         j["column"] = 0;
-        j["type"] = type;
-        j["additionalInfo"] = additionalInfo;
-        j["UID"] = PatternIDCounter++;
     }
+    j["type"] = type;
+    auto surroundingFunction = instr->getFunction()->getName().str();
+    j["funname"] = surroundingFunction;
+    std::string instructionString;
+    llvm::raw_string_ostream os(instructionString);
+    instr->print(os);
+    j["instr"] = os.str();
+    j["UID"] = PatternIDCounter++;
+    j["additionalInfo"] = additionalInfo;
     return j.dump(4);
 }
 
