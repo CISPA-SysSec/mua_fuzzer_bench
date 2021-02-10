@@ -31,6 +31,9 @@ bool FreeArgumentReturnPattern::mutate(
 ) {
     auto segref = *seglist;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
+        const Function *outerFunction = returnInst->getFunction();
+        // llvm has only one exit point per function, hence checking for a return instruction and the function name is
+        // sufficient; checking for the actual location might sometimes fail as the debug information might be missing
         if (isMutationLocation(instr, seglist, FREE_FUNCTION_ARGUMENT)) {
 
             builderMutex.lock();

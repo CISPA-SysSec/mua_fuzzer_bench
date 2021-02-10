@@ -1353,7 +1353,7 @@ def aflpp_stats(con):
     res += stats.to_html()
     return res
 
-def add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_num_muts, time):
+def add_datapoint(crash_ctr, data, fuzzer, prog, total_num_muts, time):
     try:
         val = crash_ctr['confirmed'] / total_num_muts
     except ZeroDivisionError:
@@ -1407,7 +1407,7 @@ def plot(title, mut_type, data):
         height=400,
     )
 
-    plot = plot.mark_point(size=100, opacity=.5, tooltip=alt.TooltipContent("encoding")) + plot
+    plot = plot.mark_point(size=5, opacity=1, tooltip=alt.TooltipContent("encoding")) + plot
 
     plot = plot.add_selection(
         alt.selection_interval(bind='scales', encodings=['x'])
@@ -1453,40 +1453,51 @@ def gather_plot_data(runs, run_results):
             'fuzzer': crash.fuzzer,
             'prog': crash.prog,
             'mut_type': crash.mut_type,
+            'id': crash.mut_id,
             'type': 'covered',
+            'stage': crash.stage,
             'time': crash.covered_file_seen,
         })
 
     for crash in run_results.itertuples():
         if crash.confirmed != 1:
             continue
-        if crash.stage == 'initial' or crash.stage == 'runtime' or crash.stage == 'final':
-            unique_crashes.append({
-                'fuzzer': crash.fuzzer,
-                'prog': crash.prog,
-                'mut_type': crash.mut_type,
-                'type': 'afl',
-                'time': crash.time_found,
-            })
-        else:
-            print(crash.stage)
-            # nothing found
-            pass
+        unique_crashes.append({
+            'fuzzer': crash.fuzzer,
+            'prog': crash.prog,
+            'mut_type': crash.mut_type,
+            'id': crash.mut_id,
+            'type': 'confirmed',
+            'stage': crash.stage,
+            'time': crash.time_found,
+        })
 
     counters = defaultdict(lambda: {
         'covered': 0,
         'confirmed': 0,
     })
+
+    total_crash_covered = defaultdict(set)
+    total_crash_confirmed = defaultdict(set)
+    all_progs = set(run.prog for run in runs.itertuples())
+    total_total_runs = { prog: max(run.done for run in runs[runs.prog == prog].itertuples()) for prog in all_progs }
     max_time = 0
 
-    # for crash in unique_crashes:
-    #     crash_ctr = counters[(
-    #         crash['fuzzer'],
-    #         crash['prog'],
-    #         crash['mut_type'])]
+    for crash in unique_crashes:
+        crash_ctr = counters[(
+            crash['fuzzer'],
+            crash['prog'],
+            crash['mut_type'])]
 
-    #     if crash['type'] == 'initial':
-    #         crash_ctr['confirmed'] += 1
+        if crash['stage'] == 'initial':
+            if crash['type'] == 'covered':
+                crash_ctr['covered'] += 1
+                if crash['id'] not in total_crash_covered[crash['prog']]:
+                    total_crash_covered[crash['prog']].add(crash['id'])
+            if crash['type'] == "confirmed":
+                crash_ctr['confirmed'] += 1
+                if crash['id'] not in total_crash_confirmed[crash['prog']]:
+                    total_crash_confirmed[crash['prog']].add(crash['id'])
 
     # add initial points
     for run in runs.itertuples():
@@ -1495,51 +1506,81 @@ def gather_plot_data(runs, run_results):
             run.prog,
             run.mut_type)]
         total_runs = run.done
-        add_datapoint(crash_ctr, data, run.mut_type, run.fuzzer, run.prog, total_runs, 0)
+        add_datapoint(crash_ctr, data, run.fuzzer, run.prog, total_runs, 0)
+    for prog in all_progs:
+        add_datapoint(
+            {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
+            data, "total", prog, total_total_runs[prog], 0)
 
     for crash in sorted(unique_crashes, key=lambda x: x['time']):
+        if crash['stage'] == 'initial':
+            continue
+
+        prog = crash['prog']
+
         crash_ctr = counters[(
             crash['fuzzer'],
-            crash['prog'],
+            prog,
             crash['mut_type'])]
 
         if crash['time'] > max_time:
             max_time = crash['time']
 
-        total_runs = int(runs[(runs.fuzzer == crash['fuzzer']) & (runs.prog == crash['prog']) & (runs.mut_type == crash['mut_type'])]['done'].values[0])
+        total_runs = int(runs[
+            (runs.fuzzer == crash['fuzzer']) & (runs.prog == prog) & (runs.mut_type == crash['mut_type'])
+            ]['done'].values[0])
         if crash['type'] == 'covered':
             crash_ctr['covered'] += 1
-            add_datapoint(crash_ctr, data, crash['mut_type'],
-                      crash['fuzzer'], crash['prog'],
-                      total_runs, crash['time'])
-        elif crash['type'] == 'initial':
+            add_datapoint(crash_ctr, data, crash['fuzzer'], prog, total_runs, crash['time'])
+            if crash['id'] not in total_crash_covered[prog]:
+                total_crash_covered[prog].add(crash['id'])
+                add_datapoint(
+                    {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
+                    data, "total", prog, total_total_runs[prog], crash['time'])
+        elif crash['type'] == 'confirmed':
             crash_ctr['confirmed'] += 1
-            add_datapoint(crash_ctr, data, crash['mut_type'],
-                      crash['fuzzer'], crash['prog'],
-                      total_runs, crash['time'])
-        elif crash['type'] == 'afl':
-            crash_ctr['confirmed'] += 1
-            add_datapoint(crash_ctr, data, crash['mut_type'],
-                      crash['fuzzer'], crash['prog'],
-                      total_runs, crash['time'])
+            add_datapoint(crash_ctr, data, crash['fuzzer'], prog, total_runs, crash['time'])
+            if crash['id'] not in total_crash_confirmed[prog]:
+                total_crash_confirmed[prog].add(crash['id'])
+                add_datapoint(
+                    {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
+                    data, "total", prog, total_total_runs[prog], crash['time'])
         else:
             raise ValueError("Unknown type")
 
     # add final points
     for (fuzzer, prog, mut_type), crash_ctr in counters.items():
         try:
-            total_runs = int(runs[(runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)]['done'].values[0])
+            total_runs = int(runs[
+                (runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)
+                ]['done'].values[0])
         except ValueError:
             total_runs = 0
-        add_datapoint(crash_ctr, data, mut_type, fuzzer, prog, total_runs, max_time)
+        add_datapoint(crash_ctr, data, fuzzer, prog, total_runs, max_time)
+    for prog in all_progs:
+        add_datapoint(
+            {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
+            data, "total", prog, total_total_runs[prog], max_time)
 
     return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
 
-def create_mut_type_plot(mut_type, runs, run_results):
+def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_info):
     plot_data = gather_plot_data(runs, run_results)
 
-    res = f'<h3>Mutation: {mut_type}</h3>'
+    # print(mutation_info)
+    pattern_name = mutation_info['pattern_name'].iat[0]
+    pattern_class = mutation_info['pattern_class'].iat[0]
+    description = mutation_info['description'].iat[0]
+    procedure = mutation_info['procedure'].iat[0]
+
+    res = f'<h3>Mutation {mut_type}: {pattern_name}</h3>'
+    res += f'<p>Class: {pattern_class}</p>'
+    res += f'<p>Description: {description}</p>'
+    res += f'<p>Procedure: {procedure}</p>'
+    res += '<h4>Overview</h4>'
     res += runs.to_html()
+    res += '<h4>Unique Finds</h4>'
+    res += unique_finds.to_html()
     if plot_data is not None:
         res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
         res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
@@ -1567,18 +1608,19 @@ def generate_plots():
     res += aflpp_stats(con)
     res += mut_stats(con)
 
-    mut_types = pd.read_sql_query(
-        "SELECT * from mut_types", con)
-    runs = pd.read_sql_query(
-        "select * from run_results_by_mut_type", con)
-    run_results = pd.read_sql_query(
-        "select * from run_results", con)
+    mut_types = pd.read_sql_query("SELECT * from mut_types", con)
+    runs = pd.read_sql_query("select * from run_results_by_mut_type", con)
+    run_results = pd.read_sql_query("select * from run_results", con)
+    unique_finds = pd.read_sql_query("select * from unique_finds", con)
+    mutation_info = pd.read_sql_query("select * from mutation_types", con)
     res += "<h2>Plots</h2>"
     for mut_type in mut_types['mut_type']:
         print(mut_type)
         res += create_mut_type_plot(mut_type, 
             runs[runs.mut_type == mut_type],
             run_results[run_results.mut_type == mut_type],
+            unique_finds[unique_finds.mut_type == mut_type],
+            mutation_info[mutation_info.mut_type == mut_type],
         )
     res += footer()
 
