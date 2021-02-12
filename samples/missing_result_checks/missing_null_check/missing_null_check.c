@@ -31,7 +31,7 @@ static void host_lookup(char *user_supplied_addr) {
         printf("%s: '%s'\n", "Could not convert the address", user_supplied_addr);
         return;
     }
-    
+
     hp = gethostbyaddr(&addr, sizeof(struct in_addr), AF_INET);
 
     // Mutation: Removing this check that hp can not be equal to NULL.
