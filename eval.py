@@ -12,6 +12,7 @@ import threading
 import queue
 import json
 import shutil
+import random
 from typing import Counter
 import psutil
 import contextlib
@@ -950,7 +951,7 @@ def get_aflpp_logs(workdir, all_logs):
         raise ValueError(''.join(all_logs)) from exc
 
 def aflpp_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflpp", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
@@ -962,13 +963,13 @@ def afl_eval(run_data):
     return result
 
 def aflppfastexploit_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflppfastexploit", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppmopt_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflppmopt", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
@@ -1061,6 +1062,7 @@ def get_next_run(stats, mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list(p.name for p in mutation_list_dir.glob("*"))
+        random.shuffle(mutations)
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('*.ll.mutationlocations'))
