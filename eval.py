@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import defaultdict
 from json import decoder
 import os
 import time
@@ -1562,6 +1563,21 @@ def gather_plot_data(runs, run_results):
 
     return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
 
+def matrix_unique_finds(unique_finds):
+    from collections import defaultdict
+    import pandas as pd
+    import numpy as np
+
+    matrix = defaultdict(dict)
+    for row in unique_finds.itertuples():
+        matrix[row.other_fuzzer][row.fuzzer] = row.finds
+
+    matrix = pd.DataFrame(matrix).fillna(-1).astype(int).replace({-1: ""})
+    matrix = matrix.reindex(sorted(matrix.columns), axis=0)
+    matrix = matrix.reindex(sorted(matrix.columns), axis=1)
+
+    return matrix
+
 def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_info):
     plot_data = gather_plot_data(runs, run_results)
 
@@ -1577,11 +1593,12 @@ def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_inf
     res += f'<p>Procedure: {procedure}</p>'
     res += '<h4>Overview</h4>'
     res += runs.to_html()
-    res += '<h4>Unique Finds</h4>'
-    res += unique_finds.to_html()
     if plot_data is not None:
         res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
         res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+    res += '<h4>Unique Finds</h4>'
+    res += 'Left finds what upper does not.'
+    res += matrix_unique_finds(unique_finds).to_html(na_rep="")
     return res
 
 def footer():
