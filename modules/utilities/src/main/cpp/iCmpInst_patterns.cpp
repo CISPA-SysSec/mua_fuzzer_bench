@@ -47,8 +47,17 @@ bool SignedLessThanEqualToPattern::mutate(
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
-            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
-            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
             return true;
@@ -155,8 +164,17 @@ bool UnsignedLessThanEqualToPattern::mutate(
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
-            auto newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
-            newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
             return true;
