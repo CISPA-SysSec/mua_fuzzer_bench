@@ -17,7 +17,7 @@ int main() {
         printf ("intarray[0] < intarray[1]. Mutated execution.\n\n");
     }
     else {
-        printf ("intarray[0] > intarray[1]. Normal execution.\n\n");
+        printf ("intarray[0] is not < intarray[1]. Normal execution.\n\n");
     }
 
     //pointer check in an array

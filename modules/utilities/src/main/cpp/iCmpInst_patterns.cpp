@@ -310,7 +310,16 @@ bool SignedGreaterThanEqualToPattern::mutate(
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
-            auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
             return true;
@@ -402,7 +411,16 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
-            auto newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
             return true;
