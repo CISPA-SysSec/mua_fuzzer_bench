@@ -20,8 +20,8 @@
         "typeID": 2,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanPattern",
-        "description": "Mutating all '<' comparisions between 1 signed integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "SIGNED_GREATER_THAN",
@@ -124,8 +124,8 @@
         "typeID": 15,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedLessThanPattern",
-        "description": "Mutating all '<' comparisions between 1 unsigned integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN",
