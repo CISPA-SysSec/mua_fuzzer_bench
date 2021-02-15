@@ -84,7 +84,13 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
                && segref["line"] == line
                && segref["column"] == column;
     } else {
-        return false; // if the debug loc does not exist, we cannot do a mutation
+        auto surroundingFunction = instr->getFunction()->getName().str();
+
+        std::string instructionString;
+        llvm::raw_string_ostream os(instructionString);
+        instr->print(os);
+        // as a fallback try to use funname and instr
+        return (segref["funname"] == surroundingFunction && segref["instr"] == os.str());
     }
 }
 
