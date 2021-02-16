@@ -1332,11 +1332,11 @@ def header():
         vegaembed_version=alt.VEGAEMBED_VERSION,
     )
 
-def runtime_stats(con):
+def fuzzer_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
     print(stats)
-    res = "<h2>Runtime Stats</h2>"
+    res = "<h2>Fuzzer Stats</h2>"
     res += stats.to_html()
     return res
 
@@ -1621,12 +1621,12 @@ def generate_plots():
         cur.executescript(f.read())
 
     res = header()
-    res += runtime_stats(con)
-    res += aflpp_stats(con)
+    res += fuzzer_stats(con)
+    # res += aflpp_stats(con)
     res += mut_stats(con)
 
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
-    runs = pd.read_sql_query("select * from run_results_by_mut_type", con)
+    runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
     run_results = pd.read_sql_query("select * from run_results", con)
     unique_finds = pd.read_sql_query("select * from unique_finds", con)
     mutation_info = pd.read_sql_query("select * from mutation_types", con)
