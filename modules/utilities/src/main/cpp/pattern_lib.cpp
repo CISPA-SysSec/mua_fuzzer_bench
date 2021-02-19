@@ -45,6 +45,7 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <ATOMICRMWPattern>());
     MiscInstPatterns.push_back(std::make_unique <ShiftSwitch>());
     MiscInstPatterns.push_back(std::make_unique <UnInitLocalVariables>());
+    MiscInstPatterns.push_back(std::make_unique <CompareEqualToPattern>());
 }
 
 // Global function to call all the vector populators
