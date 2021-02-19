@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import defaultdict
 from json import decoder
 import os
 import time
@@ -11,6 +12,7 @@ import threading
 import queue
 import json
 import shutil
+import random
 from typing import Counter
 import psutil
 import contextlib
@@ -949,7 +951,7 @@ def get_aflpp_logs(workdir, all_logs):
         raise ValueError(''.join(all_logs)) from exc
 
 def aflpp_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflpp", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
@@ -961,13 +963,13 @@ def afl_eval(run_data):
     return result
 
 def aflppfastexploit_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflppfastexploit", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppmopt_eval(run_data):
-    run_data['crash_dir'] = "output/crashes"
+    run_data['crash_dir'] = "output/default/crashes"
     result = base_eval(run_data, "mutation-testing-aflppmopt", "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
@@ -1060,6 +1062,7 @@ def get_next_run(stats, mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list(p.name for p in mutation_list_dir.glob("*"))
+        random.shuffle(mutations)
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('*.ll.mutationlocations'))
@@ -1329,11 +1332,11 @@ def header():
         vegaembed_version=alt.VEGAEMBED_VERSION,
     )
 
-def runtime_stats(con):
+def fuzzer_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
     print(stats)
-    res = "<h2>Runtime Stats</h2>"
+    res = "<h2>Fuzzer Stats</h2>"
     res += stats.to_html()
     return res
 
@@ -1562,6 +1565,21 @@ def gather_plot_data(runs, run_results):
 
     return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
 
+def matrix_unique_finds(unique_finds):
+    from collections import defaultdict
+    import pandas as pd
+    import numpy as np
+
+    matrix = defaultdict(dict)
+    for row in unique_finds.itertuples():
+        matrix[row.other_fuzzer][row.fuzzer] = row.finds
+
+    matrix = pd.DataFrame(matrix).fillna(-1).astype(int).replace({-1: ""})
+    matrix = matrix.reindex(sorted(matrix.columns), axis=0)
+    matrix = matrix.reindex(sorted(matrix.columns), axis=1)
+
+    return matrix
+
 def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_info):
     plot_data = gather_plot_data(runs, run_results)
 
@@ -1577,11 +1595,12 @@ def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_inf
     res += f'<p>Procedure: {procedure}</p>'
     res += '<h4>Overview</h4>'
     res += runs.to_html()
-    res += '<h4>Unique Finds</h4>'
-    res += unique_finds.to_html()
     if plot_data is not None:
         res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
         res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+    res += '<h4>Unique Finds</h4>'
+    res += 'Left finds what upper does not.'
+    res += matrix_unique_finds(unique_finds).to_html(na_rep="")
     return res
 
 def footer():
@@ -1602,12 +1621,12 @@ def generate_plots():
         cur.executescript(f.read())
 
     res = header()
-    res += runtime_stats(con)
-    res += aflpp_stats(con)
+    res += fuzzer_stats(con)
+    # res += aflpp_stats(con)
     res += mut_stats(con)
 
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
-    runs = pd.read_sql_query("select * from run_results_by_mut_type", con)
+    runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
     run_results = pd.read_sql_query("select * from run_results", con)
     unique_finds = pd.read_sql_query("select * from unique_finds", con)
     mutation_info = pd.read_sql_query("select * from mutation_types", con)

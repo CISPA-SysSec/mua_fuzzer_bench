@@ -23,8 +23,8 @@ where confirmed is NULL or confirmed = 1
 group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
 
 -- results for all runs grouped by mut_type
-DROP VIEW IF EXISTS run_results_by_mut_type;
-CREATE TEMP VIEW run_results_by_mut_type
+DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
+CREATE TEMP VIEW run_results_by_mut_type_and_fuzzer
 as
 select runs_mut_type.mut_type, runs_mut_type.fuzzer, runs_mut_type.prog, total, done, covered, found, by_seed, ifnull(crashed, 0) as crashed, total_time from (
 	select mut_type, fuzzer, prog, count(*) as total
@@ -57,12 +57,20 @@ left join (
 	runs_mut_type.mut_type = crashed.mut_type and
 	runs_mut_type.prog = crashed.prog and
 	runs_mut_type.fuzzer = crashed.fuzzer;
+	
+-- results for all runs grouped by mut type
+DROP VIEW IF EXISTS run_results_by_mut_type;
+CREATE TEMP VIEW run_results_by_mut_type
+as
+select mutation_types.pattern_name as name, mutation_types.mut_type as mut_type, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(by_seed) as f_by_seed, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type_and_fuzzer
+join mutation_types on run_results_by_mut_type_and_fuzzer.mut_type == mutation_types.mut_type
+group by mutation_types.mut_type;
 
 -- results for all runs grouped by fuzzer
 DROP VIEW IF EXISTS run_results_by_fuzzer;
 CREATE TEMP VIEW run_results_by_fuzzer
 as
-select fuzzer, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type
+select fuzzer, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(by_seed) as f_by_seed, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type_and_fuzzer
 group by fuzzer;
 
 -- ---------------------------------------------------------------------------------
