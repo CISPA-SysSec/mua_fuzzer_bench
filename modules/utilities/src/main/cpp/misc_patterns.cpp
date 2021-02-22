@@ -275,7 +275,24 @@ UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
             j["instr"] = os.str();
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_LOCAL_STORE, j));
+            results.push_back(getIdentifierString_unsignaled(instr, DELETE_LOCAL_STORE, j));
+            std::vector<const User*> users;
+            for(auto user : instr->users()){ // user is of type User*
+                users.push_back(user);
+            }
+            // using the c++11 vector range iterator does not stop for some reason, so we use iteration by index
+            for(std::vector<const User*>::size_type i = 0; i != users.size(); i++){  // user is of type User*
+                auto user = users[i];
+                if (user) {
+                    if (auto instrUser = (StoreInst*)dyn_cast<StoreInst>(user)){
+                        to_delete.insert(instrUser);
+                        BasicBlock::iterator itr_bb(instrUser);
+                        IRBuilder<> userBuilder(instrUser->getParent(), itr_bb);
+                          //PatterIDCounter - 1 since it was already increased in getIdentifierString_unsignaled
+                        addMutationFoundSignal(&userBuilder, M, PatternIDCounter - 1);
+                    }
+                }
+            }
         }
     }
     return results;
