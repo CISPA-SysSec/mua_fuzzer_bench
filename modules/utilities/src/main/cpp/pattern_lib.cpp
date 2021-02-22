@@ -63,11 +63,20 @@ std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* 
 }
 
 std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo){
-    const DebugLoc &debugInfo = instr->getDebugLoc();
     // currently the whole finder is locked
 //    builderMutex.lock();
     addMutationFoundSignal(builder, M, PatternIDCounter);
 //    builderMutex.unlock();
+    return getIdentifierString_unsignaled(instr, type, additionalInfo);
+}
+
+std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int type){
+    json j;
+    return getIdentifierString_unsignaled(instr, type, j);
+}
+
+std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo) {
+    const DebugLoc &debugInfo = instr->getDebugLoc();
     json j;
     if (debugInfo) {
         std::string directory = debugInfo->getDirectory().str();
@@ -88,7 +97,7 @@ std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* 
     auto surroundingFunction = instr->getFunction()->getName().str();
     j["funname"] = surroundingFunction;
     std::string instructionString;
-    llvm::raw_string_ostream os(instructionString);
+    raw_string_ostream os(instructionString);
     instr->print(os);
     j["instr"] = os.str();
     j["UID"] = PatternIDCounter++;

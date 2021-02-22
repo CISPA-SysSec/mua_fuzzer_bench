@@ -50,9 +50,31 @@ protected:
     static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 
     static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type);
+    /**
+     * Does not add the mutation found signal at this position.
+     * @param instr
+     * @param builder
+     * @param builderMutex
+     * @param M
+     * @param type
+     * @return
+     */
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type);
     static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo);
+    /**
+     * Does not add the mutation found signal at this position.
+     * @param instr
+     * @param builder
+     * @param builderMutex
+     * @param M
+     * @param type
+     * @param additionalInfo
+     * @return
+     */
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo);
 
     static void addMutationFoundSignal(IRBuilder<>* builder, Module& M, int UID);
+
 };
 
 // Abstract base classes for CallInst types of instruction patterns
