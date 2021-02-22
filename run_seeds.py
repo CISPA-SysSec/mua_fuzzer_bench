@@ -55,6 +55,9 @@ def main(prog: str, seeds: List[str]):
             # go to the mutation folder and run the subject
             os.chdir(f"{prog_parent}/mutations")
             exec_name = f"./{progname}.{file}.mut"
+            if not os.path.exists(exec_name):
+                found_file.write(f"{file}, Crashed\n")
+                continue
             subprocess.call(["chmod", "+x", exec_name])
             for seed in abs_seeds:
                 try:
