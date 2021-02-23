@@ -5,7 +5,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
         "pattern_class": "MallocPattern",
         "description": "Mutating all malloc calls to achieve buffer overflow/out of bounds errors.",
-        "procedure": "We decrease allocated memory byte_size in the malloc call by 1."
+        "procedure": "We decrease allocated memory byte_size in the malloc call by 16."
     },
     {
         "pattern_name": "FGETS_MATCH_BUFFER_SIZE",
@@ -113,7 +113,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
         "pattern_class": "CallocPattern",
         "description": "Mutating all calloc calls to achieve overflow and out of bounds errors.",
-        "procedure": " The size parameter's value is decreased by 1."
+        "procedure": " The size parameter's value is decreased by 16."
     },
     {
         "pattern_name": "DELETE_LOCAL_STORE",

@@ -17,6 +17,7 @@ def main(prog: str, seeds: List[str]):
     :param seeds
     :return:
     """
+    # TODO also delete the trigger-signal folder first to avoid incorrect results
     base_dir = Path(os.getcwd()).absolute()
     # compile the original file for printing trigger locations
     if args.cpp:
