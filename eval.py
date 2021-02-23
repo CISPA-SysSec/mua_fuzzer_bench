@@ -193,6 +193,7 @@ class Stats():
             mutation_id,
             fuzzer,
             covered_file_seen,
+            covered_by_seed,
             total_time
         )''')
 
@@ -292,13 +293,14 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_aflpp_run(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
-        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
+    def run_executed(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, cf_by_seed, total_time):
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?)',
             (
                 prog,
                 mutation_id,
                 fuzzer,
                 cf_seen,
+                cf_by_seed,
                 total_time,
             )
         )
@@ -448,15 +450,17 @@ class CoveredFile:
     def __init__(self, workdir, start_time) -> None:
         super().__init__()
         self.found = None
+        self.found_by_seed = False
         self.path = Path(workdir)/"covered"
         self.start_time = start_time
 
         if self.path.is_file():
             self.path.unlink()
 
-    def check(self):
+    def check(self, by_seed):
         if self.found is None and self.path.is_file():
             self.found = time.time() - self.start_time
+            self.found_by_seed = by_seed
 
 
 
@@ -763,7 +767,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 )
                 mut_returncode = proc.returncode
 
-                covered.check()
+                covered.check(stage == "initial")
 
                 try:
                     crash_file_data = path.read_bytes()
@@ -837,6 +841,7 @@ def base_eval(run_data, docker_image, executable):
             return {
                 'total_time': time.time() - start_time,
                 'covered_file_seen': covered.found,
+                'covered_by_seed': covered.found_by_seed,
                 'crashing_inputs': checked_seeds,
                 'all_logs': ["found crashing seed input"]
             }
@@ -886,7 +891,7 @@ def base_eval(run_data, docker_image, executable):
                 break
 
             # Check if covered file is seen
-            covered.check()
+            covered.check(False)
 
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
@@ -927,6 +932,7 @@ def base_eval(run_data, docker_image, executable):
         return {
             'total_time': time.time() - start_time,
             'covered_file_seen': covered.found,
+            'covered_by_seed': covered.found_by_seed,
             'crashing_inputs': crashing_inputs,
             'all_logs': all_logs,
         }
@@ -1135,26 +1141,39 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
         else:
             # if successful log the run
             # print("success")
-            stats.new_aflpp_run(
+            stats.run_executed(
                 run_result['plot_data'],
                 data['prog'],
                 data['mutation_id'],
                 data['fuzzer'],
                 run_result['covered_file_seen'],
+                run_result['covered_by_seed'],
                 run_result['total_time'])
             stats.new_crashing_inputs(
-                run_result['crashing_inputs'], data['prog'],
-                data['mutation_id'], data['fuzzer'])
+                run_result['crashing_inputs'],
+                data['prog'],
+                data['mutation_id'],
+                data['fuzzer'])
+            # Update if the mutant has at least been killed once
+            if active_mutants[data['prog_bc']]['killed'] is False:
+                for ci in run_result['crashing_inputs'].values():
+                    if ci['orig_returncode'] != ci['mut_returncode'] or ci['orig_res'] != ci['mut_res']:
+                        active_mutants[data['prog_bc']]['killed'] = True
         # Set the core for this run to unused
         cores_in_use[data['used_core']] = False
         # Update mutant reference count and remove if needed
-        active_mutants[data['prog_bc']] -= 1
-        if active_mutants[data['prog_bc']] == 0:
+        active_mutants[data['prog_bc']]['ref_cnt'] -= 1
+        if active_mutants[data['prog_bc']]['ref_cnt'] == 0:
+            # If mutant was never killed, we want to keep a copy for inspection.
+            if not active_mutants[data['prog_bc']]['killed']:
+                if data['prog_bc'].is_file():
+                    shutil.copy(str(data['prog_bc']), "tmp/unsolved_mutants/")
+            # Remove mut file.
             try:
                 data['prog_bc'].unlink()
             except FileNotFoundError:
                 print("Trying to remove:", data['prog_bc'], "but it does not exist.")
-        elif active_mutants[data['prog_bc']] < 0:
+        elif active_mutants[data['prog_bc']]['ref_cnt'] < 0:
             print("error negative mutant reference count")
         # Delete the working directory as it is not needed anymore
         if RM_WORKDIR:
@@ -1219,7 +1238,7 @@ def run_eval():
     cores_in_use = [False]*NUM_CPUS
 
     # mutants in use
-    active_mutants = Counter()
+    active_mutants = defaultdict(lambda: {'ref_cnt': 0, 'killed': False})
 
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor, \
@@ -1233,7 +1252,7 @@ def run_eval():
             print("" + str(ii) + " @ " + str(int((time.time() - start_time)//60)),
                   end=', ', flush=True)
             # Create the mutant if reference count is 0
-            if active_mutants[run_data['prog_bc']] == 0:
+            if active_mutants[run_data['prog_bc']]['ref_cnt'] == 0:
                 res = run_exec_in_container(mutator,
                     ["./run_mutation.py", "-bc", "-cpp",
                      "-m", run_data['mutation_id'], run_data['orig_bc']])
@@ -1249,7 +1268,7 @@ def run_eval():
                     print(res.stdout.decode())
                     print(res.stderr.decode())
             # Update mutant count
-            active_mutants[run_data['prog_bc']] += 1
+            active_mutants[run_data['prog_bc']]['ref_cnt'] += 1
             # If we should stop, do so now to not create any new run.
             if not should_run:
                 break
