@@ -1502,7 +1502,7 @@ def gather_plot_data(runs, run_results):
             'mut_type': crash.mut_type,
             'id': crash.mut_id,
             'type': 'covered',
-            'stage': crash.stage,
+            'stage': 'initial' if crash.covered_by_seed else crash.stage,
             'time': crash.covered_file_seen,
         })
 
@@ -1668,8 +1668,8 @@ def generate_plots():
 
     res = header()
     res += fuzzer_stats(con)
-    # res += aflpp_stats(con)
     res += mut_stats(con)
+    res += aflpp_stats(con)
 
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
     runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
