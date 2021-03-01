@@ -79,3 +79,24 @@ std::vector<std::string>
 INetAddrFailPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     return findConcreteFunction(instr, builder, builderMutex, M, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
 }
+
+std::vector<std::string>
+PrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, builder, builderMutex, M, "printf", PRINTF);
+}
+
+//dummy function. need to figure this out.
+bool PrintfPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    builderMutex.lock();
+    auto segref = *seglist;
+    addMutationFoundSignal(builder, M, segref["UID"]);
+    builderMutex.unlock();
+    return true;
+}

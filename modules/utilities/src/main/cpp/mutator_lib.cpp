@@ -19,6 +19,7 @@ void populateCallInstMutators(){
     CallInstMutators.push_back(std::make_unique <CallocPattern>());
     CallInstMutators.push_back(std::make_unique <FGetsPattern>());
     CallInstMutators.push_back(std::make_unique <INetAddrFailPattern>());
+    CallInstMutators.push_back(std::make_unique <PrintfPattern>());
 }
 
 // Add new ICmpInstMutator objects here as you add them.
