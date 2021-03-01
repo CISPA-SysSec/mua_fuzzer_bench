@@ -63,7 +63,7 @@ if __name__ == "__main__":
                         help="Path to the source file that will be mutated.")
 
     args = parser.parse_args(sys.argv[1:])
-    if not any([args.bitcode, args.bitcode_human_readable, args.binary]):
+    if args.mutate != -2 and not any([args.bitcode, args.bitcode_human_readable, args.binary]):
         parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
 
     main(args.program)
