@@ -146,7 +146,6 @@ struct MutatorPlugin : public ModulePass
 
     bool runOnModule(Module& M) override
     {
-        errs() << "test\n";
         auto& llvm_context = M.getContext();
 
         // TODO read mutation patterns

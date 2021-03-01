@@ -42,6 +42,7 @@ void populateMiscInstMutators(){
     MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
     MiscInstMutators.push_back(std::make_unique <ShiftSwitch>());
     MiscInstMutators.push_back(std::make_unique <UnInitLocalVariables>());
+    MiscInstMutators.push_back(std::make_unique <CompareEqualToPattern>());
 }
 
 // Global function to call all the vector populators
@@ -78,17 +79,24 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
         std::string filePath = debugInfo->getFilename().str();
         uint64_t line = debugInfo->getLine();
         uint64_t column = debugInfo->getColumn();
-        return segref["directory"] == directory
-               && segref["filePath"] == filePath
-               && segref["line"] == line
-               && segref["column"] == column;
-    } else {
         auto surroundingFunction = instr->getFunction()->getName().str();
 
         std::string instructionString;
         llvm::raw_string_ostream os(instructionString);
         instr->print(os);
-        // as a fallback try to use funname and instr
+        return segref["directory"] == directory
+               && segref["filePath"] == filePath
+               && segref["line"] == line
+               && segref["column"] == column
+               && segref["funname"] == surroundingFunction
+               && segref["instr"] == os.str();
+    } else {
+        // as a fallback try to just use funname and instr
+        auto surroundingFunction = instr->getFunction()->getName().str();
+
+        std::string instructionString;
+        llvm::raw_string_ostream os(instructionString);
+        instr->print(os);
         return (segref["funname"] == surroundingFunction && segref["instr"] == os.str());
     }
 }

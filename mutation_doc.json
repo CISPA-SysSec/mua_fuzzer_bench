@@ -5,7 +5,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
         "pattern_class": "MallocPattern",
         "description": "Mutating all malloc calls to achieve buffer overflow/out of bounds errors.",
-        "procedure": "We decrease allocated memory byte_size in the malloc call by 1."
+        "procedure": "We decrease allocated memory byte_size in the malloc call by 16."
     },
     {
         "pattern_name": "FGETS_MATCH_BUFFER_SIZE",
@@ -20,32 +20,36 @@
         "typeID": 2,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanPattern",
-        "description": "Mutating all '<' comparisions between 1 signed integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
+        "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_LESS_THAN)."
     },
     {
         "pattern_name": "SIGNED_GREATER_THAN",
         "typeID": 3,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanPattern",
-        "description": "Mutating all '>' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3.",
+        "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_GREATER_THAN)."
     },
     {
         "pattern_name": "SIGNED_LESS_THAN_EQUALTO",
         "typeID": 4,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanEqualToPattern",
-        "description": "Mutating all '<=' comparisions between 1 signed integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<=' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
+        "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_LESS_THAN)."
     },
     {
         "pattern_name": "SIGNED_GREATER_THAN_EQUALTO",
         "typeID": 5,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanEqualToPattern",
-        "description": "Mutating all '>=' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>=' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3.",
+        "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_GREATER_THAN_EQUAL_TO)."
     },
     {
         "pattern_name": "FREE_FUNCTION_ARGUMENT",
@@ -109,7 +113,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
         "pattern_class": "CallocPattern",
         "description": "Mutating all calloc calls to achieve overflow and out of bounds errors.",
-        "procedure": " The size parameter's value is decreased by 1."
+        "procedure": " The size parameter's value is decreased by 16."
     },
     {
         "pattern_name": "DELETE_LOCAL_STORE",
@@ -124,32 +128,32 @@
         "typeID": 15,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedLessThanPattern",
-        "description": "Mutating all '<' comparisions between 1 unsigned integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN",
         "typeID": 16,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedGreaterThanPattern",
-        "description": "Mutating all '>' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3."
     },
     {
         "pattern_name": "UNSIGNED_LESS_THAN_EQUALTO",
         "typeID": 17,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedLessThanEqualToPattern",
-        "description": "Mutating all '<=' comparisions between 1 unsigned integer variable and an integer to achieve overflow errors.",
-        "procedure": "The integer against which the variable is compared, is increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<=' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO",
         "typeID": 18,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedGreaterThanEqualToPattern",
-        "description": "Mutating all '>=' comparisions between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "The integer against which the variable is compared, is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>=' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3."
     },
     {
         "pattern_name": "INET_ADDR_FAIL_WITHOUTCHECK",
@@ -158,5 +162,13 @@
         "pattern_class": "INetAddrFailPattern",
         "description": "Mutating all calls to the libc function inet_addr to achieve unhandled non-established connection errors.",
         "procedure": "Replaces all uses of the function return value to the failure value. Also removes the function call from the corpus as a fail of the function call should be simulated. Furthermore, the comparison instructions are flipped, s.t. on failure the 'correct' path is taken, i.e. we simulate a missing check for the error return value."
+    },
+    {
+        "pattern_name": "COMPARE_EQUAL_TO",
+        "typeID": 20,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "CompareEqualToPattern",
+        "description": "Mutating all '==' comparisions between two integers to '='.",
+        "procedure": "The value of integer on the right hand side is assigned to the variable on the left. The condition passes and the inside block is executed as long as the value on the RHS is not equal to 0."
     }
 ]

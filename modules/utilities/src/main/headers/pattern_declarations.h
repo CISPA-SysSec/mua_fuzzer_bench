@@ -50,9 +50,31 @@ protected:
     static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 
     static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type);
+    /**
+     * Does not add the mutation found signal at this position.
+     * @param instr
+     * @param builder
+     * @param builderMutex
+     * @param M
+     * @param type
+     * @return
+     */
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type);
     static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo);
+    /**
+     * Does not add the mutation found signal at this position.
+     * @param instr
+     * @param builder
+     * @param builderMutex
+     * @param M
+     * @param type
+     * @param additionalInfo
+     * @return
+     */
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo);
 
     static void addMutationFoundSignal(IRBuilder<>* builder, Module& M, int UID);
+
 };
 
 // Abstract base classes for CallInst types of instruction patterns
@@ -401,6 +423,28 @@ public:
 
 private:
     std::set<StoreInst*> to_delete;
+};
+
+/*
+ * The mutator for ICMP_EQ.
+ * A preceding "load" instruction needs to be changed into a "store" instruction.
+ * Which is why this isn't a ICmpPattern subclass.
+ * It changes the "==" sign to "=" in a comparision.
+ * The users of each load operation is searched and if an "icmp eq" instruction
+ * is one of the users, then the load and the icmp instructions are mutated accordingly.
+ */
+class CompareEqualToPattern: public Pattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
 };
 
 class INetAddrFailPattern: public LibCFailPattern{
