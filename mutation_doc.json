@@ -171,4 +171,70 @@
         "description": "Mutating all '==' comparisions between two integers to '='.",
         "procedure": "The value of integer on the right hand side is assigned to the variable on the left. The condition passes and the inside block is executed as long as the value on the RHS is not equal to 0."
     }
+
+,
+    {
+        "pattern_name": "SIGNED_LESS_THAN_SQUARED",
+        "typeID": 102,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedLessThanSquaredPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+    },
+    {
+        "pattern_name": "SIGNED_LESS_THAN_EQUALTO_SQUARED",
+        "typeID": 104,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedLessThanEqualToSquaredPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+    },
+    {
+        "pattern_name": "UNSIGNED_LESS_THAN_SQUARED",
+        "typeID": 115,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedLessThanSquaredPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+    },
+    {
+        "pattern_name": "UNSIGNED_LESS_THAN_EQUALTO_SQUARED",
+        "typeID": 117,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedLessThanEqualToSquaredPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN_HALVED",
+        "typeID": 103,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanHalvedPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN_EQUALTO_HALVED",
+        "typeID": 105,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanEqualToHalvedPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN_HALVED",
+        "typeID": 116,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedGreaterThanHalvedPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO_HALVED",
+        "typeID": 118,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedGreaterThanEqualToHalvedPattern",
+        "description": "As the non-squared version but performing a square operation on integers.",
+        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+    }
 ]
