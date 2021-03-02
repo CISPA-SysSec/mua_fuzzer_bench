@@ -67,6 +67,65 @@ bool SignedLessThanEqualToPattern::mutate(
 }
 
 std::vector<std::string>
+SignedLessThanEqualToSquaredPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                   Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SLE) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN_EQUALTO_SQUARED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_SLE.
+ * It changes one of the operators to cause an incorrect memory access error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool SignedLessThanEqualToSquaredPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_SLE) {
+        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN_EQUALTO_SQUARED)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, newVal);
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
 SignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
@@ -115,6 +174,64 @@ bool SignedLessThanPattern::mutate(
             else if (rhs->getType()->isIntegerTy()){
                 newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
                 newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
+SignedLessThanSquaredPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SLT) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN_SQUARED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_SLT.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool SignedLessThanSquaredPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_SLT) {
+        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN_SQUARED)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, newVal);
             }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
@@ -183,6 +300,65 @@ bool UnsignedLessThanEqualToPattern::mutate(
     return false;
 }
 
+std::vector<std::string>
+UnsignedLessThanEqualToSquaredPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                     Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_ULE) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN_EQUALTO_SQUARED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_ULE.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool UnsignedLessThanEqualToSquaredPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_ULE) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_EQUALTO_SQUARED)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, newVal);
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
 
 std::vector<std::string>
 UnsignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
@@ -235,6 +411,66 @@ bool UnsignedLessThanPattern::mutate(
             else if (rhs->getType()->isIntegerTy()){
                 newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
                 newVal = builder->CreateMul(newVal, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
+UnsignedLessThanSquaredPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_ULT) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN_SQUARED));
+    }
+    return results;
+}
+
+
+
+/**
+ * The mutator for ICMP_ULT.
+ * It changes one of the operators to cause an off-by-one error.
+ * @param builder
+ * @param nextInstructionBuilder
+ * @param instr
+ * @param builderMutex
+ * @param seglist
+ * @param icmpinst
+ * @return
+ */
+bool UnsignedLessThanSquaredPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_ULT) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_SQUARED)) {
+            // add 1, multiply the whole value by 2 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, 8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateAdd(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+                newVal = builder->CreateMul(newVal, newVal);
             }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
