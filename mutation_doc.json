@@ -20,8 +20,8 @@
         "typeID": 2,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanPattern",
-        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
+        "description": "Mutating all '<' comparisons either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
         "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_LESS_THAN)."
     },
     {
@@ -29,8 +29,8 @@
         "typeID": 3,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanPattern",
-        "description": "Mutating all '>' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3.",
+        "description": "Mutating all '>' comparisons either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is decreased by 1. E.g. 4->3.",
         "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_GREATER_THAN)."
     },
     {
@@ -38,8 +38,8 @@
         "typeID": 4,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanEqualToPattern",
-        "description": "Mutating all '<=' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
+        "description": "Mutating all '<=' comparisons either between two integer pointers or between 1 signed integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10.",
         "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_LESS_THAN)."
     },
     {
@@ -47,8 +47,8 @@
         "typeID": 5,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanEqualToPattern",
-        "description": "Mutating all '>=' comparisions either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3.",
+        "description": "Mutating all '>=' comparisons either between two integer pointers or between 1 signed integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is decreased by 1. E.g. 4->3.",
         "note": "It has been observed, that by default, just 'int' pointers are compared using the unsigned predicate (UNSIGNED_GREATER_THAN_EQUAL_TO)."
     },
     {
@@ -88,16 +88,16 @@
         "typeID": 10,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedToUnsigned",
-        "description": "Mutating all signed integer comparisions to achieve overflow and out of bound errors.",
-        "procedure": "Each of the four integer comparision predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE are transformed into the corresponding unsigned predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE respectively."
+        "description": "Mutating all signed integer comparisons to achieve overflow and out of bound errors.",
+        "procedure": "Each of the four integer comparison predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE are transformed into the corresponding unsigned predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE respectively."
     },
     {
         "pattern_name": "UNSIGNED_TO_SIGNED",
         "typeID": 11,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedToSigned",
-        "description": "Mutating all unsigned integer comparisions to achieve overflow and out of bounds errors.",
-        "procedure": "Each of the four integer comparision predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE are transformed into the corresponding unsigned predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE respectively."
+        "description": "Mutating all unsigned integer comparisons to achieve overflow and out of bounds errors.",
+        "procedure": "Each of the four integer comparison predicates - ICMP_UGT, ICMP_UGE, ICMP_ULT, ICMP_ULE are transformed into the corresponding unsigned predicates - ICMP_SGT, ICMP_SGE, ICMP_SLT, ICMP_SLE respectively."
     },
     {
         "pattern_name": "SWITCH_SHIFT",
@@ -128,32 +128,32 @@
         "typeID": 15,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedLessThanPattern",
-        "description": "Mutating all '<' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<' comparisons either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN",
         "typeID": 16,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedGreaterThanPattern",
-        "description": "Mutating all '>' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>' comparisons either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is decreased by 1. E.g. 4->3."
     },
     {
         "pattern_name": "UNSIGNED_LESS_THAN_EQUALTO",
         "typeID": 17,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedLessThanEqualToPattern",
-        "description": "Mutating all '<=' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
+        "description": "Mutating all '<=' comparisons either between two integer pointers or between 1 unsigned integer variable and an integer to achieve overflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is, first increased by 1, and then multiplied by 2. E.g. 4->5->10."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO",
         "typeID": 18,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnsignedGreaterThanEqualToPattern",
-        "description": "Mutating all '>=' comparisions either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is decreased by 1. E.g. 4->3."
+        "description": "Mutating all '>=' comparisons either between two integer pointers or between 1 unsigned integer variable and an integer to achieve underflow errors.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is decreased by 1. E.g. 4->3."
     },
     {
         "pattern_name": "INET_ADDR_FAIL_WITHOUTCHECK",
@@ -168,7 +168,7 @@
         "typeID": 20,
         "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
         "pattern_class": "CompareEqualToPattern",
-        "description": "Mutating all '==' comparisions between two integers to '='.",
+        "description": "Mutating all '==' comparisons between two integers to '='.",
         "procedure": "The value of integer on the right hand side is assigned to the variable on the left. The condition passes and the inside block is executed as long as the value on the RHS is not equal to 0."
     }
 
@@ -179,7 +179,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanSquaredPattern",
         "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
     },
     {
         "pattern_name": "SIGNED_LESS_THAN_EQUALTO_SQUARED",
@@ -187,7 +187,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedLessThanEqualToSquaredPattern",
         "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
     },
     {
         "pattern_name": "UNSIGNED_LESS_THAN_SQUARED",
@@ -195,7 +195,7 @@
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnSignedLessThanSquaredPattern",
         "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
     },
     {
         "pattern_name": "UNSIGNED_LESS_THAN_EQUALTO_SQUARED",
@@ -203,38 +203,70 @@
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnSignedLessThanEqualToSquaredPattern",
         "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is added to the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
+        "procedure": "For pointer comparison, 8*4=32 is added to the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first increased by 1, and then squared. E.g. 4->5->25."
     },
     {
         "pattern_name": "SIGNED_GREATER_THAN_HALVED",
         "typeID": 103,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanHalvedPattern",
-        "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+        "description": "As the non-squared version but performing a division by 2 operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is halved. E.g. 4->2."
     },
     {
         "pattern_name": "SIGNED_GREATER_THAN_EQUALTO_HALVED",
         "typeID": 105,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "SignedGreaterThanEqualToHalvedPattern",
-        "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+        "description": "As the non-squared version but performing a division by 2 operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is halved. E.g. 4->2."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN_HALVED",
         "typeID": 116,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnSignedGreaterThanHalvedPattern",
-        "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+        "description": "As the non-squared version but performing a division by 2 operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is halved. E.g. 4->2."
     },
     {
         "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO_HALVED",
         "typeID": 118,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
         "pattern_class": "UnSignedGreaterThanEqualToHalvedPattern",
-        "description": "As the non-squared version but performing a square operation on integers.",
-        "procedure": "For pointer comparision, 8*4=32 is subtracted from the right hand side pointer in the comparision. For integer comparision, the integer on the right hand side is halved. E.g. 4->2."
+        "description": "As the non-squared version but performing a division by 2 operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is halved. E.g. 4->2."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN_SQRT",
+        "typeID": 203,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanSqrtPattern",
+        "description": "As the non-squared version but performing a shift right by one (to avoid problems with signedness) and then square root operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first logic shifted by 1, then converted to double, the square root is taken, then converted back to int and the used in the comparison. E.g. 18->9->3."
+    },
+    {
+        "pattern_name": "SIGNED_GREATER_THAN_EQUALTO_SQRT",
+        "typeID": 205,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "SignedGreaterThanEqualToSqrtPattern",
+        "description": "As the non-squared version but performing a shift right by one (to avoid problems with signedness) and then square root operation operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first logic shifted by 1, then converted to double, the square root is taken, then converted back to int and the used in the comparison. E.g. 18->9->3."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN_SQRT",
+        "typeID": 216,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedGreaterThanSqrtPattern",
+        "description": "As the non-squared version but performing a shift right by one (to avoid problems with signedness) and then square root operation operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first logic shifted by 1, then converted to double, the square root is taken, then converted back to int and the used in the comparison. E.g. 18->9->3."
+    },
+    {
+        "pattern_name": "UNSIGNED_GREATER_THAN_EQUALTO_SQRT",
+        "typeID": 218,
+        "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
+        "pattern_class": "UnSignedGreaterThanEqualToSqrtPattern",
+        "description": "As the non-squared version but performing a shift right by one (to avoid problems with signedness) and then square root operation operation on integers.",
+        "procedure": "For pointer comparison, 8*4=32 is subtracted from the right hand side pointer in the comparison. For integer comparison, the integer on the right hand side is first logic shifted by 1, then converted to double, the square root is taken, then converted back to int and the used in the comparison. E.g. 18->9->3."
     }
 ]
