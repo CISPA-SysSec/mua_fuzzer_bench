@@ -23,32 +23,32 @@ void populateCallInstMutators(){
 
 // Add new ICmpInstMutator objects here as you add them.
 void populateICmpInstMutators(){
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanHalvedPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanSqrtPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToHalvedPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToSqrtPattern>());
 
+//    ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToSquaredPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <SignedLessThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <SignedLessThanSquaredPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanHalvedPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanSqrtPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToHalvedPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToSqrtPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToSquaredPattern>());
 
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanPattern>());
+//    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanPattern>());
     ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanSquaredPattern>());
 
     ICmpInstMutators.push_back(std::make_unique <SignedToUnsigned>());
