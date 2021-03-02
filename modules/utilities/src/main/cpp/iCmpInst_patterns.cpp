@@ -532,6 +532,56 @@ bool SignedGreaterThanPattern::mutate(
 }
 
 std::vector<std::string>
+SignedGreaterThanHalvedPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SGT) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN_HALVED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_SGT.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool SignedGreaterThanHalvedPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_SGT) {
+        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_HALVED)) {
+            // half and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateSDiv(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
 SignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
                                       Module &M) {
     std::vector<std::string> results;
@@ -573,6 +623,57 @@ bool SignedGreaterThanEqualToPattern::mutate(
             }
             else if (rhs->getType()->isIntegerTy()){
                 newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
+SignedGreaterThanEqualToHalvedPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                      Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_SGE) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN_EQUALTO_HALVED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_SGE.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool SignedGreaterThanEqualToHalvedPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_SGE) {
+        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_EQUALTO_HALVED)) {
+            // half and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateSDiv(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
             }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
@@ -633,6 +734,56 @@ bool UnsignedGreaterThanPattern::mutate(
 }
 
 std::vector<std::string>
+UnsignedGreaterThanHalvedPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_UGT) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN_HALVED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_UGT.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool UnsignedGreaterThanHalvedPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_UGT) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_HALVED)) {
+            // substract 1 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateUDiv(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
 UnsignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
                                         Module &M) {
     std::vector<std::string> results;
@@ -674,6 +825,57 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
             }
             else if (rhs->getType()->isIntegerTy()){
                 newVal = builder->CreateSub(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 1));
+            }
+            icmpinst->setOperand(1, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string>
+UnsignedGreaterThanEqualToHalvedPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+                                        Module &M) {
+    std::vector<std::string> results;
+    getpredicate(instr);
+    if (predicate == CmpInst::Predicate::ICMP_UGE) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN_EQUALTO_HALVED));
+    }
+    return results;
+}
+
+/**
+ * The mutator for ICMP_UGE.
+ * It changes one of the operators to cause an off-by one error.
+ */
+bool UnsignedGreaterThanEqualToHalvedPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* icmpinst = dyn_cast<ICmpInst>(instr);
+    auto predicate = icmpinst->getPredicate();
+    if (predicate == CmpInst::Predicate::ICMP_UGE) {
+        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_EQUALTO_HALVED)) {
+            // substract 1 and give the new value to the instruction
+            Value* rhs;
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            rhs = icmpinst->getOperand(1);
+            Value *newVal;
+            if (rhs->getType()->isPointerTy()){
+                LLVMContext &llvmContext = M.getContext();
+                auto int_type = IntegerType::get (llvmContext, 32);
+                Value* indexList = ConstantInt::get(int_type, -8);
+                newVal = builder->CreateGEP(rhs, indexList);
+            }
+            else if (rhs->getType()->isIntegerTy()){
+                newVal = builder->CreateUDiv(rhs, builder->getIntN(rhs->getType()->getIntegerBitWidth(), 2));
             }
             icmpinst->setOperand(1, newVal);
             builderMutex.unlock();
