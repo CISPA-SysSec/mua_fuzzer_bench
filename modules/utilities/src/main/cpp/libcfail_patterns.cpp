@@ -85,7 +85,6 @@ PrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &
     return findConcreteFunction(instr, builder, builderMutex, M, "printf", PRINTF);
 }
 
-//dummy function. need to figure this out.
 bool PrintfPattern::mutate(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
@@ -94,9 +93,23 @@ bool PrintfPattern::mutate(
         json *seglist,
         Module& M
 ) {
-    builderMutex.lock();
-    auto segref = *seglist;
-    addMutationFoundSignal(builder, M, segref["UID"]);
-    builderMutex.unlock();
-    return true;
+    auto* callInstr = dyn_cast<CallInst>(instr);
+    if (callInstr){
+        if (isMutationLocation(instr, seglist, PRINTF)){
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            std::vector<Value*> cfn_args;
+            for (int i =0; i<callInstr->getNumArgOperands(); i++){
+                cfn_args.push_back(callInstr->getArgOperand(i));
+            }
+            auto signalFunction = M.getFunction("mutate_printf_string");
+            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+
+    }
+    return false;
 }
