@@ -156,4 +156,7 @@ bool mutatePattern(
 void insertMutationApiFunctions(Module& M) {
     LLVMContext &llvmContext = M.getContext();
     M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext), Type::getInt64Ty(llvmContext));
+
+    std::vector<Type*> mutate_printf_args(1, Type::getInt8PtrTy(llvmContext));
+    M.getOrInsertFunction("mutate_printf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_printf_args, true));
 }

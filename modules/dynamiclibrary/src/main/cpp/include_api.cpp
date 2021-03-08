@@ -8,6 +8,7 @@
 
 #include "../public/include_api.h"
 #include "includes.h"
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,20 @@ void signal_triggered_mutation(int64_t UID) {
         sprintf(filename, "%s/%" PRId64, triggeredFolderPath, UID);
         open(filename, O_CREAT);
     }
+}
+
+int mutate_printf_string(const char *format, ...){
+    //assuming maximum length of string to be 500.
+    //For variable length, can use malloc/calloc.
+    char stringbuffer[500];
+    va_list arg;
+    int done;
+
+    va_start (arg, format);
+    done = vsprintf(stringbuffer, format, arg);
+    va_end (arg);
+    done = printf(stringbuffer);
+    return done;
 }
 
 #ifdef __cplusplus
