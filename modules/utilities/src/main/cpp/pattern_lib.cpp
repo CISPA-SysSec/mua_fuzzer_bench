@@ -26,14 +26,34 @@ void populateCallInstPatterns(){
 
 // Add new ICmpInstPattern objects here as you add them.
 void populateICmpInstPatterns(){
-    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanEqualToPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
-    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanPattern>());
+//    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanHalvedPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanSqrtPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanEqualToHalvedPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedGreaterThanEqualToSqrtPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanEqualToSquaredPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <SignedLessThanSquaredPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanHalvedPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanSqrtPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanEqualToHalvedPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedGreaterThanEqualToSqrtPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanEqualToSquaredPattern>());
+
+//    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanPattern>());
+    ICmpInstPatterns.push_back(std::make_unique <UnsignedLessThanSquaredPattern>());
+
     ICmpInstPatterns.push_back(std::make_unique <SignedToUnsigned>());
     ICmpInstPatterns.push_back(std::make_unique <UnsignedToSigned>());
 }

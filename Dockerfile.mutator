@@ -100,6 +100,17 @@ WORKDIR /home/mutator
 # RUN ./run_mutation.py -bc -cpp samples/guetzli/fuzz_target.bc
 
 ################################################################################
+# mjs
+
+WORKDIR /home/mutator/samples
+RUN git clone https://github.com/cesanta/mjs.git
+WORKDIR /home/mutator/samples/mjs/mjs
+RUN make mjs.c
+RUN gclang -DMJS_MAIN -ldl -o mjs mjs.c
+RUN get-bc mjs
+WORKDIR /home/mutator
+
+################################################################################
 # other stuff
 
 # ENV TRIGGERED_FILE some/file/to/report/mutation/trigger
