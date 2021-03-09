@@ -10,7 +10,17 @@ order by mut_type;
 DROP VIEW IF EXISTS run_results;
 CREATE TEMP VIEW run_results
 as
-select executed_runs.fuzzer, mut_type, executed_runs.mutation_id as mut_id, executed_runs.prog, covered_file_seen, time_found, total_time, orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed, stage from executed_runs
+select
+	executed_runs.fuzzer,
+	mut_type,
+	executed_runs.mutation_id as mut_id,
+	executed_runs.prog,
+	covered_file_seen,
+	executed_runs.covered_by_seed,
+	time_found,
+	total_time,
+	orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
+	stage from executed_runs
 inner join runs on
 	executed_runs.prog = runs.prog and
 	executed_runs.mutation_id = runs.mutation_id and
@@ -26,7 +36,18 @@ group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
 CREATE TEMP VIEW run_results_by_mut_type_and_fuzzer
 as
-select runs_mut_type.mut_type, runs_mut_type.fuzzer, runs_mut_type.prog, total, done, covered, found, by_seed, ifnull(crashed, 0) as crashed, total_time from (
+select
+	runs_mut_type.mut_type,
+	runs_mut_type.fuzzer, runs_mut_type.prog,
+	total,
+	done,
+	covered,
+	c_by_seed,
+	found,
+	f_by_seed,
+	ifnull(crashed, 0) as crashed,
+	total_time
+from (
 	select mut_type, fuzzer, prog, count(*) as total
 	from runs
 	group by mut_type, fuzzer, prog
@@ -37,8 +58,9 @@ left join (
 		   prog,
 		   count(*) as done,
 		   count(covered_file_seen) as covered,
+		   count(case when covered_by_seed = 1 then 1 else null end) as c_by_seed,
 		   count(time_found) as found,
-		   count(case when stage = "initial" then 1 else null end) as by_seed,
+		   count(case when stage = "initial" then 1 else null end) as f_by_seed,
 		   sum(total_time) as total_time
     from run_results
 	group by mut_type, fuzzer, prog
@@ -62,7 +84,18 @@ left join (
 DROP VIEW IF EXISTS run_results_by_mut_type;
 CREATE TEMP VIEW run_results_by_mut_type
 as
-select mutation_types.pattern_name as name, mutation_types.mut_type as mut_type, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(by_seed) as f_by_seed, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type_and_fuzzer
+select	
+	mutation_types.pattern_name as name,
+	mutation_types.mut_type as mut_type,
+	sum(total) as total,
+	sum(done) as done,
+	sum(covered) as covered,
+	sum(c_by_seed) as c_by_seed,
+	sum(found) as found,
+	sum(f_by_seed) as f_by_seed,
+	sum(crashed) as crashed,
+	sum(total_time) as total_time
+from run_results_by_mut_type_and_fuzzer
 join mutation_types on run_results_by_mut_type_and_fuzzer.mut_type == mutation_types.mut_type
 group by mutation_types.mut_type;
 
@@ -70,7 +103,16 @@ group by mutation_types.mut_type;
 DROP VIEW IF EXISTS run_results_by_fuzzer;
 CREATE TEMP VIEW run_results_by_fuzzer
 as
-select fuzzer, sum(total) as total, sum(done) as done, sum(covered) as covered, sum(found) as found, sum(by_seed) as f_by_seed, sum(crashed) as crashed, sum(total_time) as total_time from run_results_by_mut_type_and_fuzzer
+select fuzzer,
+	sum(total) as total,
+	sum(done) as done,
+	sum(covered) as covered,
+	sum(c_by_seed) as c_by_seed,
+	sum(found) as found,
+	sum(f_by_seed) as f_by_seed,
+	sum(crashed) as crashed,
+	sum(total_time) as total_time
+from run_results_by_mut_type_and_fuzzer
 group by fuzzer;
 
 -- ---------------------------------------------------------------------------------
@@ -117,6 +159,20 @@ join (
 ) b
 on a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
 group by mut_type, a.fuzzer, b.fuzzer;
+
+
+DROP VIEW IF EXISTS unsolved_mutations;
+CREATE TEMP VIEW unsolved_mutations
+as
+select a.mut_type, mut_id, mut_file_path, mut_line, mut_column, pattern_class, description, procedure, * from (
+	select mut_type, mut_id, sum(case WHEN covered_file_seen is null then 0 else 1 end) as covered_num, sum(case WHEN confirmed is null then 0 else 1 end) as confirmed_num from run_results
+	group by mut_id
+	having covered_num > 0 and confirmed_num = 0
+) a inner join runs on a.mut_id = runs.mutation_id
+inner join mutation_types on a.mut_type = mutation_types.mut_type
+group by mut_id
+order by mut_type, mut_file_path, mut_line;
+
 
 
 -- 

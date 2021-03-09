@@ -1,1 +1,2 @@
-tmp/samples/
+tmp/
+!tmp/lib
