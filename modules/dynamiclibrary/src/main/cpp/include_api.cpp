@@ -45,17 +45,22 @@ void signal_triggered_mutation(int64_t UID) {
 }
 
 int mutate_printf_string(const char *format, ...){
-    //assuming maximum length of string to be 500.
-    //For variable length, can use malloc/calloc.
-    char stringbuffer[500];
-    va_list arg;
-    int done;
+    char *stringbuffer;
+    va_list args, reusable_args;
+    int sizeofbuffer, printf_ret_val;
 
-    va_start (arg, format);
-    done = vsprintf(stringbuffer, format, arg);
-    va_end (arg);
-    done = printf(stringbuffer);
-    return done;
+    va_start (args, format);
+    va_copy(reusable_args, args);
+    sizeofbuffer = vsnprintf(stringbuffer, 0, format, args);
+    va_end (args);
+
+    // stringbuffer = (char*)calloc(sizeofbuffer + 1, sizeof(char));
+    stringbuffer = (char*)malloc(sizeofbuffer + 1);
+    sizeofbuffer = vsnprintf(stringbuffer, sizeofbuffer + 1, format, reusable_args);
+
+    printf_ret_val = printf(stringbuffer);
+    free(stringbuffer);
+    return printf_ret_val;
 }
 
 #ifdef __cplusplus
