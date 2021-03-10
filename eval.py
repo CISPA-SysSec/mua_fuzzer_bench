@@ -80,36 +80,47 @@ PROGRAMS = {
     #     "path": "samples/re2/",
     #     "args": "@@",
     # },
-    "guetzli": {
-        "compile_args": [
-            # {'val': "-v", 'action': None},
-            # {'val': "-static", 'action': None},
-            # {'val': "-std=c++11", 'action': None},
-            # {'val': "-lpthread", 'action': None},
-            # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
-            # {'val': "-I", 'action': None},
-            # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
-            # {'val': "-lc++", 'action': None},
-            # {'val': "-lstdc++", 'action': None},
-            # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
-            # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-        "path": "samples/guetzli/",
-        "seeds": "samples/guetzli_harness/seeds/",
-        "args": "-f @@",
-    },
-    "mjs": {
+    # "guetzli": {
+    #     "compile_args": [
+    #         # {'val': "-v", 'action': None},
+    #         # {'val': "-static", 'action': None},
+    #         # {'val': "-std=c++11", 'action': None},
+    #         # {'val': "-lpthread", 'action': None},
+    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
+    #         # {'val': "-I", 'action': None},
+    #         # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
+    #         # {'val': "-lc++", 'action': None},
+    #         # {'val': "-lstdc++", 'action': None},
+    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
+    #         # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
+    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
+    #     "path": "samples/guetzli/",
+    #     "seeds": "samples/guetzli_harness/seeds/",
+    #     "args": "-f @@",
+    # },
+    # "mjs": {
+    #     "compile_args": [
+    #         {'val': "-ldl", 'action': None},
+    #     ],
+    #     "is_cpp": False,
+    #     "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
+    #     "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
+    #     "path": "samples/mjs/",
+    #     "seeds": "samples/mjs_harness/seeds/",
+    #     "args": "@@",
+    # },
+    "harfbuzz": {
         "compile_args": [
             {'val': "-ldl", 'action': None},
         ],
-        "is_cpp": False,
-        "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
-        "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
-        "path": "samples/mjs/",
-        "seeds": "samples/mjs_harness/seeds/",
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/fuzzbuild/test/fuzzing/hb-subset-fuzzer")),
+        "orig_bc": str(Path("tmp/samples/harfbuzz/.hb-subset-fuzzer.cc.o.bc")),
+        "path": "samples/harfbuzz/",
+        "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
     },
 }
@@ -1046,8 +1057,8 @@ def build_compile_args(args, workdir):
 FUZZERS = {
     "aflpp": aflpp_eval,
     "afl": afl_eval,
-    "aflpp_fast_exploit": aflppfastexploit_eval,
-    "aflpp_mopt": aflppmopt_eval,
+    # "aflpp_fast_exploit": aflppfastexploit_eval,
+    # "aflpp_mopt": aflppmopt_eval,
     "afl_fairfuzz": fairfuzz_eval,
     "honggfuzz": honggfuzz_eval,
 }
@@ -1070,7 +1081,7 @@ def get_all_mutations(mutator):
             args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
             if prog_info['is_cpp']:
                 args.insert(2, "-cpp")
-            run_exec_in_container(mutator, args)
+            print(run_exec_in_container(mutator, args))
 
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
@@ -1090,6 +1101,7 @@ def get_all_mutations(mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        print(mutations)
 
         all_mutations.extend(mutations)
 
