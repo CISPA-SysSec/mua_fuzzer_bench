@@ -9,6 +9,7 @@ COPY samples /home/mutator/samples
 COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 COPY run_seeds.py /home/mutator/
+COPY eval_run_seeds.py /home/mutator/
 RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
 RUN echo "llvmBinPath=/bin/" > gradle.properties
