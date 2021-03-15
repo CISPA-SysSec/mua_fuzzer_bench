@@ -396,7 +396,6 @@ bool CompareEqualToPattern::mutate(
         Module& M
 ) {
     auto segref = *seglist;
-    // std::cout << segref.dump(4) << std::endl;
     if (isMutationLocation(instr, seglist, COMPARE_EQUAL_TO)) {
         if (auto loadInstr =  dyn_cast<LoadInst>(instr)){
             for(auto user : loadInstr->users()){  // user is of type User*

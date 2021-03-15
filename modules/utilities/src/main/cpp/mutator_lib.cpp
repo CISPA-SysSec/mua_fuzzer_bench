@@ -19,6 +19,7 @@ void populateCallInstMutators(){
     CallInstMutators.push_back(std::make_unique <CallocPattern>());
     CallInstMutators.push_back(std::make_unique <FGetsPattern>());
     CallInstMutators.push_back(std::make_unique <INetAddrFailPattern>());
+    CallInstMutators.push_back(std::make_unique <PrintfPattern>());
 }
 
 // Add new ICmpInstMutator objects here as you add them.
@@ -175,4 +176,7 @@ bool mutatePattern(
 void insertMutationApiFunctions(Module& M) {
     LLVMContext &llvmContext = M.getContext();
     M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext), Type::getInt64Ty(llvmContext));
+
+    std::vector<Type*> mutate_printf_args(1, Type::getInt8PtrTy(llvmContext));
+    M.getOrInsertFunction("mutate_printf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_printf_args, true));
 }
