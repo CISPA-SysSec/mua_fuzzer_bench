@@ -170,6 +170,14 @@
         "pattern_class": "CompareEqualToPattern",
         "description": "Mutating all '==' comparisons between two integers to '='.",
         "procedure": "The value of integer on the right hand side is assigned to the variable on the left. The condition passes and the inside block is executed as long as the value on the RHS is not equal to 0."
+    },
+    {
+        "pattern_name": "PRINTF",
+        "typeID": 21,
+        "pattern_location": "./modules/utilities/src/main/cpp/libcfail_patterns.cpp",
+        "pattern_class": "PrintfPattern",
+        "description": "Mutating printf such that the format string gets already filled and then plainly printed.",
+        "procedure": "Mutating printf such that the format string is already filled on printing, so instead of calling printf('%d %s', 10, string); we simulate the call printf('10 <string-value>');. This might cause illegal memory accesses and printing of secrets if the string argument is user controlled."
     }
 
 ,
