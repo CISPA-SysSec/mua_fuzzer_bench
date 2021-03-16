@@ -414,7 +414,7 @@ bool CompareEqualToPattern::mutate(
                         iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
                         iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
                         iCmpInstr->setOperand(1, newVal);
-                        if (loadInstr->user_empty()) {
+                        if (loadInstr->user_empty() && !loadInstr->isUsedByMetadata()) {
                             // we only remove the load instruction if no other users exist
                             loadInstr->removeFromParent();
                         }
