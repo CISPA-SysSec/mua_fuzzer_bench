@@ -13,6 +13,7 @@ linked_libraries = "dynamiclibrary"
 
 sysroot = ""
 progsource = None
+compilerargs = list()
 
 def main():
     # "${CLANG}" -g -S -D_FORTIFY_SOURCE=0 "${SYSROOT}" -emit-llvm -include "${INCDIR}/traceinstr/wrapper_libc.h" -o "${PROG_SOURCE}.uninstrumented.bc" -x c "${PROG_SOURCE}"
@@ -24,10 +25,10 @@ def main():
     if uname.sysname== "Darwin" and int(uname.release.split('.')[0]) >= 19:
         # if (uname["release"]):
         subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-isysroot",
-            f"{sysroot}", "-emit-llvm", "-o", f"{progsource}.ll", progsource])
+            f"{sysroot}", "-emit-llvm", "-o", f"{progsource}.ll", progsource] + compilerargs)
     else:
         subprocess.call([clang, "-g", "-S", "-D_FORTIFY_SOURCE=0", "-emit-llvm",
-                            "-o", f"{progsource}.ll", progsource])
+                            "-o", f"{progsource}.ll", progsource] + compilerargs)
 
     # "${LLVM}/opt" -S -instnamer -reg2mem -load "${TRACEPLUGIN}" -traceplugin -exclude_functions "${EXCLUDED_FUNCTIONS}" -disable-verify "${PROG_SOURCE}.uninstrumented.bc" -o  "${PROG_SOURCE}.opt_debug.bc"
 
@@ -47,6 +48,7 @@ def main():
         "-lm", "-lz", "-ldl", # some often used libraries
         f"-l{linked_libraries}", # the library containing all the api functions that were called by mutations
     ]
+    arguments += compilerargs
     if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
         subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
     else:
@@ -57,6 +59,7 @@ def main():
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Script to find patterns.")
     parser.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ instead of clang for compilation.")
+    parser.add_argument('-a', "--args", default="", help="Compiler arguments that should be used for compilation")
     parser.add_argument("program", type=str,
                         help="Path to the source file in which patterns will be searched.")
 
@@ -64,6 +67,9 @@ if __name__=="__main__":
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
+
+    if args.args:
+        compilerargs = args.args.split(" ")
 
     progsource = args.program
     sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"

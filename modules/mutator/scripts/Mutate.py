@@ -18,6 +18,8 @@ sysroot = ""
 progsource = None
 uname = os.uname()
 
+compilerargs = list()
+
 
 def main(prog: str):
     # "${CLANG}" -g -S -D_FORTIFY_SOURCE=0 "${SYSROOT}" -emit-llvm -include "${INCDIR}/traceinstr/wrapper_libc.h" -o "${PROG_SOURCE}.uninstrumented.bc" -x c "${PROG_SOURCE}"
@@ -74,11 +76,11 @@ def mutate_file(information):
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-isysroot",
                              f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{uid}.mut.bc",
-                             "-c", f"{mutations_folder}/{progname}.{uid}.mut.ll"])
+                             "-c", f"{mutations_folder}/{progname}.{uid}.mut.ll"] + compilerargs)
         else:
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-o",
                              f"{mutations_folder}/{progname}.{uid}.mut.bc", "-c",
-                             f"{mutations_folder}/{progname}.{uid}.mut.ll"])
+                             f"{mutations_folder}/{progname}.{uid}.mut.ll"] + compilerargs)
 
     if args.binary:
         arguments = [
@@ -90,6 +92,7 @@ def mutate_file(information):
             "-lm", "-lz", "-ldl",  # some often used libraries
             f"-l{linked_libraries}",  # the library containing all the api functions that were called by mutations
         ]
+        arguments += compilerargs
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
         else:
@@ -112,6 +115,7 @@ if __name__ == "__main__":
                         help="Uses clang++ instead of clang for compilation.")
     parser.add_argument("-m", "--mutate", type=int,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
+    parser.add_argument('-a', "--args", default="", help="Compiler arguments that should be used for compilation")
     parser.add_argument("program", type=str,
                         help="Path to the source file that will be mutated.")
 
@@ -122,6 +126,9 @@ if __name__ == "__main__":
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
+
+    if args.args:
+        compilerargs = args.args.split(" ")
 
     progsource = args.program
     sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"

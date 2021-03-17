@@ -20,10 +20,14 @@ def main(prog: str, seeds: List[str]):
     # TODO also delete the trigger-signal folder first to avoid incorrect results
     base_dir = Path(os.getcwd()).absolute()
     # compile the original file for printing trigger locations
+    arguments = list()
     if args.cpp:
-        subprocess.run(["python3", "run_mutation.py", "-cpp", "-ll", prog])
-    else:
-        subprocess.run(["python3", "run_mutation.py", "-ll", prog])
+        arguments.append("-cpp")
+    if args.args:
+        arguments.append("-a")
+        arguments.append(args.args)
+    # do initial compile and find
+    subprocess.run(["python3", "run_mutation.py", prog] + arguments)
 
     abs_seeds = []
     for seed in seeds:
@@ -49,10 +53,7 @@ def main(prog: str, seeds: List[str]):
         for file in sorted(int(el) for el in os.listdir("trigger_signal")):
             os.chdir(base_dir)
             # compile the respective mutation
-            if args.cpp:
-                subprocess.run(["python3", "run_mutation.py", "-cpp", "-bn", prog, "-m", str(file)])
-            else:
-                subprocess.run(["python3", "run_mutation.py", "-bn", prog, "-m", str(file)])
+            subprocess.run(["python3", "run_mutation.py", "-bn", prog, "-m", str(file)] + arguments)
             # go to the mutation folder and run the subject
             os.chdir(f"{prog_parent}/mutations")
             exec_name = f"./{progname}.{file}.mut"
@@ -84,9 +85,24 @@ if __name__ == "__main__":
                         help="Comma separated list of seed inputs that will be given to the program under test.")
     parser.add_argument('-cpp', "--cpp", action='store_true',
                         help="Uses clang++ instead of clang for compilation.")
+    parser.add_argument('-a', "--args", default="", help="Compiler arguments that should be used for compilation")
     parser.add_argument("program", type=str,
                         help="Path to the source file that will be mutated.")
 
     args = parser.parse_args(sys.argv[1:])
+    seeds = list()
+    seed_splitted: List[str] = args.seeds.split(",")
+    while seed_splitted:
+        seed = seed_splitted.pop(0)
+        if os.path.exists(seed):
+            if os.path.isdir(seed):
+                seed_splitted += [os.path.join(seed, el) for el in os.listdir(seed)]
+            else:
+                seeds.append(seed)
+        else:
+            print(f"{seed} does not exist!")
 
-    main(args.program, args.seeds.split(","))
+    if seeds:
+        main(args.program, seeds)
+    else:
+        raise ValueError("No seeds given!")
