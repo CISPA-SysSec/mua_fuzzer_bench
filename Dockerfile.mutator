@@ -9,6 +9,7 @@ COPY samples /home/mutator/samples
 COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 COPY run_seeds.py /home/mutator/
+COPY eval_run_seeds.py /home/mutator/
 RUN chmod +x run_mutation.py
 COPY settings.gradle /home/mutator
 RUN echo "llvmBinPath=/bin/" > gradle.properties
@@ -18,8 +19,6 @@ RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
-
-
 
 
 # ################################################################################
@@ -109,6 +108,17 @@ RUN make mjs.c
 RUN gclang -DMJS_MAIN -ldl -o mjs mjs.c
 RUN get-bc mjs
 WORKDIR /home/mutator
+
+################################################################################
+# harfbuzz
+
+WORKDIR /home/mutator/samples
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
+RUN git clone https://github.com/harfbuzz/harfbuzz.git
+WORKDIR /home/mutator/samples/harfbuzz
+RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
+RUN CC=gclang CXX=gclang++ ninja -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
+RUN cp fuzzbuild/test/fuzzing/*/.hb-subset-fuzzer.cc.o.bc .
 
 ################################################################################
 # other stuff

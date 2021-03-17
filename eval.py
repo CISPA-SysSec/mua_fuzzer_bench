@@ -80,36 +80,47 @@ PROGRAMS = {
     #     "path": "samples/re2/",
     #     "args": "@@",
     # },
-    "guetzli": {
-        "compile_args": [
-            # {'val': "-v", 'action': None},
-            # {'val': "-static", 'action': None},
-            # {'val': "-std=c++11", 'action': None},
-            # {'val': "-lpthread", 'action': None},
-            # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
-            # {'val': "-I", 'action': None},
-            # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
-            # {'val': "-lc++", 'action': None},
-            # {'val': "-lstdc++", 'action': None},
-            # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
-            # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-        "path": "samples/guetzli/",
-        "seeds": "samples/guetzli_harness/seeds/",
-        "args": "-f @@",
-    },
-    "mjs": {
+    # "guetzli": {
+    #     "compile_args": [
+    #         # {'val': "-v", 'action': None},
+    #         # {'val': "-static", 'action': None},
+    #         # {'val': "-std=c++11", 'action': None},
+    #         # {'val': "-lpthread", 'action': None},
+    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
+    #         # {'val': "-I", 'action': None},
+    #         # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
+    #         # {'val': "-lc++", 'action': None},
+    #         # {'val': "-lstdc++", 'action': None},
+    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
+    #         # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
+    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
+    #     "path": "samples/guetzli/",
+    #     "seeds": "samples/guetzli_harness/seeds/",
+    #     "args": "-f @@",
+    # },
+    # "mjs": {
+    #     "compile_args": [
+    #         {'val': "-ldl", 'action': None},
+    #     ],
+    #     "is_cpp": False,
+    #     "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
+    #     "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
+    #     "path": "samples/mjs/",
+    #     "seeds": "samples/mjs_harness/seeds/",
+    #     "args": "@@",
+    # },
+    "harfbuzz": {
         "compile_args": [
             {'val': "-ldl", 'action': None},
         ],
-        "is_cpp": False,
-        "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
-        "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
-        "path": "samples/mjs/",
-        "seeds": "samples/mjs_harness/seeds/",
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/fuzzbuild/test/fuzzing/hb-subset-fuzzer")),
+        "orig_bc": str(Path("tmp/samples/harfbuzz/.hb-subset-fuzzer.cc.o.bc")),
+        "path": "samples/harfbuzz/",
+        "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
     },
 }
@@ -1046,8 +1057,8 @@ def build_compile_args(args, workdir):
 FUZZERS = {
     "aflpp": aflpp_eval,
     "afl": afl_eval,
-    "aflpp_fast_exploit": aflppfastexploit_eval,
-    "aflpp_mopt": aflppmopt_eval,
+    # "aflpp_fast_exploit": aflppfastexploit_eval,
+    # "aflpp_mopt": aflppmopt_eval,
     "afl_fairfuzz": fairfuzz_eval,
     "honggfuzz": honggfuzz_eval,
 }
@@ -1070,7 +1081,7 @@ def get_all_mutations(mutator):
             args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
             if prog_info['is_cpp']:
                 args.insert(2, "-cpp")
-            run_exec_in_container(mutator, args)
+            print(run_exec_in_container(mutator, args))
 
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
@@ -1090,6 +1101,7 @@ def get_all_mutations(mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        print(mutations)
 
         all_mutations.extend(mutations)
 
@@ -1338,6 +1350,9 @@ def parse_afl_paths(paths):
         paths_elements.append(elements)
     return paths_elements
 
+TOTAL_FUZZER = 'total'
+ALL_PROG = 'all'
+
 def header():
     import altair as alt
 
@@ -1400,44 +1415,15 @@ def aflpp_stats(con):
     res += stats.to_html()
     return res
 
-def add_datapoint(crash_ctr, data, fuzzer, prog, total_num_muts, time):
-    try:
-        val = crash_ctr['confirmed'] / total_num_muts
-    except ZeroDivisionError:
-        val = 0
-
-    data['total'].append({
-        'fuzzer': fuzzer,
-        'prog': prog,
-        'time': time,
-        'confirmed': crash_ctr['confirmed'],
-        'covered': crash_ctr['covered'],
-        'total': total_num_muts,
-        'percentage': val * 100,
-    })
-
-    try:
-        val = crash_ctr['confirmed'] / crash_ctr['covered']
-    except ZeroDivisionError:
-        val = 0
-
-    data['covered'].append({
-        'fuzzer': fuzzer,
-        'prog': prog,
-        'time': time,
-        'confirmed': crash_ctr['confirmed'],
-        'covered': crash_ctr['covered'],
-        'total': total_num_muts,
-        'percentage': val * 100,
-    })
-
 def plot(title, mut_type, data):
     import inspect
     import types
     from typing import cast
     import altair as alt
+    all_fuzzers = set(run.fuzzer for run in data.itertuples())
     func_name = cast(types.FrameType, inspect.currentframe()).f_code.co_name
-    selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend')
+    selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend',
+        init=[{'fuzzer': fuzzer, 'prog': ALL_PROG} for fuzzer in all_fuzzers])
     color = alt.condition(selection,
                       alt.Color('fuzzer:O', legend=None),
                       alt.value('lightgray'))
@@ -1461,15 +1447,16 @@ def plot(title, mut_type, data):
     ).transform_filter(
         selection
     )
-    
-    plot = (plot |
-    alt.Chart(data).mark_point().encode(
+
+    all_selection = alt.Chart(data).mark_rect().encode(
         x=alt.X('prog', axis=alt.Axis(orient='bottom')),
         y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
         color=color
-    ).add_selection(
+    )
+    
+    plot = (plot | all_selection).add_selection(
         selection
-    ))
+    )
 
     res = f'<div id="{title.replace(" ", "")}{func_name}{mut_type}"></div>'
     res += '''<script type="text/javascript">
@@ -1486,6 +1473,7 @@ def split_vals(val):
 def gather_plot_data(runs, run_results):
     from collections import defaultdict
     import pandas as pd
+
     if len(run_results) == 0:
         return None
 
@@ -1499,7 +1487,6 @@ def gather_plot_data(runs, run_results):
         unique_crashes.append({
             'fuzzer': crash.fuzzer,
             'prog': crash.prog,
-            'mut_type': crash.mut_type,
             'id': crash.mut_id,
             'type': 'covered',
             'stage': 'initial' if crash.covered_by_seed else crash.stage,
@@ -1512,102 +1499,96 @@ def gather_plot_data(runs, run_results):
         unique_crashes.append({
             'fuzzer': crash.fuzzer,
             'prog': crash.prog,
-            'mut_type': crash.mut_type,
             'id': crash.mut_id,
             'type': 'confirmed',
             'stage': crash.stage,
             'time': crash.time_found,
         })
 
-    counters = defaultdict(lambda: {
+    counter = defaultdict(lambda: {
         'covered': 0,
         'confirmed': 0,
     })
-
-    total_crash_covered = defaultdict(set)
-    total_crash_confirmed = defaultdict(set)
-    all_progs = set(run.prog for run in runs.itertuples())
-    total_total_runs = { prog: max(run.done for run in runs[runs.prog == prog].itertuples()) for prog in all_progs }
+    totals_set = defaultdict(set)
     max_time = 0
+    all_progs = set(run.prog for run in runs.itertuples())
+    all_fuzzers = set(run.fuzzer for run in runs.itertuples())
+    max_prog_runs = { prog: max(run.done for run in runs[runs.prog == prog].itertuples()) for prog in all_progs }
+    total_runs = {}
+    for prog, max_total in max_prog_runs.items():
+        total_runs[(TOTAL_FUZZER, prog)] = max_total
+    sum_fuzzer_runs = { fuzzer: sum(run.done for run in runs[runs.fuzzer == fuzzer].itertuples()) for fuzzer in all_fuzzers }
+    for fuzzer, max_total in sum_fuzzer_runs.items():
+        total_runs[(fuzzer, ALL_PROG)] = max_total
+    for run in runs.itertuples():
+        total_runs[(run.fuzzer, run.prog)] = max_prog_runs[run.prog]
+    total_runs[(TOTAL_FUZZER, ALL_PROG)] = max(sum_fuzzer_runs.values())
+
+    def inc_counter(fuzzer, prog, id, counter_type):
+        counter[(fuzzer, prog)][counter_type] += 1
+        counter[(fuzzer, ALL_PROG)][counter_type] += 1
+        if id not in totals_set[(prog, counter_type)]:
+            totals_set[(prog, counter_type)].add(id)
+            counter[(TOTAL_FUZZER, prog)][counter_type] += 1
+            counter[(TOTAL_FUZZER, ALL_PROG)][counter_type] += 1
+            return True
+        return False
+
+    def add_datapoint(fuzzer, prog, time):
+        counts = counter[(fuzzer, prog)]
+        total = total_runs[(fuzzer, prog)]
+        try:
+            total_percentage = counts['confirmed'] / total
+        except ZeroDivisionError:
+            total_percentage = 0
+
+        try:
+            confirmed_percentage = counts['confirmed'] / counts['covered']
+        except ZeroDivisionError:
+            confirmed_percentage = 0
+
+        for name, val in [('total', total_percentage), ('covered', confirmed_percentage)]:
+            data[name].append({
+                'fuzzer': fuzzer,
+                'prog': prog,
+                'time': time,
+                'confirmed': counts['confirmed'],
+                'covered': counts['covered'],
+                'total': total,
+                'percentage': val * 100,
+            })
 
     for crash in unique_crashes:
-        crash_ctr = counters[(
-            crash['fuzzer'],
-            crash['prog'],
-            crash['mut_type'])]
-
         if crash['stage'] == 'initial':
-            if crash['type'] == 'covered':
-                crash_ctr['covered'] += 1
-                if crash['id'] not in total_crash_covered[crash['prog']]:
-                    total_crash_covered[crash['prog']].add(crash['id'])
-            if crash['type'] == "confirmed":
-                crash_ctr['confirmed'] += 1
-                if crash['id'] not in total_crash_confirmed[crash['prog']]:
-                    total_crash_confirmed[crash['prog']].add(crash['id'])
+            inc_counter(crash['fuzzer'], crash['prog'], crash['id'], crash['type'])
 
     # add initial points
     for run in runs.itertuples():
-        crash_ctr = counters[(
-            run.fuzzer,
-            run.prog,
-            run.mut_type)]
-        total_runs = run.done
-        add_datapoint(crash_ctr, data, run.fuzzer, run.prog, total_runs, 0)
+        add_datapoint(run.fuzzer, run.prog, 0)
+    for fuzzer in all_fuzzers:
+        add_datapoint(fuzzer, ALL_PROG, 0)
     for prog in all_progs:
-        add_datapoint(
-            {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
-            data, "total", prog, total_total_runs[prog], 0)
+        add_datapoint(TOTAL_FUZZER, prog, 0)
+    add_datapoint(TOTAL_FUZZER, ALL_PROG, 0)
 
+    # add the data points
     for crash in sorted(unique_crashes, key=lambda x: x['time']):
         if crash['stage'] == 'initial':
             continue
 
-        prog = crash['prog']
-
-        crash_ctr = counters[(
-            crash['fuzzer'],
-            prog,
-            crash['mut_type'])]
-
         if crash['time'] > max_time:
             max_time = crash['time']
 
-        total_runs = int(runs[
-            (runs.fuzzer == crash['fuzzer']) & (runs.prog == prog) & (runs.mut_type == crash['mut_type'])
-            ]['done'].values[0])
-        if crash['type'] == 'covered':
-            crash_ctr['covered'] += 1
-            add_datapoint(crash_ctr, data, crash['fuzzer'], prog, total_runs, crash['time'])
-            if crash['id'] not in total_crash_covered[prog]:
-                total_crash_covered[prog].add(crash['id'])
-                add_datapoint(
-                    {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
-                    data, "total", prog, total_total_runs[prog], crash['time'])
-        elif crash['type'] == 'confirmed':
-            crash_ctr['confirmed'] += 1
-            add_datapoint(crash_ctr, data, crash['fuzzer'], prog, total_runs, crash['time'])
-            if crash['id'] not in total_crash_confirmed[prog]:
-                total_crash_confirmed[prog].add(crash['id'])
-                add_datapoint(
-                    {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
-                    data, "total", prog, total_total_runs[prog], crash['time'])
-        else:
-            raise ValueError("Unknown type")
+        total_inc = inc_counter(crash['fuzzer'], crash['prog'], crash['id'], crash['type'])
+        add_datapoint(crash['fuzzer'], crash['prog'], crash['time'])
+        add_datapoint(crash['fuzzer'], ALL_PROG, crash['time'])
+        if total_inc:
+            add_datapoint(TOTAL_FUZZER, crash['prog'], crash['time'])
+            add_datapoint(TOTAL_FUZZER, ALL_PROG, crash['time'])
 
     # add final points
-    for (fuzzer, prog, mut_type), crash_ctr in counters.items():
-        try:
-            total_runs = int(runs[
-                (runs.fuzzer == fuzzer) & (runs.prog == prog) & (runs.mut_type == mut_type)
-                ]['done'].values[0])
-        except ValueError:
-            total_runs = 0
-        add_datapoint(crash_ctr, data, fuzzer, prog, total_runs, max_time)
-    for prog in all_progs:
-        add_datapoint(
-            {'covered': len(total_crash_covered[prog]), 'confirmed': len(total_crash_confirmed[prog])},
-            data, "total", prog, total_total_runs[prog], max_time)
+    for fuzzer, prog in counter.keys():
+        add_datapoint(fuzzer, prog, max_time)
 
     return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
 

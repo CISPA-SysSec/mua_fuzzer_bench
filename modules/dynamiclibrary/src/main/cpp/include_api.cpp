@@ -8,6 +8,7 @@
 
 #include "../public/include_api.h"
 #include "includes.h"
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,25 @@ void signal_triggered_mutation(int64_t UID) {
         sprintf(filename, "%s/%" PRId64, triggeredFolderPath, UID);
         open(filename, O_CREAT);
     }
+}
+
+int mutate_printf_string(const char *format, ...){
+    char *stringbuffer;
+    va_list args, reusable_args;
+    int sizeofbuffer, printf_ret_val;
+
+    va_start (args, format);
+    va_copy(reusable_args, args);
+    sizeofbuffer = vsnprintf(stringbuffer, 0, format, args);
+    va_end (args);
+
+    // stringbuffer = (char*)calloc(sizeofbuffer + 1, sizeof(char));
+    stringbuffer = (char*)malloc(sizeofbuffer + 1);
+    sizeofbuffer = vsnprintf(stringbuffer, sizeofbuffer + 1, format, reusable_args);
+
+    printf_ret_val = printf(stringbuffer);
+    free(stringbuffer);
+    return printf_ret_val;
 }
 
 #ifdef __cplusplus
