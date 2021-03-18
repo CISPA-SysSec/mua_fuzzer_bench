@@ -18,6 +18,9 @@ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 
 (cd /sys/devices/system/cpu && echo performance | sudo tee cpu*/cpufreq/scaling_governor >/dev/null)
 
+# build the mutator image (to be sure this could also rebuild the image)
+echo yes | ./mutator-docker-wrapper.py -b
+
 rm -rf /dev/shm/mutator/
 
 docker create -ti --name dummy mutator_mutator bash
