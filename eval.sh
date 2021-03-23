@@ -29,7 +29,7 @@ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 echo yes | ./mutator-docker-wrapper.py -b
 
 rm -rf /dev/shm/mutator/
-rm -rf ./tmp/*
+sudo rm -rf ./tmp/*
 
 docker create -ti --name dummy mutator_mutator bash
 sudo rm -rf tmp/samples/ && docker cp dummy:/home/mutator/samples/ tmp/ && \
