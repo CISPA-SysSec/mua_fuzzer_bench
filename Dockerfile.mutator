@@ -116,8 +116,12 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk
 RUN git clone https://github.com/harfbuzz/harfbuzz.git
 WORKDIR /home/mutator/samples/harfbuzz
 RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
-RUN CC=gclang CXX=gclang++ ninja -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
-RUN cp fuzzbuild/test/fuzzing/*/.hb-subset-fuzzer.cc.o.bc .
+RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
+RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
+RUN get-bc hb-subset-fuzzer
+# RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
+# WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
+# RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
 
 ################################################################################
 # other stuff

@@ -114,11 +114,10 @@ PROGRAMS = {
     # },
     "harfbuzz": {
         "compile_args": [
-            {'val': "-ldl", 'action': None},
         ],
         "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/fuzzbuild/test/fuzzing/hb-subset-fuzzer")),
-        "orig_bc": str(Path("tmp/samples/harfbuzz/.hb-subset-fuzzer.cc.o.bc")),
+        "orig_bin": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer")),
+        "orig_bc": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer.bc")),
         "path": "samples/harfbuzz/",
         "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
@@ -1081,7 +1080,8 @@ def get_all_mutations(mutator):
             args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
             if prog_info['is_cpp']:
                 args.insert(2, "-cpp")
-            print(run_exec_in_container(mutator, args))
+            res = run_exec_in_container(mutator, args)
+            print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
 
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
@@ -1093,7 +1093,8 @@ def get_all_mutations(mutator):
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('**/*.ll.mutationlocations'))
-        assert(len(mut_data_path) == 1, f"found: {mut_data_path}")
+        if len(mut_data_path) != 1:
+            raise ValueError(f"expected exactly one mutationlocations path but found: {mut_data_path}")
         mut_data_path = mut_data_path[0]
         with open(mut_data_path, 'rt') as f:
             mutation_data = json.load(f)
@@ -1101,7 +1102,6 @@ def get_all_mutations(mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
-        print(mutations)
 
         all_mutations.extend(mutations)
 
