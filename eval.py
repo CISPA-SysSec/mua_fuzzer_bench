@@ -1343,6 +1343,7 @@ ALL_PROG = 'all'
 
 def header():
     import altair as alt
+    alt.data_transformers.disable_max_rows()
 
     return """
     <!DOCTYPE html>
@@ -1396,6 +1397,13 @@ def mut_stats(con):
     res += stats.to_html()
     return res
 
+def prog_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
+    res = "<h2>Program Stats</h2>"
+    res += stats.to_html()
+    return res
+
 def aflpp_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
@@ -1408,6 +1416,7 @@ def plot(title, mut_type, data):
     import types
     from typing import cast
     import altair as alt
+    alt.data_transformers.disable_max_rows()
     all_fuzzers = set(run.fuzzer for run in data.itertuples())
     func_name = cast(types.FrameType, inspect.currentframe()).f_code.co_name
     selection = alt.selection_multi(fields=['fuzzer', 'prog'], bind='legend',
@@ -1470,7 +1479,7 @@ def gather_plot_data(runs, run_results):
 
     for crash in run_results.itertuples():
         import math
-        if math.isnan(crash.covered_file_seen):
+        if crash.covered_file_seen is None or math.isnan(crash.covered_file_seen):
             continue
         unique_crashes.append({
             'fuzzer': crash.fuzzer,
@@ -1638,6 +1647,7 @@ def generate_plots():
     res = header()
     res += fuzzer_stats(con)
     res += mut_stats(con)
+    res += prog_stats(con)
     res += aflpp_stats(con)
 
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
