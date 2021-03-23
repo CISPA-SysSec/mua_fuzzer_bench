@@ -13,6 +13,8 @@ static void do_a(char* inp) {
     // Mutation: Either just replace the first arg with inp, or replace the %s
     // with the inp arg and use the result as the first argument.
     printf("a: %s\n", inp);
+    char testbuf[500];
+    snprintf(testbuf, 10L,  "a: %s", "test");
 }
 
 static void do_b(char* inp) {

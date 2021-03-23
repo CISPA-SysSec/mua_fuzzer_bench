@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
     void signal_triggered_mutation(int64_t UID);
+    int mutate_printf_string(const char *format, ...);
 
 #ifdef __cplusplus
 }

@@ -24,10 +24,13 @@ def main(prog: str):
 
     # only run the find algorithm if no mutation should be done
     if args.mutate == -2:
+        arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate]
         if args.cpp:
-            subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", "-cpp", mutate])
-        else:
-            subprocess.run(["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate])
+            arguments.append("-cpp")
+        if args.args:
+            arguments.append("-a")
+            arguments.append(args.args)
+        subprocess.run(arguments)
 
     # only mutate if a specific mutation id is given
     if args.mutate != -2:
@@ -40,6 +43,9 @@ def main(prog: str):
             arguments.append("-bn")
         if args.cpp:
             arguments.append("-cpp")
+        if args.args:
+            arguments.append("-a")
+            arguments.append(args.args)
         arguments.append("-m")
         arguments.append(str(args.mutate))  # type must be string when running the subprocess
         arguments.append(mutate)
@@ -59,11 +65,12 @@ if __name__ == "__main__":
                         help="Uses clang++ instead of clang for compilation.")
     parser.add_argument("-m", "--mutate", type=int, default=-2,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
+    parser.add_argument('-a', "--args", default="", help="Compiler arguments that should be used for compilation")
     parser.add_argument("program", type=str,
                         help="Path to the source file that will be mutated.")
 
     args = parser.parse_args(sys.argv[1:])
-    if not any([args.bitcode, args.bitcode_human_readable, args.binary]):
+    if args.mutate != -2 and not any([args.bitcode, args.bitcode_human_readable, args.binary]):
         parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
 
     main(args.program)
