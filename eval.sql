@@ -40,7 +40,7 @@ select
 	runs_mut_type.mut_type,
 	runs_mut_type.fuzzer, runs_mut_type.prog,
 	total,
-	done,
+	ifnull(done, 0) + ifnull(crashed, 0) as done,
 	covered,
 	c_by_seed,
 	covered - c_by_seed as c_by_f,
@@ -76,7 +76,7 @@ left join (
 		run_crashed.prog = runs.prog and
 		run_crashed.mutation_id = runs.mutation_id and
 		run_crashed.fuzzer = runs.fuzzer
-	group by runs.mut_type, run_crashed.fuzzer, run_crashed.prog
+	group by runs.mut_type, run_crashed.prog, run_crashed.fuzzer
 ) crashed on
 	runs_mut_type.mut_type = crashed.mut_type and
 	runs_mut_type.prog = crashed.prog and
@@ -156,13 +156,13 @@ group by prog, mutation_id, fuzzer;
 DROP VIEW IF EXISTS aflpp_runtime_stats;
 CREATE VIEW aflpp_runtime_stats
 as
-select fuzzer,
+select prog, fuzzer,
 	   sum(totals_execs) / 1000000.0 as million_execs,
 	   cast(count(nullif(unique_crashes, "0")) as float) / count(*) as percent_crashing_runs,
 	   cast(count(nullif(unique_hangs, "0")) as float) / count(*) as percent_hanging_runs,
 	   cast(sum(map_size) as float) / count(*) as average_map_size
 from aflpp_runs_last_line
-group by fuzzer;
+group by prog, fuzzer;
 
 -- get the number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers, grouped by mutation type
 DROP VIEW IF EXISTS unique_finds;
