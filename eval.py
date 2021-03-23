@@ -80,49 +80,49 @@ PROGRAMS = {
     #     "path": "samples/re2/",
     #     "args": "@@",
     # },
-    # "guetzli": {
-    #     "compile_args": [
-    #         # {'val': "-v", 'action': None},
-    #         # {'val': "-static", 'action': None},
-    #         # {'val': "-std=c++11", 'action': None},
-    #         # {'val': "-lpthread", 'action': None},
-    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
-    #         # {'val': "-I", 'action': None},
-    #         # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
-    #         # {'val': "-lc++", 'action': None},
-    #         # {'val': "-lstdc++", 'action': None},
-    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
-    #         # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-    #     "path": "samples/guetzli/",
-    #     "seeds": "samples/guetzli_harness/seeds/",
-    #     "args": "-f @@",
-    # },
-    # "mjs": {
-    #     "compile_args": [
-    #         {'val': "-ldl", 'action': None},
-    #     ],
-    #     "is_cpp": False,
-    #     "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
-    #     "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
-    #     "path": "samples/mjs/",
-    #     "seeds": "samples/mjs_harness/seeds/",
-    #     "args": "@@",
-    # },
-    "harfbuzz": {
+    "guetzli": {
+        "compile_args": [
+            # {'val': "-v", 'action': None},
+            # {'val': "-static", 'action': None},
+            # {'val': "-std=c++11", 'action': None},
+            # {'val': "-lpthread", 'action': None},
+            # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
+            # {'val': "-I", 'action': None},
+            # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
+            # {'val': "-lc++", 'action': None},
+            # {'val': "-lstdc++", 'action': None},
+            # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
+            # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
+        "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
+        "path": "samples/guetzli/",
+        "seeds": "samples/guetzli_harness/seeds/",
+        "args": "@@",
+    },
+    "mjs": {
         "compile_args": [
             {'val': "-ldl", 'action': None},
         ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/fuzzbuild/test/fuzzing/hb-subset-fuzzer")),
-        "orig_bc": str(Path("tmp/samples/harfbuzz/.hb-subset-fuzzer.cc.o.bc")),
-        "path": "samples/harfbuzz/",
-        "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
+        "is_cpp": False,
+        "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
+        "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
+        "path": "samples/mjs/",
+        "seeds": "samples/mjs_harness/seeds/",
         "args": "@@",
     },
+    # "harfbuzz": {
+    #     "compile_args": [
+    #         {'val': "-ldl", 'action': None},
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/fuzzbuild/test/fuzzing/hb-subset-fuzzer")),
+    #     "orig_bc": str(Path("tmp/samples/harfbuzz/.hb-subset-fuzzer.cc.o.bc")),
+    #     "path": "samples/harfbuzz/",
+    #     "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
+    #     "args": "@@",
+    # },
 }
 
 # Indicates if the evaluation should continue, is mainly used to shut down 
@@ -462,7 +462,7 @@ def start_mutation_container():
     container.stop()
         
 def run_exec_in_container(container, cmd):
-    sub_cmd = ["docker", "exec", "-it",
+    sub_cmd = ["docker", "exec",
         container.name,
         *cmd]
     return subprocess.run(sub_cmd,
@@ -1057,16 +1057,22 @@ def build_compile_args(args, workdir):
 FUZZERS = {
     "aflpp": aflpp_eval,
     "afl": afl_eval,
-    # "aflpp_fast_exploit": aflppfastexploit_eval,
-    # "aflpp_mopt": aflppmopt_eval,
+    "aflpp_fast_exploit": aflppfastexploit_eval,
+    "aflpp_mopt": aflppmopt_eval,
     "afl_fairfuzz": fairfuzz_eval,
     "honggfuzz": honggfuzz_eval,
 }
 
-def get_all_mutations(mutator):
+def get_all_mutations(mutator, progs):
     all_mutations = []
     # For all programs that can be done by our evaluation
-    for prog, prog_info in PROGRAMS.items():
+    for prog in progs:
+        try:
+            prog_info = PROGRAMS[prog]
+        except Exception as err:
+            print(err)
+            print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+            quit()
 
         # Run the seeds through the mutation detector
         mutation_list_dir = Path("/dev/shm/mutation_detection")/prog
@@ -1080,8 +1086,8 @@ def get_all_mutations(mutator):
             # Compile the mutation location detector for the prog.
             args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
             if prog_info['is_cpp']:
-                args.insert(2, "-cpp")
-            print(run_exec_in_container(mutator, args))
+                args.insert(1, "-cpp")
+            run_exec_in_container(mutator, args)
 
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
@@ -1093,7 +1099,7 @@ def get_all_mutations(mutator):
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('**/*.ll.mutationlocations'))
-        assert(len(mut_data_path) == 1, f"found: {mut_data_path}")
+        assert len(mut_data_path) == 1, f"found: {mut_data_path}"
         mut_data_path = mut_data_path[0]
         with open(mut_data_path, 'rt') as f:
             mutation_data = json.load(f)
@@ -1101,7 +1107,6 @@ def get_all_mutations(mutator):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
-        print(mutations)
 
         all_mutations.extend(mutations)
 
@@ -1109,8 +1114,8 @@ def get_all_mutations(mutator):
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
-def get_next_run(stats, mutator):
-    all_mutations = get_all_mutations(mutator)
+def get_next_run(stats, mutator, fuzzers, progs):
+    all_mutations = get_all_mutations(mutator, progs)
 
     random.shuffle(all_mutations)
     all_runs = []
@@ -1118,7 +1123,13 @@ def get_next_run(stats, mutator):
     # Go through the mutations
     for (mutation_id, prog, prog_info, seeds, mutation_data) in all_mutations:
         # For each fuzzer gather all information needed to start a eval run
-        for fuzzer, eval_func in FUZZERS.items():
+        for fuzzer in fuzzers:
+            try:
+                eval_func = FUZZERS[fuzzer]
+            except Exception as err:
+                print(err)
+                print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
+                quit()
             # Get the working directory based on program and mutation id and
             # fuzzer, which is a unique path for each run
             workdir = Path("/dev/shm/mutator/")/prog/mutation_id/fuzzer
@@ -1227,7 +1238,7 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
         if break_after_one:
             break
 
-def run_eval():
+def run_eval(progs, fuzzers):
     global should_run
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator")
@@ -1287,14 +1298,14 @@ def run_eval():
         # start time
         start_time = time.time()
         # Get each run
-        for ii, run_data in enumerate(get_next_run(stats, mutator)):
+        for ii, run_data in enumerate(get_next_run(stats, mutator, fuzzers, progs)):
             print("" + str(ii) + " @ " + str(int((time.time() - start_time)//60)),
                   end=', ', flush=True)
             # Create the mutant if reference count is 0
             if active_mutants[run_data['prog_bc']]['ref_cnt'] == 0:
-                res = run_exec_in_container(mutator,
-                    ["./run_mutation.py", "-bc", "-cpp",
-                     "-m", run_data['mutation_id'], run_data['orig_bc']])
+                args = ["./run_mutation.py", "-bc", "-cpp",
+                     "-m", run_data['mutation_id'], run_data['orig_bc']]
+                res = run_exec_in_container(mutator, args)
                 if res.returncode != 0:
                     print(res.stdout.decode())
                     print(res.stderr.decode())
@@ -1690,6 +1701,10 @@ def main():
              "fuzzers and gathering the resulting data")
     parser.add_argument("--plots", action="store_true",
         help="generate plots for the gathered data")
+    parser.add_argument("--fuzzers", nargs='+', required=True,
+        help='The fuzzers to evaluate, will fail if the name is not known.')
+    parser.add_argument("--progs", nargs='+', required=True,
+        help='The programs to evaluate on, will fail if the name is not known.')
 
     if len(sys.argv) < 2:
         parser.print_help(sys.stderr)
@@ -1698,11 +1713,12 @@ def main():
     args = parser.parse_args()
 
     if args.seed:
+        # TODO how to handle progs and fuzzer argument?
         gather_seeds()
     if not should_run:
         return
     if args.eval:
-        run_eval()
+        run_eval(args.progs, args.fuzzers)
     if not should_run:
         return
     if args.plots:

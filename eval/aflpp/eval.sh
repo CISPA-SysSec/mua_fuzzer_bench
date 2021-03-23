@@ -13,7 +13,7 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-afl-clang-lto++ /home/user/lib/libdynamiclibrary.so $1 $2
+afl-c++ -o put -v /home/user/lib/libdynamiclibrary.so $1 $2
 
 [[ -d output ]] && rm -rf output
 mkdir output
@@ -28,7 +28,7 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-afl-fuzz -d -i $SEEDS -o output -- ./a.out $@ &
+afl-fuzz -d -i $SEEDS -o output -- ./put $@ &
 child=$! 
 
 echo "setup done"
