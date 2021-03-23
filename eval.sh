@@ -39,3 +39,5 @@ docker rm -f dummy
 ./eval.py --eval "$@" &
 child=$! 
 wait "$child"
+
+echo "done\n"

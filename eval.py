@@ -49,6 +49,9 @@ CHECK_INTERVAL = 5
 # The path where eval data is stored outside of the docker container
 HOST_TMP_PATH = Path(".").resolve()/"tmp/"
 
+# Directy where unsolved mutants are collected
+UNSOLVED_MUTANTS_DIR = HOST_TMP_PATH/"unsolved_mutants"
+
 # The path where all seed files are collected
 SEED_BASE_DIR = Path("/dev/shm/seeds/")
 
@@ -1217,7 +1220,7 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
             # If mutant was never killed, we want to keep a copy for inspection.
             if not active_mutants[data['prog_bc']]['killed']:
                 if data['prog_bc'].is_file():
-                    shutil.copy(str(data['prog_bc']), "tmp/unsolved_mutants/")
+                    shutil.copy(str(data['prog_bc']), UNSOLVED_MUTANTS_DIR)
             # Remove mut file.
             try:
                 data['prog_bc'].unlink()
@@ -1283,6 +1286,8 @@ def run_eval(progs, fuzzers):
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
             exit(1)
+
+    UNSOLVED_MUTANTS_DIR.mkdir(exist_ok=True, parents=True)
 
     # Keep a list of which cores can be used
     cores_in_use = [False]*NUM_CPUS
