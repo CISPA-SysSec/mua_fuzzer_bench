@@ -1090,7 +1090,7 @@ def get_all_mutations(mutator, progs):
             if prog_info['is_cpp']:
                 args.insert(1, "-cpp")
             res = run_exec_in_container(mutator, args)
-            // print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
+            # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
 
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
