@@ -80,38 +80,6 @@ PROGRAMS = {
     #     "path": "samples/re2/",
     #     "args": "@@",
     # },
-    # "guetzli": {
-    #     "compile_args": [
-    #         # {'val': "-v", 'action': None},
-    #         # {'val': "-static", 'action': None},
-    #         # {'val': "-std=c++11", 'action': None},
-    #         # {'val': "-lpthread", 'action': None},
-    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
-    #         # {'val': "-I", 'action': None},
-    #         # {'val': "samples/re2-code/", 'action': "prefix_workdir"},
-    #         # {'val': "-lc++", 'action': None},
-    #         # {'val': "-lstdc++", 'action': None},
-    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
-    #         # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-    #     "path": "samples/guetzli/",
-    #     "seeds": "samples/guetzli_harness/seeds/",
-    #     "args": "-f @@",
-    # },
-    # "mjs": {
-    #     "compile_args": [
-    #         {'val': "-ldl", 'action': None},
-    #     ],
-    #     "is_cpp": False,
-    #     "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
-    #     "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
-    #     "path": "samples/mjs/",
-    #     "seeds": "samples/mjs_harness/seeds/",
-    #     "args": "@@",
-    # },
     "harfbuzz": {
         "compile_args": [
         ],
