@@ -5,9 +5,11 @@ import org.apache.tools.ant.taskdefs.condition.Os
 apply plugin: 'cpp-library'
 
 tasks.withType(CppCompile).configureEach {
-    // Define a compiler options
+    // Define compiler options
     compilerArgs.add '-O3'
-    compilerArgs.add '-Werror'
+    //'-Werror' throws an error for mutate_printf_string, instead of a warning
+    // and consequently doesn't build, so we deactivate this.
+    // compilerArgs.add '-Werror'
     compilerArgs.add '-Wno-nullability-completeness'
 
     // Define toolchain-specific compiler options

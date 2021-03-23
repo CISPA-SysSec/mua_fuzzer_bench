@@ -26,6 +26,7 @@
 #define UNSIGNED_GREATER_THAN_EQUALTO 18
 #define INET_ADDR_FAIL_WITHOUTCHECK 19
 #define COMPARE_EQUAL_TO 20
+#define PRINTF 21
 
 // testing different mutations for less than and great than
 #define SIGNED_LESS_THAN_SQUARED 102

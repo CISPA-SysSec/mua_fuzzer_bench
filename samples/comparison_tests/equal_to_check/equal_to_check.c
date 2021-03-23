@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 int main() {
-    int a, b;
+    int a, b, c;
     int *ptra, *ptrb;
     a=57;
     b=21;
@@ -11,6 +11,7 @@ int main() {
         printf("a is equal to b. This will be triggered after mutation.\n");
     }
     else{
+        c = a - b;
         printf("a is not equal to b. This will be triggered by default.\n");
     }
     a=0;

@@ -5,7 +5,10 @@
 std::vector<std::string> LibCFailPattern::findConcreteFunction(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID) {
     std::vector<std::string> results;
     getfunNameString(instr);
-    if (funNameString.find(funName) != std::string::npos) {
+    // TODO in some cases the function name is different from the C-code function name, e.g. we might have 01_inet_addr instead of inet_addr in the code
+    //  in that case the function might not be found and we need to be more generous when looking for it
+    // do an equals check here as for functions like printf there might be functions that are similarly named (e.g. snprintf)
+    if (funNameString.str() == funName) {
         results.push_back(getIdentifierString(instr, builder, builderMutex, M, patternID));
     }
     return results;
@@ -78,4 +81,38 @@ bool INetAddrFailPattern::mutate(
 std::vector<std::string>
 INetAddrFailPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     return findConcreteFunction(instr, builder, builderMutex, M, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
+}
+
+std::vector<std::string>
+PrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, builder, builderMutex, M, "printf", PRINTF);
+}
+
+bool PrintfPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callInstr = dyn_cast<CallInst>(instr);
+    if (callInstr){
+        if (isMutationLocation(instr, seglist, PRINTF)){
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            std::vector<Value*> cfn_args;
+            for (int i =0; i<callInstr->getNumArgOperands(); i++){
+                cfn_args.push_back(callInstr->getArgOperand(i));
+            }
+            auto signalFunction = M.getFunction("mutate_printf_string");
+            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+
+    }
+    return false;
 }

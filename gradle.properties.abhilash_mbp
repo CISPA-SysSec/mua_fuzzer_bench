@@ -1,1 +1,1 @@
-llvmBinPath=/Users/abhilashgupta/toolchains/build/llvm+clang-901-x86_64-apple-darwin19.6.0_build/bin/
+llvmBinPath=/usr/local/Cellar/llvm/11.0.0/bin/

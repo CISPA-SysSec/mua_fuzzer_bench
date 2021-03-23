@@ -13,7 +13,7 @@ samples/**/mutations/*
 *.bc
 *.out
 # custom exclude since this is on my machine for testing -- BM
-/samples/mjs/
+/samples/mjs_local/
 
 # Created by https://www.gitignore.io/api/macos,clion,gradle
 # Edit at https://www.gitignore.io/?templates=macos,clion,gradle

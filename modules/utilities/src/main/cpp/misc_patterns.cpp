@@ -396,7 +396,6 @@ bool CompareEqualToPattern::mutate(
         Module& M
 ) {
     auto segref = *seglist;
-    // std::cout << segref.dump(4) << std::endl;
     if (isMutationLocation(instr, seglist, COMPARE_EQUAL_TO)) {
         if (auto loadInstr =  dyn_cast<LoadInst>(instr)){
             for(auto user : loadInstr->users()){  // user is of type User*
@@ -409,13 +408,16 @@ bool CompareEqualToPattern::mutate(
                     if (segref["additionalInfo"]["ICmpinstr"] == os.str()){
                         builderMutex.lock();
                         addMutationFoundSignal(nextInstructionBuilder, M, segref["UID"]);
-                        auto storeInst = new StoreInst(iCmpInstr->getOperand(1), loadInstr->getPointerOperand(), iCmpInstr);
+                        new StoreInst(iCmpInstr->getOperand(1), loadInstr->getPointerOperand(), iCmpInstr);
                         //This works for both integers and pointers.
                         auto newVal = Constant::getNullValue(iCmpInstr->getOperand(0)->getType());
                         iCmpInstr->setOperand(0, iCmpInstr->getOperand(1));
                         iCmpInstr->setPredicate(CmpInst::Predicate::ICMP_NE);
-                        loadInstr->removeFromParent();
                         iCmpInstr->setOperand(1, newVal);
+                        if (loadInstr->user_empty() && !loadInstr->isUsedByMetadata()) {
+                            // we only remove the load instruction if no other users exist
+                            loadInstr->removeFromParent();
+                        }
                         builderMutex.unlock();
                         return true;
                     }
