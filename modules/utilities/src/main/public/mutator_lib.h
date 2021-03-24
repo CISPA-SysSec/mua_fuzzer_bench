@@ -23,8 +23,6 @@
 using json = nlohmann::json;
 using namespace llvm;
 
-void populateMutatorVectors();
-
 bool mutatePattern(
     IRBuilder<>* builder,
     IRBuilder<>* nextInstructionBuilder,
@@ -34,6 +32,7 @@ bool mutatePattern(
     Module& M
 );
 
+void populatePatternVectors();
 void insertMutationApiFunctions(Module& M);
 
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H

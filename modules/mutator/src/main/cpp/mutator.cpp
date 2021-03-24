@@ -150,7 +150,7 @@ namespace {
             std::mutex builderMutex;
             std::mutex fileMutex;
             // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-            populateMutatorVectors();
+            populatePatternVectors();
             insertMutationApiFunctions(M);
             //Parsing the string into a json
             std::string segment;
