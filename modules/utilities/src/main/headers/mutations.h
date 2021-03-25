@@ -29,7 +29,6 @@
 #define PRINTF 21
 #define SPRINTF 22
 #define SNPRINTF 23
-//#define FPRINTF 24
 
 // testing different mutations for less than and great than
 #define SIGNED_LESS_THAN_SQUARED 102

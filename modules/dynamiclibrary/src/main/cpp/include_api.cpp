@@ -62,24 +62,6 @@ int mutate_printf_string(const char *format, ...){
     return printf_ret_val;
 }
 
-// int mutate_fprintf_string(FILE *stream, const char *format, ...){
-//     char *stringbuffer;
-//     va_list args, reusable_args;
-//     int sizeofbuffer, printf_ret_val;
-
-//     va_start (args, format);
-//     va_copy(reusable_args, args);
-//     sizeofbuffer = vsnprintf(stringbuffer, 0, format, args);
-//     va_end (args);
-
-//     stringbuffer = (char*)malloc(sizeofbuffer + 1);
-//     sizeofbuffer = vsnprintf(stringbuffer, sizeofbuffer + 1, format, reusable_args);
-
-//     printf_ret_val = fprintf(stream, stringbuffer);
-//     free(stringbuffer);
-//     return printf_ret_val;
-// }
-
 int mutate_sprintf_string(char *str, const char *format, ...){
     char *stringbuffer;
     va_list args, reusable_args;
@@ -98,24 +80,24 @@ int mutate_sprintf_string(char *str, const char *format, ...){
     return sprintf_ret_val;
 }
 
-// TODO: Figure out what to do about the size here.
-// int mutate_snprintf_string(char *str, size_t size, const char *format, ...){
-//     char *stringbuffer;
-//     va_list args, reusable_args;
-//     int sizeofbuffer, printf_ret_val;
 
-//     va_start (args, format);
-//     va_copy(reusable_args, args);
-//     sizeofbuffer = vsnprintf(stringbuffer, 0, format, args);
-//     va_end (args);
+int mutate_snprintf_string(char *str, size_t size, const char *format, ...){
+    char *stringbuffer;
+    va_list args, reusable_args;
+    int sizeofbuffer, printf_ret_val;
 
-//     stringbuffer = (char*)malloc(sizeofbuffer + 1);
-//     sizeofbuffer = vsnprintf(stringbuffer, sizeofbuffer + 1, format, reusable_args);
+    va_start (args, format);
+    va_copy(reusable_args, args);
+    sizeofbuffer = vsnprintf(stringbuffer, 0, format, args);
+    va_end (args);
 
-//     printf_ret_val = snprintf(str, sizeofbuffer, stringbuffer);
-//     free(stringbuffer);
-//     return printf_ret_val;
-// }
+    stringbuffer = (char*)malloc(sizeofbuffer + 1);
+    sizeofbuffer = vsnprintf(stringbuffer, sizeofbuffer + 1, format, reusable_args);
+
+    printf_ret_val = snprintf(str, size, stringbuffer);
+    free(stringbuffer);
+    return printf_ret_val;
+}
 #ifdef __cplusplus
 }
 #endif

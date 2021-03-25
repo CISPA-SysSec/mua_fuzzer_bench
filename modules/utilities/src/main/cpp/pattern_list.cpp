@@ -11,8 +11,8 @@ void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <FGetsPattern>());
     CallInstPatterns.push_back(std::make_unique <INetAddrFailPattern>());
     CallInstPatterns.push_back(std::make_unique <PrintfPattern>());
-    // CallInstPatterns.push_back(std::make_unique <FPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
+    CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
 }
 
 // Add new ICmpInstPattern objects here as you add them.
