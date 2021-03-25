@@ -4,74 +4,8 @@
 
 #include <iostream>
 #include "../public/mutator_lib.h"
-#include "pattern_declarations.h"
+#include "pattern_list.h"
 
-// smart pointers (unique_ptr) to make garbage collection automatic.
-std::vector<std::unique_ptr<CallInstPattern>> CallInstMutators;
-std::vector<std::unique_ptr<ICmpInstPattern>> ICmpInstMutators;
-std::vector<std::unique_ptr<Pattern>> MiscInstMutators;
-
-// TODO: maybe refactor the populate functions into OOP. But only if required, later on.
-// Add new CallInstMutator objects here as you add them.
-void populateCallInstMutators(){
-    CallInstMutators.push_back(std::make_unique <PThreadPattern>());
-    CallInstMutators.push_back(std::make_unique <MallocPattern>());
-    CallInstMutators.push_back(std::make_unique <CallocPattern>());
-    CallInstMutators.push_back(std::make_unique <FGetsPattern>());
-    CallInstMutators.push_back(std::make_unique <INetAddrFailPattern>());
-    CallInstMutators.push_back(std::make_unique <PrintfPattern>());
-}
-
-// Add new ICmpInstMutator objects here as you add them.
-void populateICmpInstMutators(){
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanHalvedPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanSqrtPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToHalvedPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedGreaterThanEqualToSqrtPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanEqualToSquaredPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanPattern>());
-    ICmpInstMutators.push_back(std::make_unique <SignedLessThanSquaredPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanHalvedPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanSqrtPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToHalvedPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedGreaterThanEqualToSqrtPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanEqualToSquaredPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanPattern>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedLessThanSquaredPattern>());
-
-    ICmpInstMutators.push_back(std::make_unique <SignedToUnsigned>());
-    ICmpInstMutators.push_back(std::make_unique <UnsignedToSigned>());
-}
-
-// Add new MiscInstMutator objects here as you add them.
-void populateMiscInstMutators(){
-    MiscInstMutators.push_back(std::make_unique <FreeArgumentReturnPattern>());
-    MiscInstMutators.push_back(std::make_unique <CMPXCHGPattern>());
-    MiscInstMutators.push_back(std::make_unique <ATOMICRMWPattern>());
-    MiscInstMutators.push_back(std::make_unique <ShiftSwitch>());
-    MiscInstMutators.push_back(std::make_unique <UnInitLocalVariables>());
-    MiscInstMutators.push_back(std::make_unique <CompareEqualToPattern>());
-}
-
-// Global function to call all the vector populators
-void populateMutatorVectors(){
-    populateCallInstMutators();
-    populateICmpInstMutators();
-    populateMiscInstMutators();
-}
 
 bool Pattern::isMutationLocation(Instruction* instr, json *seglist, int type) {
     auto segref = *seglist;
@@ -156,17 +90,17 @@ bool mutatePattern(
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
-            for (auto &mutator : CallInstMutators){
+            for (auto &mutator : CallInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
             }
         }
     }
     else if (dyn_cast<ICmpInst>(instr)){
-        for (auto &mutator : ICmpInstMutators){
+        for (auto &mutator : ICmpInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         }
     } else {
-        for (auto &mutator : MiscInstMutators){
+        for (auto &mutator : MiscInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
         }
     }
