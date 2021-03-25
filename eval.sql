@@ -1,14 +1,14 @@
 
 -- results for all mut types
 DROP VIEW IF EXISTS mut_types;
-CREATE TEMP VIEW mut_types
+CREATE VIEW mut_types
 as
 select distinct(mut_type) as mut_type from runs
 order by mut_type;
 
 -- results for all runs
 DROP VIEW IF EXISTS run_results;
-CREATE TEMP VIEW run_results
+CREATE VIEW run_results
 as
 select
 	executed_runs.fuzzer,
@@ -34,17 +34,19 @@ group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
 
 -- results for all runs grouped by mut_type
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
-CREATE TEMP VIEW run_results_by_mut_type_and_fuzzer
+CREATE VIEW run_results_by_mut_type_and_fuzzer
 as
 select
 	runs_mut_type.mut_type,
 	runs_mut_type.fuzzer, runs_mut_type.prog,
 	total,
-	done,
+	ifnull(done, 0) + ifnull(crashed, 0) as done,
 	covered,
 	c_by_seed,
+	covered - c_by_seed as c_by_f,
 	found,
 	f_by_seed,
+	found - f_by_seed as f_by_f,
 	ifnull(crashed, 0) as crashed,
 	total_time
 from (
@@ -74,7 +76,7 @@ left join (
 		run_crashed.prog = runs.prog and
 		run_crashed.mutation_id = runs.mutation_id and
 		run_crashed.fuzzer = runs.fuzzer
-	group by runs.mut_type, run_crashed.fuzzer, run_crashed.prog
+	group by runs.mut_type, run_crashed.prog, run_crashed.fuzzer
 ) crashed on
 	runs_mut_type.mut_type = crashed.mut_type and
 	runs_mut_type.prog = crashed.prog and
@@ -82,7 +84,7 @@ left join (
 	
 -- results for all runs grouped by mut type
 DROP VIEW IF EXISTS run_results_by_mut_type;
-CREATE TEMP VIEW run_results_by_mut_type
+CREATE VIEW run_results_by_mut_type
 as
 select	
 	mutation_types.pattern_name as name,
@@ -91,8 +93,10 @@ select
 	sum(done) as done,
 	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
+	sum(c_by_f) as c_by_f,
 	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
+	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
 	sum(total_time) as total_time
 from run_results_by_mut_type_and_fuzzer
@@ -101,26 +105,46 @@ group by mutation_types.mut_type;
 
 -- results for all runs grouped by fuzzer
 DROP VIEW IF EXISTS run_results_by_fuzzer;
-CREATE TEMP VIEW run_results_by_fuzzer
+CREATE VIEW run_results_by_fuzzer
 as
 select fuzzer,
 	sum(total) as total,
 	sum(done) as done,
 	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
+	sum(c_by_f) as c_by_f,
 	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
+	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
 	sum(total_time) as total_time
 from run_results_by_mut_type_and_fuzzer
 group by fuzzer;
+
+-- results for all runs grouped by fuzzer
+DROP VIEW IF EXISTS run_results_by_prog;
+CREATE VIEW run_results_by_prog
+as
+select prog,
+	sum(total) as total,
+	sum(done) as done,
+	sum(covered) as covered,
+	sum(c_by_seed) as c_by_seed,
+	sum(c_by_f) as c_by_f,
+	sum(found) as found,
+	sum(f_by_seed) as f_by_seed,
+	sum(f_by_f) as f_by_f,
+	sum(crashed) as crashed,
+	sum(total_time) as total_time
+from run_results_by_mut_type_and_fuzzer
+group by prog;
 
 -- ---------------------------------------------------------------------------------
 -- -- afl++
 
 -- get the last line of the plot data based on time for each mutation_id
 DROP VIEW IF EXISTS aflpp_runs_last_line;
-CREATE TEMP VIEW aflpp_runs_last_line
+CREATE VIEW aflpp_runs_last_line
 as
 select * from (
 	select * from aflpp_runs
@@ -130,19 +154,19 @@ group by prog, mutation_id, fuzzer;
 
 -- get runtime stats for afl++ based fuzzers
 DROP VIEW IF EXISTS aflpp_runtime_stats;
-CREATE TEMP VIEW aflpp_runtime_stats
+CREATE VIEW aflpp_runtime_stats
 as
-select fuzzer,
+select prog, fuzzer,
 	   sum(totals_execs) / 1000000.0 as million_execs,
 	   cast(count(nullif(unique_crashes, "0")) as float) / count(*) as percent_crashing_runs,
 	   cast(count(nullif(unique_hangs, "0")) as float) / count(*) as percent_hanging_runs,
 	   cast(sum(map_size) as float) / count(*) as average_map_size
 from aflpp_runs_last_line
-group by fuzzer;
+group by prog, fuzzer;
 
 -- get the number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers, grouped by mutation type
 DROP VIEW IF EXISTS unique_finds;
-CREATE TEMP VIEW unique_finds
+CREATE VIEW unique_finds
 as
 select mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, count(case when (a.found == 1 and b.found == 0) then 1 else NULL end) as finds from (
 	select mut_id,
@@ -162,7 +186,7 @@ group by mut_type, a.fuzzer, b.fuzzer;
 
 
 DROP VIEW IF EXISTS unsolved_mutations;
-CREATE TEMP VIEW unsolved_mutations
+CREATE VIEW unsolved_mutations
 as
 select a.mut_type, mut_id, mut_file_path, mut_line, mut_column, pattern_class, description, procedure, * from (
 	select mut_type, mut_id, sum(case WHEN covered_file_seen is null then 0 else 1 end) as covered_num, sum(case WHEN confirmed is null then 0 else 1 end) as confirmed_num from run_results
