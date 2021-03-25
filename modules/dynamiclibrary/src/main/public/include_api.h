@@ -13,7 +13,8 @@ extern "C" {
 
     void signal_triggered_mutation(int64_t UID);
     int mutate_printf_string(const char *format, ...);
-
+    int mutate_sprintf_string(char *str, const char *format, ...);
+    // int mutate_fprintf_string(FILE *stream, const char *format, ...);
 #ifdef __cplusplus
 }
 #endif

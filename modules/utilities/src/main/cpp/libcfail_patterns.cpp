@@ -116,3 +116,71 @@ bool PrintfPattern::mutate(
     }
     return false;
 }
+
+// std::vector<std::string>
+// FPrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+//     return findConcreteFunction(instr, builder, builderMutex, M, "fprintf", FPRINTF);
+// }
+
+// bool FPrintfPattern::mutate(
+//         IRBuilder<>* builder,
+//         IRBuilder<>* nextInstructionBuilder,
+//         Instruction* instr,
+//         std::mutex& builderMutex,
+//         json *seglist,
+//         Module& M
+// ) {
+//     auto* callInstr = dyn_cast<CallInst>(instr);
+//     if (callInstr){
+//         if (isMutationLocation(instr, seglist, FPRINTF)){
+//             builderMutex.lock();
+//             auto segref = *seglist;
+//             addMutationFoundSignal(builder, M, segref["UID"]);
+//             std::vector<Value*> cfn_args;
+//             for (int i =0; i<callInstr->getNumArgOperands(); i++){
+//                 cfn_args.push_back(callInstr->getArgOperand(i));
+//             }
+//             auto signalFunction = M.getFunction("mutate_fprintf_string");
+//             builder->CreateCall(signalFunction, cfn_args);
+//             callInstr->removeFromParent();
+//             builderMutex.unlock();
+//             return true;
+//         }
+
+//     }
+//     return false;
+// }
+
+std::vector<std::string>
+SPrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, builder, builderMutex, M, "sprintf", SPRINTF);
+}
+
+bool SPrintfPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callInstr = dyn_cast<CallInst>(instr);
+    if (callInstr){
+        if (isMutationLocation(instr, seglist, SPRINTF)){
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            std::vector<Value*> cfn_args;
+            for (int i =0; i<callInstr->getNumArgOperands(); i++){
+                cfn_args.push_back(callInstr->getArgOperand(i));
+            }
+            auto signalFunction = M.getFunction("mutate_sprintf_string");
+            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+
+    }
+    return false;
+}

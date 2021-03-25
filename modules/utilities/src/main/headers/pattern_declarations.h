@@ -646,4 +646,45 @@ public:
     ) override;
 };
 
+// class FPrintfPattern: public LibCFailPattern{
+// public:
+//     std::vector<std::string>
+//     find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//     bool mutate (
+//             IRBuilder<>* builder,
+//             IRBuilder<>* nextInstructionBuilder,
+//             Instruction* instr,
+//             std::mutex& builderMutex,
+//             json *seglist,
+//             Module& M
+//     ) override;
+// };
+
+class SPrintfPattern: public LibCFailPattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+// class SNPrintfPattern: public LibCFailPattern{
+// public:
+//     std::vector<std::string>
+//     find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//     bool mutate (
+//             IRBuilder<>* builder,
+//             IRBuilder<>* nextInstructionBuilder,
+//             Instruction* instr,
+//             std::mutex& builderMutex,
+//             json *seglist,
+//             Module& M
+//     ) override;
+// };
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H
