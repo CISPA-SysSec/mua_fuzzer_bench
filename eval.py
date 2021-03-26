@@ -406,11 +406,17 @@ class DockerLogStreamer(threading.Thread):
 
     def run(self):
         global should_run
-        for line in self.container.logs(stream=True):
-            line = line.decode()
-            if SHOW_CONTAINER_LOGS:
-                print(line.rstrip())
-            self.q.put(line)
+        try:
+            for line in self.container.logs(stream=True):
+                line = line.decode()
+                if SHOW_CONTAINER_LOGS:
+                    print(line.rstrip())
+                if not line.contains("Fuzzing test case #"):
+                    self.q.put(line)
+        except Exception as exc:
+            error_message = traceback.format_exc()
+            for line in error_message.splitlines():
+                self.q.put(line)
         self.q.put(None)
 
 @contextlib.contextmanager
@@ -1189,8 +1195,7 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
         except Exception:
             # if there was an exception print it
             trace = traceback.format_exc()
-            stats.run_crashed(data['prog'], data['mutation_id'], data['fuzzer'],
-                              trace)
+            stats.run_crashed(data['prog'], data['mutation_id'], data['fuzzer'], trace)
         else:
             # if successful log the run
             # print("success")
