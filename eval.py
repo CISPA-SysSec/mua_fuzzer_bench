@@ -1713,36 +1713,31 @@ def main():
     signal.signal(signal.SIGINT, sigint_handler)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", action="store_true",
-        help="run a seed gathering stage, to gather seed that are shared by all "
-             "fuzzers")
-    parser.add_argument("--eval", action="store_true",
-        help="run the full evaluation executing"
-             "fuzzers and gathering the resulting data")
-    parser.add_argument("--plots", action="store_true",
-        help="generate plots for the gathered data")
-    parser.add_argument("--fuzzers", nargs='+', required=True,
+    subparsers = parser.add_subparsers(dest='cmd', help="These are the possible actions for the eval, "
+                                                        "see their individual descriptions.")
+
+    parser_seed = subparsers.add_parser('seed', help="Run a seed gathering stage, to gather seed that are shared by "
+                                                     "all fuzzers")
+
+    parser_eval = subparsers.add_parser('eval', help="Run the evaluation executing the requested fuzzers (--fuzzers) on "
+                                                     "the requested programs (--progs) and gather the resulting data.")
+    parser_eval.add_argument("--fuzzers", nargs='+', required=True,
         help='The fuzzers to evaluate, will fail if the name is not known.')
-    parser.add_argument("--progs", nargs='+', required=True,
+    parser_eval.add_argument("--progs", nargs='+', required=True,
         help='The programs to evaluate on, will fail if the name is not known.')
 
-    if len(sys.argv) < 2:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+    parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
 
     args = parser.parse_args()
 
-    if args.seed:
-        # TODO how to handle progs and fuzzer argument?
+    if args.cmd == 'seed':
         gather_seeds()
-    if not should_run:
-        return
-    if args.eval:
+    elif args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers)
-    if not should_run:
-        return
-    if args.plots:
+    elif args.cmd == 'plot':
         generate_plots()
+    else:
+        parser.print_help(sys.stderr)
 
 if __name__ == "__main__":
     main()
