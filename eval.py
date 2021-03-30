@@ -1352,6 +1352,7 @@ def run_eval(progs, fuzzers):
         # Wait for all remaining active runs
         print('waiting for the rest')
         wait_for_runs(stats, runs, cores_in_use, active_mutants, False)
+    print("eval done")
 
 
 def parse_afl_paths(paths):
