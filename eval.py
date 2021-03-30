@@ -1666,10 +1666,10 @@ def footer():
     </html>
     """
 
-def generate_plots():
+def generate_plots(db_path):
     import pandas as pd
 
-    con = sqlite3.connect("/home/philipp/stats.db")
+    con = sqlite3.connect(db_path)
     con.isolation_level = None
     con.row_factory = sqlite3.Row
     cur = con.cursor()
@@ -1699,7 +1699,7 @@ def generate_plots():
         )
     res += footer()
 
-    out_path = Path("test_plot.html").resolve()
+    out_path = Path(db_path).with_suffix(".html").resolve()
     print(f"Writing plots to: {out_path}")
     with open(out_path, 'w') as f:
         f.write(res) 
@@ -1727,6 +1727,7 @@ def main():
         help='The programs to evaluate on, will fail if the name is not known.')
 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
+    parser_seed.add_argument("db_path", help="The sqlite database to plot.")
 
     args = parser.parse_args()
 
@@ -1735,7 +1736,7 @@ def main():
     elif args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers)
     elif args.cmd == 'plot':
-        generate_plots()
+        generate_plots(args.db_path)
     else:
         parser.print_help(sys.stderr)
 
