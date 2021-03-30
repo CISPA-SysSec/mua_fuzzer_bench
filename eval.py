@@ -23,10 +23,10 @@ from pathlib import Path
 import docker
 
 # set the number of concurrent runs
-NUM_CPUS = psutil.cpu_count(logical=False)
+NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=False)))
 
 # If container logs should be shown
-SHOW_CONTAINER_LOGS = False
+SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 
 # Remove the working directory after a run
 RM_WORKDIR = True
