@@ -83,7 +83,6 @@ ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 # guetzli
 
 RUN apt install -y libpng-dev
-RUN ln /bin/llvm-link-11 /bin/llvm-link
 
 WORKDIR /home/mutator/samples
 RUN git clone https://github.com/google/guetzli.git
