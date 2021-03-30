@@ -411,8 +411,9 @@ class DockerLogStreamer(threading.Thread):
                 line = line.decode()
                 if SHOW_CONTAINER_LOGS:
                     print(line.rstrip())
-                if not line.contains("Fuzzing test case #"):
-                    self.q.put(line)
+                if "Fuzzing test case #" in line:
+                    continue
+                self.q.put(line)
         except Exception as exc:
             error_message = traceback.format_exc()
             for line in error_message.splitlines():
