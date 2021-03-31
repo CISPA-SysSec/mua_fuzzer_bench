@@ -29,7 +29,7 @@ NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=False)))
 SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 
 # Remove the working directory after a run
-RM_WORKDIR = True
+RM_WORKDIR = os.getenv("MUT_RM_WORKDIR", "1") == "1"
 
 # Timeout for the fuzzers in seconds
 TIMEOUT = 30 * 60  # half hour
