@@ -26,6 +26,7 @@ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 (cd /sys/devices/system/cpu && echo performance | sudo tee cpu*/cpufreq/scaling_governor >/dev/null)
 
 # build the mutator image (to be sure this could also rebuild the image)
+echo yes | ./mutator-docker-wrapper.py -s
 echo yes | ./mutator-docker-wrapper.py -b
 
 rm -rf /dev/shm/mutator/
@@ -36,8 +37,4 @@ sudo rm -rf tmp/samples/ && docker cp dummy:/home/mutator/samples/ tmp/ && \
     docker cp dummy:/home/mutator/build/install/LLVM_Mutation_Tool/lib/ tmp/lib/
 docker rm -f dummy
 
-./eval.py --eval "$@" &
-child=$! 
-wait "$child"
-
-echo "done\n"
+exec ./eval.py "eval" "$@"

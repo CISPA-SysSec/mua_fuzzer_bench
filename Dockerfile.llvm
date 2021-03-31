@@ -45,6 +45,7 @@ RUN ln /bin/clang++-11 /bin/clang++
 RUN ln /bin/opt-11 /bin/opt
 RUN ln /bin/llvm-config-11 /bin/llvm-config
 RUN ln /bin/llvm-ar-11 /bin/llvm-ar
+RUN ln /bin/llvm-link-11 /bin/llvm-link
 
 RUN apt-get update
 RUN apt install -y \

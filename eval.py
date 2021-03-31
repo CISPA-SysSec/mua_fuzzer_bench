@@ -23,13 +23,13 @@ from pathlib import Path
 import docker
 
 # set the number of concurrent runs
-NUM_CPUS = psutil.cpu_count(logical=False)
+NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=False)))
 
 # If container logs should be shown
-SHOW_CONTAINER_LOGS = False
+SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 
 # Remove the working directory after a run
-RM_WORKDIR = True
+RM_WORKDIR = os.getenv("MUT_RM_WORKDIR", "1") == "1"
 
 # Timeout for the fuzzers in seconds
 TIMEOUT = 30 * 60  # half hour
@@ -434,7 +434,7 @@ def start_testing_container(core_to_use, trigger_file):
         auto_remove=True,
         environment={
             'LD_LIBRARY_PATH': "/workdir/lib/",
-            'TRIGGERED_FILE': str(trigger_file),
+            'TRIGGERED_FOLDER': str(trigger_file),
         },
         volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
                                       'mode': 'ro'}},
@@ -490,7 +490,7 @@ class CoveredFile:
             self.path.unlink()
 
     def check(self, by_seed):
-        if self.found is None and self.path.is_file():
+        if self.found is None and self.path.exists():
             self.found = time.time() - self.start_time
             self.found_by_seed = by_seed
 
@@ -893,7 +893,7 @@ def base_eval(run_data, docker_image, executable):
             ], # the arguments
             environment={
                 'TRIGGERED_OUTPUT': str(""),
-                'TRIGGERED_FILE': str(workdir/'covered'),
+                'TRIGGERED_FOLDER': str(covered.path),
             },
             init=True,
             cpuset_cpus=str(core_to_use),
@@ -1240,6 +1240,8 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
             if workdir.is_dir():
                 shutil.rmtree(workdir)
             try:
+                # Also remove parent if it doesn't contain anything anymore.
+                # That is all runs for this mutation are done.
                 workdir.parent.rmdir()
             except Exception:
                 pass
@@ -1265,6 +1267,7 @@ def run_eval(progs, fuzzers):
     proc = subprocess.run([
             "docker", "build",
             "-t", "mutator_testing",
+            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "-f", "eval/Dockerfile.testing",
             "."
         ])
@@ -1283,6 +1286,7 @@ def run_eval(progs, fuzzers):
         ("mutation-testing-honggfuzz", "honggfuzz"),
         ("mutation-testing-libfuzzer", "libfuzzer"),
     ]:
+        print(f"Building docker image for {tag} ({name})")
         proc = subprocess.run([
             "docker", "build",
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
@@ -1352,6 +1356,7 @@ def run_eval(progs, fuzzers):
         # Wait for all remaining active runs
         print('waiting for the rest')
         wait_for_runs(stats, runs, cores_in_use, active_mutants, False)
+    print("eval done")
 
 
 def parse_afl_paths(paths):

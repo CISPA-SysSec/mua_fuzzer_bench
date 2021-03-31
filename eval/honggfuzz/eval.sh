@@ -28,10 +28,4 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-honggfuzz --input $SEEDS --output output --crashdir crashes -n 1 -- ./a.out $@ &
-child=$! 
-
-echo "setup done"
-
-wait "$child"
-echo "fuzzing done"
+exec honggfuzz --input $SEEDS --output output --crashdir crashes -n 1 -- ./a.out $@
