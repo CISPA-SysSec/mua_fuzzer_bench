@@ -2,6 +2,11 @@
 FROM ubuntu:20.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG CUSTOM_USER_ID
+
+RUN useradd -l --uid ${CUSTOM_USER_ID} -m user
+# add user to sudoers file for debugging purposes
+RUN echo "user:user" | chpasswd && adduser user sudo
 
 RUN apt-get update && apt-get upgrade -y && \
     apt-get -y install --no-install-suggests --no-install-recommends \
@@ -42,3 +47,5 @@ WORKDIR /
 
 COPY eval/run_bin.sh .
 RUN chmod +x run_bin.sh
+
+USER user
