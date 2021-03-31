@@ -28,10 +28,4 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-afl-fuzz -L -1 -d -i $SEEDS -o output -- ./a.out $@ &
-child=$! 
-
-echo "setup done"
-
-wait "$child"
-echo "fuzzing done"
+exec afl-fuzz -L -1 -d -i $SEEDS -o output -- ./a.out $@

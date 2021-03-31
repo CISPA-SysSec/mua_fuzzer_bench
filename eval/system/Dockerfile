@@ -1,7 +1,6 @@
 # based on https://github.com/AFLplusplus/AFLplusplus/blob/stable/Dockerfile
 FROM ubuntu:20.04
 
-# bugfix for blades
 ARG CUSTOM_USER_ID
 RUN useradd -l --uid ${CUSTOM_USER_ID} -m user
 # add user to sudoers file for debugging purposes
