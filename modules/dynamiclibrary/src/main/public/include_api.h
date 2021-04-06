@@ -6,6 +6,7 @@
 #define LLVM_MUTATION_TOOL_INCLUDE_API_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,7 +14,8 @@ extern "C" {
 
     void signal_triggered_mutation(int64_t UID);
     int mutate_printf_string(const char *format, ...);
-
+    int mutate_sprintf_string(char *str, const char *format, ...);
+    int mutate_snprintf_string(char *str, size_t size, const char *format, ...);
 #ifdef __cplusplus
 }
 #endif

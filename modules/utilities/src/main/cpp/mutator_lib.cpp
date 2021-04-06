@@ -113,4 +113,15 @@ void insertMutationApiFunctions(Module& M) {
 
     std::vector<Type*> mutate_printf_args(1, Type::getInt8PtrTy(llvmContext));
     M.getOrInsertFunction("mutate_printf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_printf_args, true));
+
+    // 2 char* for sprintf. first for *str, second for *format in int sprintf(char *str, const char *format, ...);
+    std::vector<Type*> mutate_sprintf_args(2, Type::getInt8PtrTy(llvmContext));
+    M.getOrInsertFunction("mutate_sprintf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_sprintf_args, true));
+
+    std::vector<Type*> mutate_snprintf_args;
+    mutate_snprintf_args.push_back(Type::getInt8PtrTy(llvmContext));
+    int bitsize = sizeof(size_t) *8;
+    mutate_snprintf_args.push_back(Type::getIntNTy(llvmContext, bitsize));
+    mutate_snprintf_args.push_back(Type::getInt8PtrTy(llvmContext));
+    M.getOrInsertFunction("mutate_snprintf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_snprintf_args, true));
 }
