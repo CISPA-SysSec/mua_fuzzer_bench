@@ -197,6 +197,18 @@ inner join mutation_types on a.mut_type = mutation_types.mut_type
 group by mut_id
 order by mut_type, mut_file_path, mut_line;
 
+DROP VIEW IF EXISTS crashed_runs_overview;
+CREATE VIEW crashed_runs_overview
+as
+select not (seed_crash or seed_timeout or all_seeds_crash) as unknown_crash_reason, seed_crash + seed_timeout + all_seeds_crash > 1 as multiple_reasons, *
+from (
+	select
+		crash_trace like '%[-] PROGRAM ABORT : %Test case % results in a crash%' as seed_crash,
+		crash_trace like '%[-] PROGRAM ABORT : %Test case % results in a timeout%' as seed_timeout,
+		crash_trace like '%[-] PROGRAM ABORT : %We need at least one valid input seed that does not crash!%' as all_seeds_crash,
+		* from run_crashed
+)
+order by unknown_crash_reason, multiple_reasons;
 
 
 -- 
