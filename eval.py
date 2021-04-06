@@ -32,7 +32,7 @@ SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 RM_WORKDIR = os.getenv("MUT_RM_WORKDIR", "1") == "1"
 
 # Timeout for the fuzzers in seconds
-TIMEOUT = 30 * 60  # half hour
+TIMEOUT = int(os.getenv("MUT_TIMEOUT", 30 * 60))  # default half hour
 
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
