@@ -9,6 +9,15 @@ void CallInstPattern::getfunNameString(const Instruction *instr){
     funNameString = fNString;
 }
 
+std::string CallInstPattern::demangle(const Instruction *instr)
+{
+    getfunNameString(instr);
+    int status = -1;
+
+    std::unique_ptr<char, void(*)(void*)> res { abi::__cxa_demangle(funNameString.str().c_str(), nullptr, nullptr, &status), std::free };
+    return (status == 0) ? res.get() : funNameString.str();
+}
+
 std::vector<std::string>
 MallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;

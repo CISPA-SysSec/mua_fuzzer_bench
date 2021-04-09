@@ -16,6 +16,7 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include <cxxabi.h>
 #include <set>
 #include <iostream>
 #include <../dependencies/json.hpp>
@@ -82,6 +83,7 @@ class CallInstPattern: public Pattern {
 protected:
     StringRef funNameString;
     void getfunNameString(const Instruction *instr);
+    std::string demangle(const Instruction *instr);
 };
 
 // Abstract base classes for ICmpInst types of instruction patterns
