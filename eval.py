@@ -37,6 +37,9 @@ TIMEOUT = int(os.getenv("MUT_TIMEOUT", 30 * 60))  # default half hour
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 
+# If true do filtering of mutations
+FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
+
 # If true redetect which mutations are used
 DETECT_MUTATIONS = True
 
@@ -1091,14 +1094,15 @@ def get_all_mutations(mutator, progs):
         else:
             seeds = Path(prog_info['seeds'])
 
-        if DETECT_MUTATIONS:
-            # Compile the mutation location detector for the prog.
-            args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
-            if prog_info['is_cpp']:
-                args.insert(1, "-cpp")
-            res = run_exec_in_container(mutator, args)
-            # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
+        # Compile the mutation location detector for the prog.
+        args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
+        if prog_info['is_cpp']:
+            args.insert(1, "-cpp")
+        res = run_exec_in_container(mutator, args)
+        # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
 
+
+        if FILTER_MUTATIONS and DETECT_MUTATIONS:
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
             mutation_list_dir.mkdir(parents=True)
@@ -1116,7 +1120,10 @@ def get_all_mutations(mutator, progs):
 
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
-        mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        if FILTER_MUTATIONS:
+            mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        else:
+            mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
 
         all_mutations.extend(mutations)
 
