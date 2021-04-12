@@ -192,3 +192,43 @@ bool CallocPattern::mutate(
     }
     return false;
 }
+
+std::vector<std::string>
+NewArrayPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getfunNameString(instr);
+    std::string demangled_instr_name = demangle(instr);
+    // std::cout << "[INFO C] funNameString: " << funNameString.str() << " demangled: " << demangle(instr) << "\n";
+    if (demangled_instr_name.find("operator new[]") != std::string::npos) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, NEW_ARRAY));
+    }
+    return results;
+}
+
+/**
+ * On calloc it allocates one byte less memory.
+ */
+bool NewArrayPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callinst = dyn_cast<CallInst>(instr);
+    std::string demangled_instr_name = demangle(callinst);
+    // auto funNameString = callinst->getCalledFunction()->getName();
+    // std::cout << "[INFO C] funNameString: " << funNameString.str() << " demangled: " << demangle(callInstr) << "\n";
+    if (funNameString.find("operator new[]") != std::string::npos) {
+        if (isMutationLocation(instr, seglist, NEW_ARRAY)){
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            // std::cout << "[INFO C] funNameString: " << funNameString.str() << " demangled: " << demangle(callInstr) << callInstr->getNumArgOperands() << "\n";
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
