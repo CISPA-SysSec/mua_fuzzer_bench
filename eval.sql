@@ -169,20 +169,29 @@ DROP VIEW IF EXISTS unique_finds;
 CREATE VIEW unique_finds
 as
 select mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, count(case when (a.found == 1 and b.found == 0) then 1 else NULL end) as finds from (
-	select mut_id,
+	select prog,
+		   mut_id,
 		   mut_type,
 		   fuzzer,
 		   case when time_found is null then 0 else 1 end as found
 	from run_results
 ) a
 join (
-	select mut_id,
+	select prog,
+	       mut_id,
 		   fuzzer,
 		   case when time_found is null then 0 else 1 end as found
 	from run_results
 ) b
-on a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
+on a.prog == b.prog and a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
 group by mut_type, a.fuzzer, b.fuzzer;
+
+-- get the overall number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers
+DROP VIEW IF EXISTS unique_finds_overall;
+CREATE VIEW unique_finds_overall
+as
+select fuzzer, other_fuzzer, sum(finds) as finds from unique_finds
+group by fuzzer, other_fuzzer;
 
 
 DROP VIEW IF EXISTS unsolved_mutations;
