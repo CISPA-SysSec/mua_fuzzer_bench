@@ -32,10 +32,13 @@ SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 RM_WORKDIR = os.getenv("MUT_RM_WORKDIR", "1") == "1"
 
 # Timeout for the fuzzers in seconds
-TIMEOUT = 30 * 60  # half hour
+TIMEOUT = int(os.getenv("MUT_TIMEOUT", 30 * 60))  # default half hour
 
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
+
+# If true do filtering of mutations
+FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
 
 # If true redetect which mutations are used
 DETECT_MUTATIONS = True
@@ -127,7 +130,7 @@ PROGRAMS = {
     },
 }
 
-# Indicates if the evaluation should continue, is mainly used to shut down 
+# Indicates if the evaluation should continue, is mainly used to shut down
 # after a keyboard interrupt by the user.
 # Global variable that is only written in the sigint_handler, as such it is safe
 # to use in a read only fashion by the threads.
@@ -174,7 +177,7 @@ class Stats():
         c = self.conn.cursor()
         # Same as above, this reduces some overhead.
         c.execute('PRAGMA synchronous = 0')
-        c.execute('PRAGMA journal_mode = OFF') 
+        c.execute('PRAGMA journal_mode = OFF')
         # Record when we started
         self._start_time = time.time()
         # Record the last time we committed
@@ -469,7 +472,7 @@ def start_mutation_container():
     )
     yield container
     container.stop()
-        
+
 def run_exec_in_container(container, cmd):
     sub_cmd = ["docker", "exec",
         container.name,
@@ -554,7 +557,7 @@ def seed_func_aflpp(run_data):
         if container.status not in ["running", "created"]:
             break
 
-        # Sleep so we only check sometimes and do not busy loop 
+        # Sleep so we only check sometimes and do not busy loop
         time.sleep(CHECK_INTERVAL)
 
     # Check if container is still running, if it is, kill it.
@@ -712,7 +715,7 @@ def gather_seeds():
     if proc.returncode != 0:
         print("Could not build mutator_seed_aflpp image.", proc)
         exit(1)
-    
+
     # for each program gather the seeds
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
         for prog_name, prog_vals in PROGRAMS.items():
@@ -932,7 +935,7 @@ def base_eval(run_data, docker_image, executable):
                                      start_time, covered, "runtime"):
                 break
 
-            # Sleep so we only check sometimes and do not busy loop 
+            # Sleep so we only check sometimes and do not busy loop
             time.sleep(CHECK_INTERVAL)
 
         # Check if container is still running
@@ -948,7 +951,7 @@ def base_eval(run_data, docker_image, executable):
         except docker.errors.NotFound:
             # container is dead just continue maybe it worked
             pass
-        
+
         all_logs = []
         while True:
             line = logs_queue.get()
@@ -961,7 +964,7 @@ def base_eval(run_data, docker_image, executable):
         check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                                 orig_bin, docker_mut_bin, args, start_time,
                                 covered, "final")
-            
+
         return {
             'total_time': time.time() - start_time,
             'covered_file_seen': covered.found,
@@ -1091,14 +1094,15 @@ def get_all_mutations(mutator, progs):
         else:
             seeds = Path(prog_info['seeds'])
 
-        if DETECT_MUTATIONS:
-            # Compile the mutation location detector for the prog.
-            args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
-            if prog_info['is_cpp']:
-                args.insert(1, "-cpp")
-            res = run_exec_in_container(mutator, args)
-            # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
+        # Compile the mutation location detector for the prog.
+        args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
+        if prog_info['is_cpp']:
+            args.insert(1, "-cpp")
+        res = run_exec_in_container(mutator, args)
+        # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
 
+
+        if FILTER_MUTATIONS and DETECT_MUTATIONS:
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
             mutation_list_dir.mkdir(parents=True)
@@ -1116,7 +1120,10 @@ def get_all_mutations(mutator, progs):
 
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
-        mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        if FILTER_MUTATIONS:
+            mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        else:
+            mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
 
         all_mutations.extend(mutations)
 
@@ -1489,7 +1496,7 @@ def plot(title, mut_type, data):
         y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
         color=color
     )
-    
+
     plot = (plot | all_selection).add_selection(
         selection
     )
@@ -1514,7 +1521,7 @@ def gather_plot_data(runs, run_results):
         return None
 
     data = defaultdict(list)
-    unique_crashes = [] 
+    unique_crashes = []
 
     for crash in run_results.itertuples():
         import math
@@ -1693,11 +1700,23 @@ def generate_plots(db_path):
     runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
     run_results = pd.read_sql_query("select * from run_results", con)
     unique_finds = pd.read_sql_query("select * from unique_finds", con)
+    unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
     mutation_info = pd.read_sql_query("select * from mutation_types", con)
+
     res += "<h2>Plots</h2>"
+    res += "<h3>Overall Plots</h3>"
+    print("overall")
+    total_plot_data = gather_plot_data(runs, run_results)
+    if total_plot_data is not None:
+        res += plot(f"Covered Overall", "overall", total_plot_data['covered'])
+        res += plot(f"Total Overall", "overall", total_plot_data['total'])
+    res += '<h4>Unique Finds</h4>'
+    res += 'Left finds what upper does not.'
+    res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
+
     for mut_type in mut_types['mut_type']:
         print(mut_type)
-        res += create_mut_type_plot(mut_type, 
+        res += create_mut_type_plot(mut_type,
             runs[runs.mut_type == mut_type],
             run_results[run_results.mut_type == mut_type],
             unique_finds[unique_finds.mut_type == mut_type],
@@ -1708,7 +1727,7 @@ def generate_plots(db_path):
     out_path = Path(db_path).with_suffix(".html").resolve()
     print(f"Writing plots to: {out_path}")
     with open(out_path, 'w') as f:
-        f.write(res) 
+        f.write(res)
     print(f"Open: file://{out_path}")
 
 def main():
