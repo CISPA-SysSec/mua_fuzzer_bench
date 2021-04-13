@@ -20,6 +20,8 @@ RUN gradle clean && gradle build
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 
+RUN apt update
+
 
 # ################################################################################
 # # re2

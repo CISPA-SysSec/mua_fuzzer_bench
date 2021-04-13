@@ -40,7 +40,9 @@ void signal_triggered_mutation(int64_t UID) {
     if (stat(triggeredFolderPath, &st) != -1) {
         char* filename = (char*) malloc(strlen(triggeredFolderPath) + 100);
         sprintf(filename, "%s/%" PRId64, triggeredFolderPath, UID);
-        open(filename, O_CREAT);
+        int fd = open(filename, O_CREAT);
+        fsync(fd);
+        close(fd);
     }
 }
 
