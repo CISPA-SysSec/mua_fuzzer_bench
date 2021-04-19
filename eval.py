@@ -777,20 +777,15 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
             if str(path) not in crashing_inputs:
+                input_args = args.replace("@@", str(path)).replace("___FILE___", str(path))
                 # Run input on original binary
-                orig_cmd = ["/run_bin.sh", orig_bin]
-                args = args.replace("@@", str(path))
-                args = args.replace("___FILE___", str(path))
-                orig_cmd += shlex.split(args)
+                orig_cmd = ["/run_bin.sh", orig_bin] + shlex.split(input_args)
                 proc = run_exec_in_container(testing_container, orig_cmd)
                 orig_res = (proc.stdout, proc.stderr)
                 orig_returncode = proc.returncode
 
                 # Run input on mutated binary
-                mut_cmd = ["/run_bin.sh", mut_bin]
-                args = args.replace("@@", str(path))
-                args = args.replace("___FILE___", str(path))
-                mut_cmd += shlex.split(args)
+                mut_cmd = ["/run_bin.sh", mut_bin] + shlex.split(input_args)
                 proc = run_exec_in_container(testing_container, mut_cmd)
                 mut_res = (proc.stdout, proc.stderr)
 
