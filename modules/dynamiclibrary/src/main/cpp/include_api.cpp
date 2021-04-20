@@ -9,6 +9,7 @@
 #include "../public/include_api.h"
 #include "includes.h"
 #include <stdarg.h>
+#include <cerrno>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,10 +22,13 @@ const int64_t TRIGGEREDUIDSIZE = 1000000;
 bool triggered[TRIGGEREDUIDSIZE] = { false };
 
 void signal_triggered_mutation(int64_t UID) {
-    if (UID < TRIGGEREDUIDSIZE) {
+    if (0 <= UID && UID < TRIGGEREDUIDSIZE) {
         if (triggered[UID]) {
             return;
         }
+    } else {
+        fprintf(stderr, "UID out of range %d\n", UID);
+        abort();
     }
     triggered[UID] = true;
     const char* triggeredFolderPath = getenv("TRIGGERED_FOLDER");
@@ -34,7 +38,10 @@ void signal_triggered_mutation(int64_t UID) {
     }
     // check if folder exists, if not create it
     if (stat(triggeredFolderPath, &st) == -1) {
-        mkdir(triggeredFolderPath, 0700);
+        if (mkdir(triggeredFolderPath, 0777) != 0) {
+            fprintf(stderr, "Could not create triggered folder path: %s reason: %s\n",
+                triggeredFolderPath, strerror(errno));
+        }
     }
     // check if folder exists now, if so place file in it
     if (stat(triggeredFolderPath, &st) != -1) {
