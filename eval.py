@@ -1468,8 +1468,8 @@ def plot(title, mut_type, data):
     plot = alt.Chart(data).mark_line(
         interpolate='step-after',
     ).encode(
-        x=alt.X('time', scale=alt.Scale(type='symlog')),
-        y='percentage',
+        x=alt.X('time', title="Time (Seconds)"),
+        y=alt.Y('percentage', title="Percentage Killed Mutants"),
         color='fuzzer',
         tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
     ).properties(
