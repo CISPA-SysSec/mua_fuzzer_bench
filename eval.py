@@ -1515,6 +1515,30 @@ def gather_plot_data(runs, run_results):
     if len(run_results) == 0:
         return None
 
+    totals_set = defaultdict(set)
+    max_time = 0
+    all_progs = set(run.prog for run in runs.itertuples())
+    all_fuzzers = set(run.fuzzer for run in runs.itertuples())
+    cnt_prog_runs = defaultdict(set)
+    cnt_fuzzer_runs = defaultdict(set)
+    cnt_fuzzer_prog_runs = defaultdict(set)
+    cnt_runs = set()
+
+    for event in run_results.itertuples():
+        cnt_prog_runs[event.prog].add(event.mut_id)
+        cnt_fuzzer_runs[event.fuzzer].add((event.prog, event.mut_id))
+        cnt_fuzzer_prog_runs[(event.fuzzer, event.prog)].add(event.mut_id)
+        cnt_runs.add((event.prog, event.mut_id))
+
+    total_runs = {}
+    for prog, max_total in cnt_prog_runs.items():
+        total_runs[(TOTAL_FUZZER, prog)] = len(max_total)
+    for fuzzer, max_total in cnt_fuzzer_runs.items():
+        total_runs[(fuzzer, ALL_PROG)] = len(max_total)
+    for (fuzzer, prog), max_total in cnt_fuzzer_prog_runs.items():
+        total_runs[(fuzzer, prog)] = len(max_total)
+    total_runs[(TOTAL_FUZZER, ALL_PROG)] = len(cnt_runs)
+
     data = defaultdict(list)
     unique_events = []
 
@@ -1547,20 +1571,6 @@ def gather_plot_data(runs, run_results):
         'covered': 0,
         'confirmed': 0,
     })
-    totals_set = defaultdict(set)
-    max_time = 0
-    all_progs = set(run.prog for run in runs.itertuples())
-    all_fuzzers = set(run.fuzzer for run in runs.itertuples())
-    max_prog_runs = { prog: max(run.done for run in runs[runs.prog == prog].itertuples()) for prog in all_progs }
-    total_runs = {}
-    for prog, max_total in max_prog_runs.items():
-        total_runs[(TOTAL_FUZZER, prog)] = max_total
-    sum_fuzzer_runs = { fuzzer: sum(run.done for run in runs[runs.fuzzer == fuzzer].itertuples()) for fuzzer in all_fuzzers }
-    for fuzzer, max_total in sum_fuzzer_runs.items():
-        total_runs[(fuzzer, ALL_PROG)] = max_total
-    for run in runs.itertuples():
-        total_runs[(run.fuzzer, run.prog)] = max_prog_runs[run.prog]
-    total_runs[(TOTAL_FUZZER, ALL_PROG)] = max(sum_fuzzer_runs.values())
 
     def inc_counter(fuzzer, prog, id, counter_type):
         counter[(fuzzer, prog)][counter_type] += 1
