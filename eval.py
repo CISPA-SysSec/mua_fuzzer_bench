@@ -817,7 +817,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                     'num_triggered': num_triggered,
                 }
 
-                if (orig_returncode != mut_returncode or orig_res != mut_res):
+                if (orig_returncode != mut_returncode):  # or orig_res != mut_res):
                     return True
     return False
 
