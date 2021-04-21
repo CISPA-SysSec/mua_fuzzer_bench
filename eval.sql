@@ -48,7 +48,8 @@ select
 	f_by_seed,
 	found - f_by_seed as f_by_f,
 	ifnull(crashed, 0) as crashed,
-	total_time
+	round(total_time / total / 60, 2) as avg_time_minutes,
+	round(total_time / 60 / 60 / 24, 2) as total_time_days
 from (
 	select mut_type, fuzzer, prog, count(*) as total
 	from runs
@@ -80,7 +81,8 @@ left join (
 ) crashed on
 	runs_mut_type.mut_type = crashed.mut_type and
 	runs_mut_type.prog = crashed.prog and
-	runs_mut_type.fuzzer = crashed.fuzzer;
+	runs_mut_type.fuzzer = crashed.fuzzer
+group by runs_mut_type.mut_type, runs_mut_type.prog, runs_mut_type.fuzzer;
 	
 -- results for all runs grouped by mut type
 DROP VIEW IF EXISTS run_results_by_mut_type;
@@ -98,7 +100,8 @@ select
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	sum(total_time) as total_time
+	round(avg(avg_time_minutes), 2) as avg_time_minutes,
+	sum(total_time_days) as total_time_days
 from run_results_by_mut_type_and_fuzzer
 join mutation_types on run_results_by_mut_type_and_fuzzer.mut_type == mutation_types.mut_type
 group by mutation_types.mut_type;
@@ -117,7 +120,8 @@ select fuzzer,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	sum(total_time) as total_time
+	round(avg(avg_time_minutes), 2) as avg_time_minutes,
+	sum(total_time_days) as total_time_days
 from run_results_by_mut_type_and_fuzzer
 group by fuzzer;
 
@@ -135,7 +139,8 @@ select prog,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	sum(total_time) as total_time
+	round(avg(avg_time_minutes), 2) as avg_time_minutes,
+	sum(total_time_days) as total_time_days
 from run_results_by_mut_type_and_fuzzer
 group by prog;
 
