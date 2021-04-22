@@ -1468,7 +1468,7 @@ def plot(title, mut_type, data):
     plot = alt.Chart(data).mark_line(
         interpolate='step-after',
     ).encode(
-        x=alt.X('time', title="Time (Seconds)"),
+        x=alt.X('time', title="Time (Seconds)"), #, scale=alt.Scale(type='symlog')),
         y=alt.Y('percentage', title="Percentage Killed Mutants"),
         color='fuzzer',
         tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
@@ -1515,52 +1515,62 @@ def gather_plot_data(runs, run_results):
     if len(run_results) == 0:
         return None
 
-    data = defaultdict(list)
-    unique_crashes = []
+    totals_set = defaultdict(set)
+    max_time = 0
+    all_progs = set(run.prog for run in runs.itertuples())
+    all_fuzzers = set(run.fuzzer for run in runs.itertuples())
+    cnt_prog_runs = defaultdict(set)
+    cnt_fuzzer_runs = defaultdict(set)
+    cnt_fuzzer_prog_runs = defaultdict(set)
+    cnt_runs = set()
 
-    for crash in run_results.itertuples():
+    for event in run_results.itertuples():
+        cnt_prog_runs[event.prog].add(event.mut_id)
+        cnt_fuzzer_runs[event.fuzzer].add((event.prog, event.mut_id))
+        cnt_fuzzer_prog_runs[(event.fuzzer, event.prog)].add(event.mut_id)
+        cnt_runs.add((event.prog, event.mut_id))
+
+    total_runs = {}
+    for prog, max_total in cnt_prog_runs.items():
+        total_runs[(TOTAL_FUZZER, prog)] = len(max_total)
+    for fuzzer, max_total in cnt_fuzzer_runs.items():
+        total_runs[(fuzzer, ALL_PROG)] = len(max_total)
+    for (fuzzer, prog), max_total in cnt_fuzzer_prog_runs.items():
+        total_runs[(fuzzer, prog)] = len(max_total)
+    total_runs[(TOTAL_FUZZER, ALL_PROG)] = len(cnt_runs)
+
+    data = defaultdict(list)
+    unique_events = []
+
+    for event in run_results.itertuples():
         import math
-        if crash.covered_file_seen is None or math.isnan(crash.covered_file_seen):
+        if event.covered_file_seen is None or math.isnan(event.covered_file_seen):
             continue
-        unique_crashes.append({
-            'fuzzer': crash.fuzzer,
-            'prog': crash.prog,
-            'id': crash.mut_id,
+        unique_events.append({
+            'fuzzer': event.fuzzer,
+            'prog': event.prog,
+            'id': event.mut_id,
             'type': 'covered',
-            'stage': 'initial' if crash.covered_by_seed else crash.stage,
-            'time': crash.covered_file_seen,
+            'stage': 'initial' if event.covered_by_seed else event.stage,
+            'time': event.covered_file_seen,
         })
 
-    for crash in run_results.itertuples():
-        if crash.confirmed != 1:
+    for event in run_results.itertuples():
+        if event.confirmed != 1:
             continue
-        unique_crashes.append({
-            'fuzzer': crash.fuzzer,
-            'prog': crash.prog,
-            'id': crash.mut_id,
+        unique_events.append({
+            'fuzzer': event.fuzzer,
+            'prog': event.prog,
+            'id': event.mut_id,
             'type': 'confirmed',
-            'stage': crash.stage,
-            'time': crash.time_found,
+            'stage': event.stage,
+            'time': event.time_found,
         })
 
     counter = defaultdict(lambda: {
         'covered': 0,
         'confirmed': 0,
     })
-    totals_set = defaultdict(set)
-    max_time = 0
-    all_progs = set(run.prog for run in runs.itertuples())
-    all_fuzzers = set(run.fuzzer for run in runs.itertuples())
-    max_prog_runs = { prog: max(run.done for run in runs[runs.prog == prog].itertuples()) for prog in all_progs }
-    total_runs = {}
-    for prog, max_total in max_prog_runs.items():
-        total_runs[(TOTAL_FUZZER, prog)] = max_total
-    sum_fuzzer_runs = { fuzzer: sum(run.done for run in runs[runs.fuzzer == fuzzer].itertuples()) for fuzzer in all_fuzzers }
-    for fuzzer, max_total in sum_fuzzer_runs.items():
-        total_runs[(fuzzer, ALL_PROG)] = max_total
-    for run in runs.itertuples():
-        total_runs[(run.fuzzer, run.prog)] = max_prog_runs[run.prog]
-    total_runs[(TOTAL_FUZZER, ALL_PROG)] = max(sum_fuzzer_runs.values())
 
     def inc_counter(fuzzer, prog, id, counter_type):
         counter[(fuzzer, prog)][counter_type] += 1
@@ -1596,9 +1606,9 @@ def gather_plot_data(runs, run_results):
                 'percentage': val * 100,
             })
 
-    for crash in unique_crashes:
-        if crash['stage'] == 'initial':
-            inc_counter(crash['fuzzer'], crash['prog'], crash['id'], crash['type'])
+    for event in unique_events:
+        if event['stage'] == 'initial':
+            inc_counter(event['fuzzer'], event['prog'], event['id'], event['type'])
 
     # add initial points
     for run in runs.itertuples():
@@ -1610,19 +1620,19 @@ def gather_plot_data(runs, run_results):
     add_datapoint(TOTAL_FUZZER, ALL_PROG, 0)
 
     # add the data points
-    for crash in sorted(unique_crashes, key=lambda x: x['time']):
-        if crash['stage'] == 'initial':
+    for event in sorted(unique_events, key=lambda x: x['time']):
+        if event['stage'] == 'initial':
             continue
 
-        if crash['time'] > max_time:
-            max_time = crash['time']
+        if event['time'] > max_time:
+            max_time = event['time']
 
-        total_inc = inc_counter(crash['fuzzer'], crash['prog'], crash['id'], crash['type'])
-        add_datapoint(crash['fuzzer'], crash['prog'], crash['time'])
-        add_datapoint(crash['fuzzer'], ALL_PROG, crash['time'])
+        total_inc = inc_counter(event['fuzzer'], event['prog'], event['id'], event['type'])
+        add_datapoint(event['fuzzer'], event['prog'], event['time'])
+        add_datapoint(event['fuzzer'], ALL_PROG, event['time'])
         if total_inc:
-            add_datapoint(TOTAL_FUZZER, crash['prog'], crash['time'])
-            add_datapoint(TOTAL_FUZZER, ALL_PROG, crash['time'])
+            add_datapoint(TOTAL_FUZZER, event['prog'], event['time'])
+            add_datapoint(TOTAL_FUZZER, ALL_PROG, event['time'])
 
     # add final points
     for fuzzer, prog in counter.keys():
