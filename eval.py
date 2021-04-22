@@ -1468,7 +1468,7 @@ def plot(title, mut_type, data):
     plot = alt.Chart(data).mark_line(
         interpolate='step-after',
     ).encode(
-        x=alt.X('time', title="Time (Seconds)"), #, scale=alt.Scale(type='symlog')),
+        x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
         y=alt.Y('percentage', title="Percentage Killed Mutants"),
         color='fuzzer',
         tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
@@ -1530,7 +1530,7 @@ def gather_plot_data(runs, run_results):
         cnt_fuzzer_prog_runs[(event.fuzzer, event.prog)].add(event.mut_id)
         cnt_runs.add((event.prog, event.mut_id))
 
-    total_runs = {}
+    total_runs = defaultdict(lambda: 0)
     for prog, max_total in cnt_prog_runs.items():
         total_runs[(TOTAL_FUZZER, prog)] = len(max_total)
     for fuzzer, max_total in cnt_fuzzer_runs.items():
