@@ -17,21 +17,38 @@ select
 	executed_runs.prog,
 	covered_file_seen / 60 as covered_file_seen,
 	executed_runs.covered_by_seed,
-	time_found / 60 as time_found,
+	case confirmed when 1 then time_found / 60 else NULL end as time_found,
 	total_time / 60 as total_time,
 	-- orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
-	orig_return_code != mut_return_code as confirmed,
-	stage from executed_runs
+	confirmed,
+	stage
+from executed_runs
 inner join runs on
 	executed_runs.prog = runs.prog and
 	executed_runs.mutation_id = runs.mutation_id and
 	executed_runs.fuzzer = runs.fuzzer
-left join crashing_inputs on
+left join (
+		select orig_return_code != mut_return_code as confirmed, *
+		from crashing_inputs
+	) crashing_inputs on
 	executed_runs.prog = crashing_inputs.prog and
 	executed_runs.mutation_id = crashing_inputs.mutation_id and
 	executed_runs.fuzzer = crashing_inputs.fuzzer
-where confirmed is NULL or confirmed = 1
-group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
+group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id
+UNION all
+select
+	fuzzer,
+	NULL as mut_type,
+	mutation_id as mut_id,
+	prog,
+	NULL as covered_file_seen,
+	0 as covered_by_seed,
+	NULL as time_found,
+	NULL as total_time,
+	-- orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
+	0 as confirmed,
+	"crashed" as stage
+from run_crashed;
 
 -- results for all runs grouped by mut_type
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
@@ -64,7 +81,7 @@ left join (
 		   count(covered_file_seen) as covered,
 		   count(case when covered_by_seed = 1 then 1 else null end) as c_by_seed,
 		   count(time_found) as found,
-		   count(case when stage = "initial" then 1 else null end) as f_by_seed,
+		   count(case when stage = "initial" and confirmed then 1 else null end) as f_by_seed,
 		   sum(total_time) as total_time
     from run_results
 	group by mut_type, fuzzer, prog
