@@ -212,6 +212,14 @@
         "procedure": "Changing a '+' operator to  a '-' operator regardless for integer and floating point numbers."
     },
     {
+        "pattern_name": "REDIRECT_BRANCH",
+        "typeID": 26,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "RedirectBranch",
+        "description": "Negate the result of the branching condition before branching.",
+        "procedure": "Redirecting the control flow by negating the result of the condition before branching."
+    },
+    {
         "pattern_name": "SIGNED_LESS_THAN_SQUARED",
         "typeID": 102,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
