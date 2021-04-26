@@ -200,6 +200,19 @@ public:
     ) override;
 };
 
+class NewArrayPattern: public CallInstPattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
 
 // ICmpInst types of instruction patterns
 class SignedLessThanEqualToPattern: public ICmpInstPattern{

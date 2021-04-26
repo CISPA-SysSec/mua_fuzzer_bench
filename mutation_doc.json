@@ -196,6 +196,14 @@
         "procedure": "Mutating snprintf such that the format string is already filled on printing, so instead of calling snprintf('%d %s', 10, string); we simulate the call snprintf('10 <string-value>');. This might cause illegal memory accesses and printing of secrets if the string argument is user controlled."
     },
     {
+        "pattern_name": "NEW_ARRAY",
+        "typeID": 24,
+        "pattern_location": "./modules/utilities/src/main/cpp/callInst_patterns.cpp",
+        "pattern_class": "NewArrayPattern",
+        "description": "Mutating new[] in cpp such that the array is allocated lesser memory",
+        "procedure": "We decrease allocated memory size in the 'new' call by 5 units."
+    },
+    {
         "pattern_name": "SIGNED_LESS_THAN_SQUARED",
         "typeID": 102,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",

@@ -192,3 +192,42 @@ bool CallocPattern::mutate(
     }
     return false;
 }
+
+std::vector<std::string>
+NewArrayPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    getfunNameString(instr);
+    std::string demangled_instr_name = demangle(instr);
+    if (demangled_instr_name.find("operator new[]") != std::string::npos) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, NEW_ARRAY));
+    }
+    return results;
+}
+
+/**
+ * On new[] it allocates 5 units less memory.
+ */
+bool NewArrayPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto* callinst = dyn_cast<CallInst>(instr);
+    std::string demangled_instr_name = demangle(callinst);
+    if (demangled_instr_name.find("operator new[]") != std::string::npos) {
+        if (isMutationLocation(instr, seglist, NEW_ARRAY)){
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            Value *op_val = callinst->getOperand(0);
+            Value *newVal = builder->CreateSub(op_val, builder->getIntN(op_val->getType()->getIntegerBitWidth(), 5));
+            callinst->setOperand(0, newVal);
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}

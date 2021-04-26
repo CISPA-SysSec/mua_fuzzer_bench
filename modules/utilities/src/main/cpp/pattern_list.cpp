@@ -13,6 +13,7 @@ void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <PrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
+    CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
 }
 
 // Add new ICmpInstPattern objects here as you add them.
