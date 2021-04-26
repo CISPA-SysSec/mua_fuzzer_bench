@@ -593,6 +593,35 @@ public:
     ) override;
 };
 
+class SwitchPlusMinus: public Pattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
+
+class RedirectBranch: public Pattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
+
 class UnInitLocalVariables: public Pattern{
 public:
     std::vector<std::string>

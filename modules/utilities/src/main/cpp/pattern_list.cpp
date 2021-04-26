@@ -58,6 +58,8 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <ShiftSwitch>());
     MiscInstPatterns.push_back(std::make_unique <UnInitLocalVariables>());
     MiscInstPatterns.push_back(std::make_unique <CompareEqualToPattern>());
+    MiscInstPatterns.push_back(std::make_unique <SwitchPlusMinus>());
+    MiscInstPatterns.push_back(std::make_unique <RedirectBranch>());
 }
 
 // Global function to call all the vector populators

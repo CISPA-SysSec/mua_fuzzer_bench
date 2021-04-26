@@ -260,6 +260,118 @@ bool ShiftSwitch::mutate(
     return false;
 }
 
+std::vector<std::string>
+SwitchPlusMinus::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    // TODO currently leaves out nuw/nsw versions of add/sub.
+    if (dyn_cast<AddOperator>(instr) ||
+            dyn_cast<SubOperator>(instr) ||
+                    instr->getOpcode() == BinaryOperator::FAdd ||
+                    instr->getOpcode() == BinaryOperator::FSub) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SWITCH_PLUS_MINUS));
+    }
+    return results;
+}
+
+
+/**
+ * Replaces an arithmetic shift with a logical shift and vice versa.
+ */
+bool SwitchPlusMinus::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    if (isMutationLocation(instr, seglist, SWITCH_PLUS_MINUS)) {
+        auto segref = *seglist;
+        if (auto castedadd = dyn_cast<AddOperator>(instr)) {
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto ashr = builder->CreateSub(castedadd->getOperand(0), castedadd->getOperand(1));
+            instr->replaceAllUsesWith(ashr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (auto castedsub = dyn_cast<SubOperator>(instr)) {
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateAdd(castedsub->getOperand(0), castedsub->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (instr->getOpcode() == BinaryOperator::FAdd) {
+            auto castedBinaryOperator = dyn_cast<BinaryOperator>(instr);
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateFSub(castedBinaryOperator->getOperand(0), castedBinaryOperator->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (instr->getOpcode() == BinaryOperator::FSub) {
+            auto castedBinaryOperator = dyn_cast<BinaryOperator>(instr);
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateFAdd(castedBinaryOperator->getOperand(0), castedBinaryOperator->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        std::cerr << "Given binary operator is not in {add, sub, fadd, fsub} but should be, something went wrong for UID " << segref["UID"] << std::endl;
+    }
+    return false;
+}
+
+std::vector<std::string>
+RedirectBranch::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    // TODO currently leaves out nuw/nsw versions of add/sub.
+    if (auto br = dyn_cast<BranchInst>(instr)) {
+        if (br->isConditional()) {
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, REDIRECT_BRANCH));
+        }
+    }
+    return results;
+}
+
+
+/**
+ * Replaces an arithmetic shift with a logical shift and vice versa.
+ */
+bool RedirectBranch::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    if (isMutationLocation(instr, seglist, REDIRECT_BRANCH)) {
+        if (auto castedBranch = dyn_cast<BranchInst>(instr)) {
+            auto segref = *seglist;
+            if (castedBranch->isConditional()) {
+                builderMutex.lock();
+                addMutationFoundSignal(builder, M, segref["UID"]);
+                auto negation = builder->CreateNot(castedBranch->getCondition());
+                castedBranch->setCondition(negation);
+                builderMutex.unlock();
+                return true;
+            } else {
+                std::cerr << "Given branching is not conditional, something went wrong for UID " << segref["UID"] << std::endl;
+            }
+        }
+    }
+    return false;
+}
+
 
 std::vector<std::string>
 UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
