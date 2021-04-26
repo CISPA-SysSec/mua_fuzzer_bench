@@ -260,6 +260,78 @@ bool ShiftSwitch::mutate(
     return false;
 }
 
+std::vector<std::string>
+SwitchPlusMinus::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    // TODO currently leaves out nuw/nsw versions of add/sub.
+    if (dyn_cast<AddOperator>(instr) ||
+            dyn_cast<SubOperator>(instr) ||
+                    instr->getOpcode() == BinaryOperator::FAdd ||
+                    instr->getOpcode() == BinaryOperator::FSub) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SWITCH_PLUS_MINUS));
+    }
+    return results;
+}
+
+
+/**
+ * Replaces an arithmetic shift with a logical shift and vice versa.
+ */
+bool SwitchPlusMinus::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    if (isMutationLocation(instr, seglist, SWITCH_PLUS_MINUS)) {
+        if (auto castedadd = dyn_cast<AddOperator>(instr)) {
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto ashr = builder->CreateSub(castedadd->getOperand(0), castedadd->getOperand(1));
+            instr->replaceAllUsesWith(ashr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (auto castedsub = dyn_cast<SubOperator>(instr)) {
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateAdd(castedsub->getOperand(0), castedsub->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (instr->getOpcode() == BinaryOperator::FAdd) {
+            auto castedBinaryOperator = dyn_cast<BinaryOperator>(instr);
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateFSub(castedBinaryOperator->getOperand(0), castedBinaryOperator->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+        if (instr->getOpcode() == BinaryOperator::FSub) {
+            auto castedBinaryOperator = dyn_cast<BinaryOperator>(instr);
+            builderMutex.lock();
+            auto segref = *seglist;
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto lshr = builder->CreateFAdd(castedBinaryOperator->getOperand(0), castedBinaryOperator->getOperand(1));
+            instr->replaceAllUsesWith(lshr);
+            instr->removeFromParent();
+            builderMutex.unlock();
+            return true;
+        }
+    }
+    return false;
+}
+
 
 std::vector<std::string>
 UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {

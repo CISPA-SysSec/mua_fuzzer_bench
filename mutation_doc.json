@@ -204,6 +204,14 @@
         "procedure": "We decrease allocated memory size in the 'new' call by 5 units."
     },
     {
+        "pattern_name": "SWITCH_PLUS_MINUS",
+        "typeID": 25,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "SwitchPlusMinus",
+        "description": "Changing a '+' operator to a '-' operator and vice versa.",
+        "procedure": "Changing a '+' operator to  a '-' operator regardless for integer and floating point numbers."
+    },
+    {
         "pattern_name": "SIGNED_LESS_THAN_SQUARED",
         "typeID": 102,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",
