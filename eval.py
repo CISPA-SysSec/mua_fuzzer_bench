@@ -817,7 +817,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                     'num_triggered': num_triggered,
                 }
 
-                if (orig_returncode != mut_returncode or orig_res != mut_res):
+                if (orig_returncode != mut_returncode):  # or orig_res != mut_res):
                     return True
     return False
 
@@ -1468,8 +1468,8 @@ def plot(title, mut_type, data):
     plot = alt.Chart(data).mark_line(
         interpolate='step-after',
     ).encode(
-        x=alt.X('time'), #, scale=alt.Scale(type='symlog')),
-        y='percentage',
+        x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
+        y=alt.Y('percentage', title="Percentage Killed Mutants"),
         color='fuzzer',
         tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
     ).properties(
@@ -1495,11 +1495,11 @@ def plot(title, mut_type, data):
     plot = (plot | all_selection).add_selection(
         selection
     )
-
-    res = f'<div id="{title.replace(" ", "")}{func_name}{mut_type}"></div>'
+    slug_title = title.replace(" ", "").replace(":", "")
+    res = f'<div id="{slug_title}{func_name}{mut_type}"></div>'
     res += '''<script type="text/javascript">
-                vegaEmbed('#{title}{func_name}{mut_id}', {spec1}).catch(console.error);
-              </script>'''.format(title=title.replace(" ", ""), func_name=func_name, mut_id=mut_type,
+                vegaEmbed('#{slug_title}{func_name}{mut_id}', {spec1}).catch(console.error);
+              </script>'''.format(slug_title=slug_title, func_name=func_name, mut_id=mut_type,
                                   spec1=plot.to_json(indent=None))
     return res
 
@@ -1530,7 +1530,7 @@ def gather_plot_data(runs, run_results):
         cnt_fuzzer_prog_runs[(event.fuzzer, event.prog)].add(event.mut_id)
         cnt_runs.add((event.prog, event.mut_id))
 
-    total_runs = {}
+    total_runs = defaultdict(lambda: 0)
     for prog, max_total in cnt_prog_runs.items():
         total_runs[(TOTAL_FUZZER, prog)] = len(max_total)
     for fuzzer, max_total in cnt_fuzzer_runs.items():
@@ -1671,8 +1671,8 @@ def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_inf
     res += '<h4>Overview</h4>'
     res += runs.to_html()
     if plot_data is not None:
-        res += plot(f"Covered {mut_type}", mut_type, plot_data['covered'])
-        res += plot(f"Total {mut_type}", mut_type, plot_data['total'])
+        res += plot(f"Killed Covered Mutants of type: {mut_type}", mut_type, plot_data['covered'])
+        res += plot(f"Killed Mutants of type: {mut_type}", mut_type, plot_data['total'])
     res += '<h4>Unique Finds</h4>'
     res += 'Left finds what upper does not.'
     res += matrix_unique_finds(unique_finds).to_html(na_rep="")
@@ -1713,8 +1713,8 @@ def generate_plots(db_path):
     print("overall")
     total_plot_data = gather_plot_data(runs, run_results)
     if total_plot_data is not None:
-        res += plot(f"Covered Overall", "overall", total_plot_data['covered'])
-        res += plot(f"Total Overall", "overall", total_plot_data['total'])
+        res += plot(f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'])
+        res += plot(f"Killed Mutants Overall", "overall", total_plot_data['total'])
     res += '<h4>Unique Finds</h4>'
     res += 'Left finds what upper does not.'
     res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")

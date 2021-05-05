@@ -15,22 +15,40 @@ select
 	mut_type,
 	executed_runs.mutation_id as mut_id,
 	executed_runs.prog,
-	covered_file_seen,
+	covered_file_seen / 60 as covered_file_seen,
 	executed_runs.covered_by_seed,
-	time_found,
-	total_time,
-	orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
-	stage from executed_runs
+	case confirmed when 1 then time_found / 60 else NULL end as time_found,
+	total_time / 60 as total_time,
+	-- orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
+	confirmed,
+	stage
+from executed_runs
 inner join runs on
 	executed_runs.prog = runs.prog and
 	executed_runs.mutation_id = runs.mutation_id and
 	executed_runs.fuzzer = runs.fuzzer
-left join crashing_inputs on
+left join (
+		select orig_return_code != mut_return_code as confirmed, *
+		from crashing_inputs
+	) crashing_inputs on
 	executed_runs.prog = crashing_inputs.prog and
 	executed_runs.mutation_id = crashing_inputs.mutation_id and
 	executed_runs.fuzzer = crashing_inputs.fuzzer
-where confirmed is NULL or confirmed = 1
-group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id;
+group by executed_runs.prog, executed_runs.fuzzer, executed_runs.mutation_id
+UNION all
+select
+	fuzzer,
+	NULL as mut_type,
+	mutation_id as mut_id,
+	prog,
+	NULL as covered_file_seen,
+	0 as covered_by_seed,
+	NULL as time_found,
+	NULL as total_time,
+	-- orig_return_code != mut_return_code or orig_stdout != mut_stdout or orig_stderr != mut_stderr as confirmed,
+	0 as confirmed,
+	"crashed" as stage
+from run_crashed;
 
 -- results for all runs grouped by mut_type
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
@@ -48,8 +66,8 @@ select
 	f_by_seed,
 	found - f_by_seed as f_by_f,
 	ifnull(crashed, 0) as crashed,
-	round(total_time / total / 60, 2) as avg_time_minutes,
-	round(total_time / 60 / 60 / 24, 2) as total_time_days
+	round(avg(total_time) / ifnull(done, 0) + ifnull(crashed, 0), 2) as avg_run_min,
+	round(sum(total_time) / 60 / 24, 2) as cpu_days
 from (
 	select mut_type, fuzzer, prog, count(*) as total
 	from runs
@@ -63,7 +81,7 @@ left join (
 		   count(covered_file_seen) as covered,
 		   count(case when covered_by_seed = 1 then 1 else null end) as c_by_seed,
 		   count(time_found) as found,
-		   count(case when stage = "initial" then 1 else null end) as f_by_seed,
+		   count(case when stage = "initial" and confirmed then 1 else null end) as f_by_seed,
 		   sum(total_time) as total_time
     from run_results
 	group by mut_type, fuzzer, prog
@@ -100,8 +118,8 @@ select
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	round(avg(avg_time_minutes), 2) as avg_time_minutes,
-	sum(total_time_days) as total_time_days
+	round(avg(avg_run_min), 2) as avg_run_min,
+	round(sum(cpu_days), 2) as cpu_days
 from run_results_by_mut_type_and_fuzzer
 join mutation_types on run_results_by_mut_type_and_fuzzer.mut_type == mutation_types.mut_type
 group by mutation_types.mut_type;
@@ -120,8 +138,8 @@ select fuzzer,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	round(avg(avg_time_minutes), 2) as avg_time_minutes,
-	sum(total_time_days) as total_time_days
+	round(avg(avg_run_min), 2) as avg_run_min,
+	round(sum(cpu_days), 2) as cpu_days
 from run_results_by_mut_type_and_fuzzer
 group by fuzzer;
 
@@ -139,8 +157,8 @@ select prog,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(crashed) as crashed,
-	round(avg(avg_time_minutes), 2) as avg_time_minutes,
-	sum(total_time_days) as total_time_days
+	round(avg(avg_run_min), 2) as avg_run_min,
+	round(sum(cpu_days), 2) as cpu_days
 from run_results_by_mut_type_and_fuzzer
 group by prog;
 
