@@ -116,7 +116,7 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
         "path": "samples/mjs/",
         "seeds": "samples/mjs_harness/seeds/",
-        "args": "@@",
+        "args": "@@", # TODO add -f ?
     },
     "harfbuzz": {
         "compile_args": [
@@ -127,6 +127,17 @@ PROGRAMS = {
         "path": "samples/harfbuzz/",
         "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
+    },
+    "file": {
+        "compile_args": [
+            {'val': "-lz", 'action': None},
+        ],
+        "is_cpp": False,
+        "orig_bin": str(Path("tmp/samples/file/magic_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/file/magic_fuzzer.bc")),
+        "path": "samples/file/",
+        "seeds": "samples/file_harness/seeds/",
+        "args": "<WORK>/samples/file_harness/magic.mgc @@",
     },
 }
 
@@ -777,7 +788,9 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
     for path in crash_dir.iterdir():
         if path.is_file() and path.name != "README.txt":
             if str(path) not in crashing_inputs:
-                input_args = args.replace("@@", str(path)).replace("___FILE___", str(path))
+                input_args = args.replace("<WORK>/", IN_DOCKER_WORKDIR
+                        ).replace("@@", str(path)
+                        ).replace("___FILE___", str(path))
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin] + shlex.split(input_args)
                 proc = run_exec_in_container(testing_container, orig_cmd)
@@ -1098,12 +1111,22 @@ def get_all_mutations(mutator, progs):
 
 
         if FILTER_MUTATIONS and DETECT_MUTATIONS:
+            print("Filtering mutations, running all seed files.")
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
             mutation_list_dir.mkdir(parents=True)
             # Run the seeds through the detector binary.
             detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
-            run_exec_in_container(mutator, ["./iterate_seeds.sh", mutation_list_dir, detector_bin, seeds])
+            detector_args_lines = ""
+            for seed in list(seeds.glob("*")):
+                detector_args = prog_info['args']
+                detector_args = detector_args.replace("<WORK>/", "").replace("@@", str(seed))
+                detector_args_lines += detector_args
+                detector_args_lines += "\n"
+            run = run_exec_in_container(mutator,
+                    ["./iterate_seeds.sh", mutation_list_dir, detector_bin, detector_args_lines])
+            #  print(run.stdout.decode())
+            #  print(run.stderr.decode())
 
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
@@ -1116,9 +1139,11 @@ def get_all_mutations(mutator, progs):
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
         if FILTER_MUTATIONS:
+            print("Filtering mutations, checking the found mutations.")
             mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
         else:
             mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
+        print(f"Found {len(mutations)} mutations for {prog}")
 
         all_mutations.extend(mutations)
 

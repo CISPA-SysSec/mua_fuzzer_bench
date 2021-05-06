@@ -5,7 +5,6 @@ RUN mkdir mutator
 WORKDIR mutator
 
 COPY modules /home/mutator/modules
-COPY samples /home/mutator/samples
 COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 COPY run_seeds.py /home/mutator/
@@ -20,7 +19,7 @@ RUN gradle clean && gradle build
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 
-RUN apt update
+RUN apt-get update -y
 
 
 # ################################################################################
@@ -53,7 +52,7 @@ RUN apt update
 # ################################################################################
 # # vorbis
 
-# RUN apt install -y automake libtool
+# RUN apt-get install -y automake libtool
 
 # WORKDIR /home/mutator/samples
 # RUN git clone https://github.com/xiph/vorbis.git
@@ -84,12 +83,13 @@ RUN apt update
 ################################################################################
 # guetzli
 
-RUN apt install -y libpng-dev
+RUN apt-get install -y libpng-dev
 
 WORKDIR /home/mutator/samples
 RUN git clone https://github.com/google/guetzli.git
 WORKDIR /home/mutator/samples/guetzli
 RUN git checkout 214f2bb42abf5a577c079d00add5d6cc470620d3
+COPY samples/guetzli_harness /home/mutator/samples/guetzli_harness
 
 RUN CC=gclang CXX=gclang++ make
 RUN gclang++ -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Release/libguetzli_static.a -o fuzz_target && \
@@ -124,6 +124,16 @@ RUN get-bc hb-subset-fuzzer
 # RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
 # WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
 # RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
+
+################################################################################
+# file
+WORKDIR /home/mutator/samples
+RUN apt-get install -y  make autoconf automake libtool shtool zlib1g-dev
+RUN git clone --depth 1 https://github.com/file/file.git
+WORKDIR file
+COPY samples/file_harness /home/mutator/samples/file_harness
+RUN ../file_harness/build.sh
+
 
 ################################################################################
 # other stuff
