@@ -40,6 +40,9 @@ SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 # If true do filtering of mutations
 FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
 
+# If no fuzzing should happen and only the seed files should be run once.
+JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
+
 # If true redetect which mutations are used
 DETECT_MUTATIONS = True
 
@@ -207,6 +210,7 @@ class Stats():
             procedure
         )''')
 
+        # TODO this can be split up in 3 tables, runs, progs and mutations
         c.execute('''
         CREATE TABLE runs (
             prog,
@@ -890,75 +894,82 @@ def base_eval(run_data, docker_image, executable):
                 'all_logs': ["found crashing seed input"]
             }
 
-        # get access to the docker client to start the container
-        docker_client = docker.from_env()
-        # Start and run the container
-        container = docker_client.containers.run(
-            docker_image, # the image
-            [
-                executable,
-                str(compile_args),
-                str(prog_bc),
-                str(IN_DOCKER_WORKDIR/seeds),
-                str(args)
-            ], # the arguments
-            environment={
-                'TRIGGERED_OUTPUT': str(""),
-                'TRIGGERED_FOLDER': str(covered.path),
-            },
-            init=True,
-            cpuset_cpus=str(core_to_use),
-            auto_remove=True,
-            volumes={
-                str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR), 'mode': 'ro'},
-                "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
-            },
-            working_dir=str(workdir),
-            mem_limit="1g",
-            log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-                config={'max-size': '10m'}),
-            detach=True
-        )
+        if not JUST_CHECK_SEED_CRASHES:
+            # get access to the docker client to start the container
+            docker_client = docker.from_env()
+            # Start and run the container
+            container = docker_client.containers.run(
+                docker_image, # the image
+                [
+                    executable,
+                    str(compile_args),
+                    str(prog_bc),
+                    str(IN_DOCKER_WORKDIR/seeds),
+                    str(args)
+                ], # the arguments
+                environment={
+                    'TRIGGERED_OUTPUT': str(""),
+                    'TRIGGERED_FOLDER': str(covered.path),
+                },
+                init=True,
+                cpuset_cpus=str(core_to_use),
+                auto_remove=True,
+                volumes={
+                    str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR), 'mode': 'ro'},
+                    "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+                },
+                working_dir=str(workdir),
+                mem_limit="1g",
+                log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+                    config={'max-size': '10m'}),
+                detach=True
+            )
 
-        logs_queue = queue.Queue()
-        DockerLogStreamer(logs_queue, container).start()
+            logs_queue = queue.Queue()
+            DockerLogStreamer(logs_queue, container).start()
 
-        while time.time() < start_time + TIMEOUT and should_run:
-            # check if the process stopped, this should only happen in an
-            # error case
+            while time.time() < start_time + TIMEOUT and should_run:
+                # check if the process stopped, this should only happen in an
+                # error case
+                try:
+                    container.reload()
+                except docker.errors.NotFound:
+                    # container is dead stop waiting
+                    break
+                if container.status not in ["running", "created"]:
+                    break
+
+                # Check if covered file is seen
+                covered.check(False)
+
+                # Check if a crashing input has already been found
+                if check_crashing_inputs(testing_container, crashing_inputs,
+                                         crash_dir, orig_bin, docker_mut_bin, args,
+                                         start_time, covered, "runtime"):
+                    break
+
+                # Sleep so we only check sometimes and do not busy loop
+                time.sleep(CHECK_INTERVAL)
+
+            # Check if container is still running
             try:
                 container.reload()
+                if container.status in ["running", "created"]:
+
+                    # Send sigint to the process
+                    container.kill(2)
+
+                    # Wait up to 10 seconds then send sigkill
+                    container.stop()
             except docker.errors.NotFound:
-                # container is dead stop waiting
-                break
-            if container.status not in ["running", "created"]:
-                break
+                # container is dead just continue maybe it worked
+                pass
 
-            # Check if covered file is seen
-            covered.check(False)
 
-            # Check if a crashing input has already been found
-            if check_crashing_inputs(testing_container, crashing_inputs,
-                                     crash_dir, orig_bin, docker_mut_bin, args,
-                                     start_time, covered, "runtime"):
-                break
-
-            # Sleep so we only check sometimes and do not busy loop
-            time.sleep(CHECK_INTERVAL)
-
-        # Check if container is still running
-        try:
-            container.reload()
-            if container.status in ["running", "created"]:
-
-                # Send sigint to the process
-                container.kill(2)
-
-                # Wait up to 10 seconds then send sigkill
-                container.stop()
-        except docker.errors.NotFound:
-            # container is dead just continue maybe it worked
-            pass
+            # Also collect all crashing outputs
+            check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
+                                    orig_bin, docker_mut_bin, args, start_time,
+                                    covered, "final")
 
         all_logs = []
         while True:
@@ -966,12 +977,6 @@ def base_eval(run_data, docker_image, executable):
             if line == None:
                 break
             all_logs.append(line)
-
-
-        # Also collect all crashing outputs
-        check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                                orig_bin, docker_mut_bin, args, start_time,
-                                covered, "final")
 
         return {
             'total_time': time.time() - start_time,
