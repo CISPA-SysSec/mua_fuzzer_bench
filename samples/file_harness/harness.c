@@ -15,7 +15,6 @@ int main(int argc, char** argv) {
 
     LLVMFuzzerInitialize(&argc, &argv);
 
-    printf("arg 2: %s\n", argv[2]);
     fp = fopen(argv[2], "r");
     if (fp == NULL) {
         perror("Could not open file\n.");

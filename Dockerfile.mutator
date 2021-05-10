@@ -129,10 +129,31 @@ RUN get-bc hb-subset-fuzzer
 # file
 WORKDIR /home/mutator/samples
 RUN apt-get install -y  make autoconf automake libtool shtool zlib1g-dev
-RUN git clone --depth 1 https://github.com/file/file.git
+RUN git clone https://github.com/file/file.git
 WORKDIR file
+RUN git checkout b2e55e985e75de959b0e2a313e58a5178e7e4182
 COPY samples/file_harness /home/mutator/samples/file_harness
 RUN ../file_harness/build.sh
+
+################################################################################
+# libjpeg-turbo
+WORKDIR /home/mutator/samples
+RUN apt-get install -y make cmake automake libtool nasm
+RUN git clone https://github.com/libjpeg-turbo/libjpeg-turbo.git
+WORKDIR libjpeg-turbo
+RUN git checkout c23672ce52ae53bd846b555439aa0a070b6d2c07
+COPY samples/libjpeg-turbo_harness /home/mutator/samples/libjpeg-turbo_harness
+RUN ../libjpeg-turbo_harness/build.sh
+
+################################################################################
+# sqlite3
+WORKDIR /home/mutator/samples
+RUN apt-get install -y make autoconf automake libtool curl tcl zlib1g-dev
+WORKDIR sqlite3
+RUN curl -s 'https://sqlite.org/src/tarball/sqlite.tar.gz?r=c78cbf2e86850cc6' -o sqlite3.tar.gz && \
+    tar xzf sqlite3.tar.gz --strip-components 1
+COPY samples/sqlite3_harness /home/mutator/samples/sqlite3_harness
+RUN ../sqlite3_harness/build.sh
 
 
 ################################################################################

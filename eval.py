@@ -142,6 +142,28 @@ PROGRAMS = {
         "seeds": "samples/file_harness/seeds/",
         "args": "<WORK>/samples/file_harness/magic.mgc @@",
     },
+    "libjpeg": {
+        "compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc")),
+        "path": "samples/libjpeg-turbo/",
+        "seeds": "samples/libjpeg-turbo_harness/seeds/",
+        "args": "@@",
+    },
+    "sqlite3": {
+        "compile_args": [
+            {'val': "-lpthread", 'action': None},
+            {'val': "-ldl", 'action': None},
+        ],
+        "is_cpp": False,
+        "orig_bin": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz")),
+        "orig_bc": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz.bc")),
+        "path": "samples/sqlite3/",
+        "seeds": "samples/sqlite3_harness/seeds/",
+        "args": "@@",
+    },
 }
 
 # Indicates if the evaluation should continue, is mainly used to shut down
@@ -1098,6 +1120,8 @@ def get_all_mutations(mutator, progs):
             print(err)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             quit()
+        start = time.time()
+        print(f"Compiling base and locating mutations for {prog}")
 
         # Run the seeds through the mutation detector
         mutation_list_dir = Path("/dev/shm/mutation_detection")/prog
@@ -1151,6 +1175,7 @@ def get_all_mutations(mutator, progs):
         print(f"Found {len(mutations)} mutations for {prog}")
 
         all_mutations.extend(mutations)
+        print(f"Preparations for {prog} took: {time.time() - start:.2f} seconds")
 
     return all_mutations
 

@@ -41,7 +41,6 @@ int LLVMFuzzerInitialize(int* argc, char*** argv) {
     }
     // initialize magic
     char* magic_path = (*argv)[1];
-    printf("arg 1: %s\n", magic_path);
     magic = magic_open(MAGIC_NONE);
     if (unlikely(magic_load(magic, magic_path))) {
         fprintf(stderr, "error loading magic file: %s\n", magic_error(magic));
@@ -54,7 +53,6 @@ int LLVMFuzzerInitialize(int* argc, char*** argv) {
         printf("failed mkstemp, errno=%d\n", errno);
         return -2;
     }
-    printf("tmp: %s\n", tmp_filename);
     return 0;
 }
 
