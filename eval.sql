@@ -1,3 +1,16 @@
+-- size of the tables in the database
+DROP VIEW IF EXISTS table_sizes;
+CREATE VIEW table_sizes
+as
+SELECT name, printf("%.2f", cast(SUM("pgsize") as float) / (1024*1024)) as "MiBi" FROM "dbstat" group by name;
+
+-- collect info on all runs
+DROP VIEW IF EXISTS runs;
+CREATE VIEW runs
+as
+select * from all_runs
+inner join progs on all_runs.prog = progs.prog
+inner join mutations on all_runs.prog = mutations.prog and all_runs.mutation_id = mutations.mutation_id;
 
 -- results for all mut types
 DROP VIEW IF EXISTS mut_types;
@@ -7,8 +20,8 @@ select distinct(mut_type) as mut_type from runs
 order by mut_type;
 
 -- results for all runs
-DROP VIEW IF EXISTS run_results;
-CREATE VIEW run_results
+DROP VIEW IF EXISTS all_run_results;
+CREATE VIEW all_run_results
 as
 select
 	executed_runs.fuzzer,
@@ -49,6 +62,31 @@ select
 	0 as confirmed,
 	"crashed" as stage
 from run_crashed;
+
+-- get the prog and mut_id for all run_results that have been completed for all fuzzers
+DROP VIEW IF EXISTS completed_runs;
+CREATE VIEW completed_runs
+as
+select a.prog, a.mut_id, complete from (
+	select group_concat(fuzzer) as complete, length(group_concat(fuzzer)) as len, prog, mut_id, * from (
+		select * from all_run_results order by fuzzer
+	) group by prog, mut_id
+) a
+left join (
+	select max(length(complete)) as max_len from (
+		select group_concat(fuzzer) as complete, prog, mut_id, * from (
+			select * from all_run_results order by fuzzer
+		) group by prog, mut_id
+	)
+) m
+where a.len = m.max_len;
+
+DROP VIEW IF EXISTS run_results;
+CREATE VIEW run_results
+as
+select * from all_run_results
+inner join completed_runs
+on all_run_results.prog = completed_runs.prog and all_run_results.mut_id = completed_runs.mut_id;
 
 -- results for all runs grouped by mut_type
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
