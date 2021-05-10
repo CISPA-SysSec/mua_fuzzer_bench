@@ -1768,6 +1768,7 @@ def fuzzer_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
     print(stats)
+    # print(stats[['fuzzer', 'total', 'done', 'found', 'f_by_f', 'avg_run_min', 'cpu_days']].to_latex())
     res = "<h2>Fuzzer Stats</h2>"
     res += stats.to_html()
     return res
@@ -1789,11 +1790,11 @@ def prog_stats(con):
 def aflpp_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
-    res = "<h2>AFL++ style fuzzers -- Stats</h2>"
+    res = "<h2>AFL style fuzzers -- Stats</h2>"
     res += stats.to_html()
     return res
 
-def plot(title, mut_type, data):
+def plot(plot_dir, title, mut_type, data, num_mutations, absolute):
     import inspect
     import types
     from typing import cast
@@ -1806,20 +1807,38 @@ def plot(title, mut_type, data):
     color = alt.condition(selection,
                       alt.Color('fuzzer:O', legend=None),
                       alt.value('lightgray'))
-    plot = alt.Chart(data).mark_line(
-        interpolate='step-after',
-    ).encode(
-        x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
-        y=alt.Y('percentage', title="Percentage Killed Mutants"),
-        color='fuzzer',
-        tooltip=['time', 'confirmed', 'percentage', 'covered', 'total', 'fuzzer', 'prog'],
-    ).properties(
+    base = alt.Chart(data)
+
+    if absolute:
+        plot = base.mark_line(
+            interpolate='step-after',
+        ).encode(
+            alt.Y('value', title="Killed Mutants"),
+            x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
+            color='fuzzer',
+            tooltip=['time', 'confirmed', 'value', 'covered', 'total', 'fuzzer', 'prog'],
+        )
+        plot = plot.mark_point(size=5, opacity=1, tooltip=alt.TooltipContent("encoding")) + plot
+        #  plot2 = base.mark_line(strokeDash=[4,2]).encode(
+        #      y=alt.Y('total', title="Killed Mutants"),
+        #      x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
+        #      color='fuzzer',
+        #      tooltip=['time', 'confirmed', 'value', 'covered', 'total', 'fuzzer', 'prog'])
+        #  plot = plot + plot2
+    else:
+        plot = base.mark_line(
+            interpolate='step-after',
+        ).encode(
+            x=alt.X('time', title="Time (Minutes)"), #, scale=alt.Scale(type='symlog')),
+            y=alt.Y('value', title="Percentage Killed Mutants"),
+            color='fuzzer',
+            tooltip=['time', 'confirmed', 'value', 'covered', 'total', 'fuzzer', 'prog'])
+        plot = plot.mark_point(size=5, opacity=1, tooltip=alt.TooltipContent("encoding")) + plot
+    plot = plot.properties(
         title=title,
         width=600,
         height=400,
     )
-
-    plot = plot.mark_point(size=5, opacity=1, tooltip=alt.TooltipContent("encoding")) + plot
 
     plot = plot.add_selection(
         alt.selection_interval(bind='scales', encodings=['x'])
@@ -1827,10 +1846,21 @@ def plot(title, mut_type, data):
         selection
     )
 
+    counts = [f"{prog}: {val[0]} / {val[1]}" for prog, val in num_mutations.items()]
+
     all_selection = alt.Chart(data).mark_rect().encode(
         x=alt.X('prog', axis=alt.Axis(orient='bottom')),
         y=alt.Y('fuzzer', axis=alt.Axis(orient='right')),
         color=color
+    ).properties(
+        title=alt.TitleParams(
+            ['', '#Analyzed Mutations:'] + counts,
+            baseline='top',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10
+        )
     )
 
     plot = (plot | all_selection).add_selection(
@@ -1842,6 +1872,16 @@ def plot(title, mut_type, data):
                 vegaEmbed('#{slug_title}{func_name}{mut_id}', {spec1}).catch(console.error);
               </script>'''.format(slug_title=slug_title, func_name=func_name, mut_id=mut_type,
                                   spec1=plot.to_json(indent=None))
+    if plot_dir is not None:
+        plot_path_svg = plot_dir.joinpath(f"{slug_title}.svg")
+        plot_path_pdf = plot_path_svg.with_suffix(".pdf")
+        plot.save(f"{plot_path_svg}")
+        proc = subprocess.run(f'cat {plot_path_svg} | inkscape --pipe --export-filename="{plot_path_pdf}"',
+                shell=True, capture_output=True)
+        if proc.returncode != 0:
+            print("Error during conversion from svg to pdf:")
+            print(proc.stdout.decode())
+            print(proc.stderr.decode())
     return res
 
 def split_vals(val):
@@ -1860,6 +1900,15 @@ def gather_plot_data(runs, run_results):
     max_time = 0
     all_progs = set(run.prog for run in runs.itertuples())
     all_fuzzers = set(run.fuzzer for run in runs.itertuples())
+
+    absolute_num_mutations = defaultdict(lambda: [0, 0])
+
+    for run in runs.itertuples():
+        if run.fuzzer != list(all_fuzzers)[0]:
+            continue
+        absolute_num_mutations[run.prog][1] += run.total
+        absolute_num_mutations[ALL_PROG][1] += run.total
+
     cnt_prog_runs = defaultdict(set)
     cnt_fuzzer_runs = defaultdict(set)
     cnt_fuzzer_prog_runs = defaultdict(set)
@@ -1874,11 +1923,13 @@ def gather_plot_data(runs, run_results):
     total_runs = defaultdict(lambda: 0)
     for prog, max_total in cnt_prog_runs.items():
         total_runs[(TOTAL_FUZZER, prog)] = len(max_total)
+        absolute_num_mutations[prog][0] = len(max_total)
     for fuzzer, max_total in cnt_fuzzer_runs.items():
         total_runs[(fuzzer, ALL_PROG)] = len(max_total)
     for (fuzzer, prog), max_total in cnt_fuzzer_prog_runs.items():
         total_runs[(fuzzer, prog)] = len(max_total)
     total_runs[(TOTAL_FUZZER, ALL_PROG)] = len(cnt_runs)
+    absolute_num_mutations[ALL_PROG][0] = len(cnt_runs)
 
     data = defaultdict(list)
     unique_events = []
@@ -1927,16 +1978,25 @@ def gather_plot_data(runs, run_results):
         counts = counter[(fuzzer, prog)]
         total = total_runs[(fuzzer, prog)]
         try:
-            total_percentage = counts['confirmed'] / total
+            total_percentage = (counts['confirmed'] / total) * 100
         except ZeroDivisionError:
             total_percentage = 0
 
         try:
-            confirmed_percentage = counts['confirmed'] / counts['covered']
+            confirmed_percentage = (counts['confirmed'] / counts['covered']) * 100
         except ZeroDivisionError:
             confirmed_percentage = 0
 
-        for name, val in [('total', total_percentage), ('covered', confirmed_percentage)]:
+        try:
+            absolute = counts['confirmed']
+        except ZeroDivisionError:
+            absolute = 0
+
+        for name, val in [
+                ('total', total_percentage),
+                ('covered', confirmed_percentage),
+                ('absolute', absolute),
+        ]:
             data[name].append({
                 'fuzzer': fuzzer,
                 'prog': prog,
@@ -1944,7 +2004,7 @@ def gather_plot_data(runs, run_results):
                 'confirmed': counts['confirmed'],
                 'covered': counts['covered'],
                 'total': total,
-                'percentage': val * 100,
+                'value': val,
             })
 
     for event in unique_events:
@@ -1979,7 +2039,12 @@ def gather_plot_data(runs, run_results):
     for fuzzer, prog in counter.keys():
         add_datapoint(fuzzer, prog, max_time)
 
-    return {'total': pd.DataFrame(data['total']), 'covered': pd.DataFrame(data['covered'])}
+    return {
+        'num_mutations': absolute_num_mutations,
+        'total': pd.DataFrame(data['total']),
+        'covered': pd.DataFrame(data['covered']),
+        'absolute': pd.DataFrame(data['absolute']),
+    }
 
 def matrix_unique_finds(unique_finds):
     from collections import defaultdict
@@ -1996,7 +2061,7 @@ def matrix_unique_finds(unique_finds):
 
     return matrix
 
-def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_info):
+def create_mut_type_plot(plot_dir, mut_type, runs, run_results, unique_finds, mutation_info):
     plot_data = gather_plot_data(runs, run_results)
 
     # print(mutation_info)
@@ -2012,8 +2077,9 @@ def create_mut_type_plot(mut_type, runs, run_results, unique_finds, mutation_inf
     res += '<h4>Overview</h4>'
     res += runs.to_html()
     if plot_data is not None:
-        res += plot(f"Killed Covered Mutants of type: {mut_type}", mut_type, plot_data['covered'])
-        res += plot(f"Killed Mutants of type: {mut_type}", mut_type, plot_data['total'])
+        res += plot(None, f"Killed Covered Mutants of type: {mut_type}", mut_type, plot_data['covered'], plot_data['num_mutations'], False)
+        res += plot(None, f"Killed Mutants of type: {mut_type}", mut_type, plot_data['total'], plot_data['num_mutations'], False)
+        res += plot(None, f"Absolute Killed Mutants of type: {mut_type}", mut_type, plot_data['absolute'], plot_data['num_mutations'], True)
     res += '<h4>Unique Finds</h4>'
     res += 'Left finds what upper does not.'
     res += matrix_unique_finds(unique_finds).to_html(na_rep="")
@@ -2028,6 +2094,10 @@ def footer():
 def generate_plots(db_path):
     import pandas as pd
 
+    plot_dir = Path("plots").joinpath(Path(db_path).stem)
+    # shutil.rmtree(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
     con = sqlite3.connect(db_path)
     con.isolation_level = None
     con.row_factory = sqlite3.Row
@@ -2037,9 +2107,13 @@ def generate_plots(db_path):
         cur.executescript(f.read())
 
     res = header()
+    print("fuzzer stats")
     res += fuzzer_stats(con)
+    print("mut stats")
     res += mut_stats(con)
+    print("prog stats")
     res += prog_stats(con)
+    print("afl stats")
     res += aflpp_stats(con)
 
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
@@ -2054,15 +2128,16 @@ def generate_plots(db_path):
     print("overall")
     total_plot_data = gather_plot_data(runs, run_results)
     if total_plot_data is not None:
-        res += plot(f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'])
-        res += plot(f"Killed Mutants Overall", "overall", total_plot_data['total'])
+        res += plot(plot_dir, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
+        res += plot(plot_dir, f"Killed Mutants Overall", "overall", total_plot_data['total'], total_plot_data['num_mutations'], False)
+        res += plot(plot_dir, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
     res += '<h4>Unique Finds</h4>'
     res += 'Left finds what upper does not.'
     res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
 
     for mut_type in mut_types['mut_type']:
         print(mut_type)
-        res += create_mut_type_plot(mut_type,
+        res += create_mut_type_plot(plot_dir, mut_type,
             runs[runs.mut_type == mut_type],
             run_results[run_results.mut_type == mut_type],
             unique_finds[unique_finds.mut_type == mut_type],
