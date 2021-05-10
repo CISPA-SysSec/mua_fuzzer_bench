@@ -232,18 +232,17 @@ class Stats():
             procedure
         )''')
 
-        # TODO this can be split up in 3 tables, runs, progs and mutations
         c.execute('''
-        CREATE TABLE runs (
+        CREATE TABLE all_runs (
             prog,
-            mutation_id,
-            fuzzer,
-            workdir,
-            prog_bc,
-            compile_args,
-            args,
-            seeds,
-            orig_bin,
+            mutation_id INTEGER,
+            fuzzer
+        )''')
+
+        c.execute('''
+        CREATE TABLE mutations (
+            prog,
+            mutation_id INTEGER,
             mut_additional_info,
             mut_column,
             mut_directory,
@@ -253,9 +252,18 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE progs (
+            prog,
+            compile_args,
+            args,
+            seeds,
+            orig_bin
+        )''')
+
+        c.execute('''
         CREATE TABLE executed_runs (
             prog,
-            mutation_id,
+            mutation_id INTEGER,
             fuzzer,
             covered_file_seen,
             covered_by_seed,
@@ -265,7 +273,7 @@ class Stats():
         c.execute('''
         CREATE TABLE aflpp_runs (
             prog,
-            mutation_id,
+            mutation_id INTEGER,
             fuzzer,
             time,
             cycles_done,
@@ -284,7 +292,7 @@ class Stats():
         c.execute('''
         CREATE TABLE crashing_inputs (
             prog,
-            mutation_id,
+            mutation_id INTEGER,
             fuzzer,
             time_found,
             stage,
@@ -304,7 +312,7 @@ class Stats():
         c.execute('''
         CREATE TABLE run_crashed (
             prog,
-            mutation_id,
+            mutation_id INTEGER,
             fuzzer,
             crash_trace
         )''')
@@ -335,24 +343,42 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_run(self, c, run_data):
-        c.execute('INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    def new_bla_run(self, c, data):
+        c.execute('INSERT INTO all_runs VALUES (?, ?, ?)',
             (
-                run_data['prog'],
-                run_data['mutation_id'],
-                run_data['fuzzer'],
-                str(run_data['workdir']),
-                str(run_data['prog_bc']),
-                run_data['compile_args'],
-                run_data['args'],
-                str(run_data['seeds']),
-                run_data['orig_bin'],
-                json.dumps(run_data['mutation_data']['additionalInfo']),
-                run_data['mutation_data']['column'],
-                run_data['mutation_data']['directory'],
-                run_data['mutation_data']['filePath'],
-                run_data['mutation_data']['line'],
-                run_data['mutation_data']['type'],
+                data['prog'],
+                data['mutation_id'],
+                data['fuzzer'],
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def new_mutation(self, c, data):
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                data['prog'],
+                data['mutation_id'],
+                json.dumps(data['mutation_data']['additionalInfo']),
+                data['mutation_data']['column'],
+                data['mutation_data']['directory'],
+                data['mutation_data']['filePath'],
+                data['mutation_data']['line'],
+                data['mutation_data']['type'],
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def new_prog(self, c, prog, data):
+        print(data)
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?)',
+            (
+                prog,
+                json.dumps(data['compile_args']),
+                data['args'],
+                str(data['seeds']),
+                str(data['orig_bin']),
             )
         )
         self.conn.commit()
@@ -1110,7 +1136,7 @@ FUZZERS = {
     "honggfuzz": honggfuzz_eval,
 }
 
-def get_all_mutations(mutator, progs):
+def get_all_mutations(stats, mutator, progs):
     all_mutations = []
     # For all programs that can be done by our evaluation
     for prog in progs:
@@ -1120,6 +1146,7 @@ def get_all_mutations(mutator, progs):
             print(err)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             quit()
+        stats.new_prog(prog, prog_info)
         start = time.time()
         print(f"Compiling base and locating mutations for {prog}")
 
@@ -1174,6 +1201,13 @@ def get_all_mutations(mutator, progs):
             mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
         print(f"Found {len(mutations)} mutations for {prog}")
 
+        for mut in mutations:
+            stats.new_mutation({
+                'prog': mut[1],
+                'mutation_id': mut[0],
+                'mutation_data': mut[4][int(mut[0])],
+            })
+
         all_mutations.extend(mutations)
         print(f"Preparations for {prog} took: {time.time() - start:.2f} seconds")
 
@@ -1182,7 +1216,7 @@ def get_all_mutations(mutator, progs):
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
 def get_next_run(stats, mutator, fuzzers, progs):
-    all_mutations = get_all_mutations(mutator, progs)
+    all_mutations = get_all_mutations(stats, mutator, progs)
 
     random.shuffle(all_mutations)
     all_runs = []
@@ -1229,7 +1263,7 @@ def get_next_run(stats, mutator, fuzzers, progs):
                 'mutation_data': mutation_data[int(mutation_id)],
             }
             # Add that run to the database, so that we know it is possible
-            stats.new_run(run_data)
+            stats.new_bla_run(run_data)
             # Build our list of runs
             all_runs.append(run_data)
 
