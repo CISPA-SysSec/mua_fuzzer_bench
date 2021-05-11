@@ -1,5 +1,7 @@
 FROM mutator_deps:2004
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 WORKDIR /home/
 RUN mkdir mutator
 WORKDIR mutator

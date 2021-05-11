@@ -5,7 +5,14 @@ set -Eeuxo pipefail
 mkdir build
 cd build
 
-CC=gclang CXX=gclang++ cmake -G"Unix Makefiles" ..
+export CC=gclang
+export CXX=gclang++
+
+# CC=gclang CXX=gclang++ cmake -G"Unix Makefiles" ..
+cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_SIMD=0 -DENABLE_STATIC=1 -DENABLE_SHARED=0 \
+	-DCMAKE_C_FLAGS_RELWITHDEBINFO="-g -DNDEBUG" \
+	-DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-g -DNDEBUG"
+
 # autoreconf -fiv
 # ./configure
 make -j $(nproc)
