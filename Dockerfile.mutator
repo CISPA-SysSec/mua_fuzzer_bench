@@ -143,18 +143,6 @@ RUN gclang++ -g -O2 -static -I. \
     get-bc fuzz_target
 
 ################################################################################
-# mjs
-
-WORKDIR /home/mutator/samples
-RUN git clone https://github.com/cesanta/mjs.git
-WORKDIR /home/mutator/samples/mjs/mjs
-COPY samples/mjs_harness /home/mutator/samples/mjs_harness
-RUN make mjs.c
-RUN gclang -DMJS_MAIN -ldl -o mjs mjs.c
-RUN get-bc mjs
-WORKDIR /home/mutator
-
-################################################################################
 # libjpeg-turbo
 WORKDIR /home/mutator/samples
 RUN apt-get install -y make cmake automake libtool nasm
@@ -178,6 +166,17 @@ COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
 # RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
 # WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
 # RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
+
+################################################################################
+# mjs
+WORKDIR /home/mutator/samples
+RUN git clone https://github.com/cesanta/mjs.git
+WORKDIR /home/mutator/samples/mjs/mjs
+COPY samples/mjs_harness /home/mutator/samples/mjs_harness
+RUN make mjs.c
+RUN gclang -g -O2 -DMJS_MAIN -ldl -o mjs mjs.c
+RUN get-bc mjs
+WORKDIR /home/mutator
 
 
 ################################################################################
