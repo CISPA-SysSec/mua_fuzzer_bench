@@ -430,26 +430,27 @@ class Stats():
     @connection
     def new_crashing_inputs(self, c, crashing_inputs, prog, mutation_id, fuzzer):
         for path, data in crashing_inputs.items():
-            c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    prog,
-                    mutation_id,
-                    fuzzer,
-                    data['time_found'],
-                    data['stage'],
-                    path,
-                    data['data'],
-                    data['orig_returncode'],
-                    data['mut_returncode'],
-                    ' '.join((str(v) for v in data['orig_cmd'])),
-                    ' '.join((str(v) for v in data['mut_cmd'])),
-                    data['orig_res'][0],
-                    data['mut_res'][0],
-                    data['orig_res'][1],
-                    data['mut_res'][1],
-                    data['num_triggered']
+            if data['orig_returncode'] != data['mut_returncode']:
+                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        prog,
+                        mutation_id,
+                        fuzzer,
+                        data['time_found'],
+                        data['stage'],
+                        path,
+                        data['data'],
+                        data['orig_returncode'],
+                        data['mut_returncode'],
+                        ' '.join((str(v) for v in data['orig_cmd'])),
+                        ' '.join((str(v) for v in data['mut_cmd'])),
+                        data['orig_res'][0],
+                        data['mut_res'][0],
+                        data['orig_res'][1],
+                        data['mut_res'][1],
+                        data['num_triggered']
+                    )
                 )
-            )
         self.conn.commit()
 
     @connection
