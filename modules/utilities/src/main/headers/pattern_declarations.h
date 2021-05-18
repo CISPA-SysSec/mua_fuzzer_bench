@@ -214,20 +214,6 @@ public:
     ) override;
 };
 
-class DeleteArrayPattern: public CallInstPattern{
-public:
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            json *seglist,
-            Module& M
-    ) override;
-};
-
 // ICmpInst types of instruction patterns
 class SignedLessThanEqualToPattern: public ICmpInstPattern{
 public:
@@ -675,6 +661,19 @@ public:
     ) override;
 };
 
+class DeleteArgumentReturnPattern: public Pattern{
+public:
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            json *seglist,
+            Module& M
+    ) override;
+};
 class INetAddrFailPattern: public LibCFailPattern{
 public:
     std::vector<std::string>

@@ -32,7 +32,7 @@
 #define NEW_ARRAY 24
 #define SWITCH_PLUS_MINUS 25
 #define REDIRECT_BRANCH 26
-#define DELETE_ARRAY 27
+#define DELETE_FUNCTION_ARGUMENT 27
 
 // testing different mutations for less than and great than
 #define SIGNED_LESS_THAN_SQUARED 102

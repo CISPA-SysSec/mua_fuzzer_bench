@@ -124,4 +124,6 @@ void insertMutationApiFunctions(Module& M) {
     mutate_snprintf_args.push_back(Type::getIntNTy(llvmContext, bitsize));
     mutate_snprintf_args.push_back(Type::getInt8PtrTy(llvmContext));
     M.getOrInsertFunction("mutate_snprintf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_snprintf_args, true));
+
+    M.getOrInsertFunction("mutate_delete", Type::getVoidTy(llvmContext), Type::getInt8PtrTy(llvmContext));
 }

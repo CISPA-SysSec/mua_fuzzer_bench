@@ -14,7 +14,6 @@ void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
-    CallInstPatterns.push_back(std::make_unique <DeleteArrayPattern>());
 }
 
 // Add new ICmpInstPattern objects here as you add them.
@@ -61,6 +60,7 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <CompareEqualToPattern>());
     MiscInstPatterns.push_back(std::make_unique <SwitchPlusMinus>());
     MiscInstPatterns.push_back(std::make_unique <RedirectBranch>());
+    MiscInstPatterns.push_back(std::make_unique <DeleteArgumentReturnPattern>());
 }
 
 // Global function to call all the vector populators
