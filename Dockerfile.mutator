@@ -1,11 +1,12 @@
 FROM mutator_deps:2004
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 WORKDIR /home/
 RUN mkdir mutator
 WORKDIR mutator
 
 COPY modules /home/mutator/modules
-COPY samples /home/mutator/samples
 COPY build.gradle /home/mutator/
 COPY run_mutation.py /home/mutator/
 COPY run_seeds.py /home/mutator/
@@ -20,7 +21,7 @@ RUN gradle clean && gradle build
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 
-RUN apt update
+RUN apt-get update -y
 
 
 # ################################################################################
@@ -53,7 +54,7 @@ RUN apt update
 # ################################################################################
 # # vorbis
 
-# RUN apt install -y automake libtool
+# RUN apt-get install -y automake libtool
 
 # WORKDIR /home/mutator/samples
 # RUN git clone https://github.com/xiph/vorbis.git
@@ -84,15 +85,16 @@ RUN apt update
 ################################################################################
 # guetzli
 
-RUN apt install -y libpng-dev
+RUN apt-get install -y libpng-dev
 
 WORKDIR /home/mutator/samples
 RUN git clone https://github.com/google/guetzli.git
 WORKDIR /home/mutator/samples/guetzli
 RUN git checkout 214f2bb42abf5a577c079d00add5d6cc470620d3
+COPY samples/guetzli_harness /home/mutator/samples/guetzli_harness
 
-RUN CC=gclang CXX=gclang++ make
-RUN gclang++ -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Release/libguetzli_static.a -o fuzz_target && \
+RUN CC=gclang CXX=gclang++ CFLAGS="-g -O2" CXXFLAGS="-g -O2" make
+RUN gclang++ -g -O2 -static -I. ../guetzli_harness/harness.cc fuzz_target.cc ./bin/Release/libguetzli_static.a -o fuzz_target && \
     get-bc fuzz_target
 
 WORKDIR /home/mutator
@@ -105,25 +107,57 @@ WORKDIR /home/mutator
 WORKDIR /home/mutator/samples
 RUN git clone https://github.com/cesanta/mjs.git
 WORKDIR /home/mutator/samples/mjs/mjs
+COPY samples/mjs_harness /home/mutator/samples/mjs_harness
 RUN make mjs.c
 RUN gclang -DMJS_MAIN -ldl -o mjs mjs.c
 RUN get-bc mjs
 WORKDIR /home/mutator
 
-################################################################################
-# harfbuzz
+# ################################################################################
+# # harfbuzz
+#
+# WORKDIR /home/mutator/samples
+# RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
+# RUN git clone https://github.com/harfbuzz/harfbuzz.git
+# WORKDIR /home/mutator/samples/harfbuzz
+# RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
+# RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
+# RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
+# RUN get-bc hb-subset-fuzzer
+# # RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
+# # WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
+# # RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
 
+################################################################################
+# file
 WORKDIR /home/mutator/samples
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
-RUN git clone https://github.com/harfbuzz/harfbuzz.git
-WORKDIR /home/mutator/samples/harfbuzz
-RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
-RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
-RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
-RUN get-bc hb-subset-fuzzer
-# RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
-# WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
-# RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
+RUN apt-get install -y  make autoconf automake libtool shtool zlib1g-dev
+RUN git clone https://github.com/file/file.git
+WORKDIR file
+RUN git checkout b2e55e985e75de959b0e2a313e58a5178e7e4182
+COPY samples/file_harness /home/mutator/samples/file_harness
+RUN ../file_harness/build.sh
+
+################################################################################
+# libjpeg-turbo
+WORKDIR /home/mutator/samples
+RUN apt-get install -y make cmake automake libtool nasm
+RUN git clone https://github.com/libjpeg-turbo/libjpeg-turbo.git
+WORKDIR libjpeg-turbo
+RUN git checkout c23672ce52ae53bd846b555439aa0a070b6d2c07
+COPY samples/libjpeg-turbo_harness /home/mutator/samples/libjpeg-turbo_harness
+RUN ../libjpeg-turbo_harness/build.sh
+
+################################################################################
+# sqlite3
+WORKDIR /home/mutator/samples
+RUN apt-get install -y make autoconf automake libtool curl tcl zlib1g-dev
+WORKDIR sqlite3
+RUN curl -s 'https://sqlite.org/src/tarball/sqlite.tar.gz?r=c78cbf2e86850cc6' -o sqlite3.tar.gz && \
+    tar xzf sqlite3.tar.gz --strip-components 1
+COPY samples/sqlite3_harness /home/mutator/samples/sqlite3_harness
+RUN ../sqlite3_harness/build.sh
+
 
 ################################################################################
 # other stuff

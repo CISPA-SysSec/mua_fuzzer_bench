@@ -2,7 +2,13 @@
 
 set -Eeuo pipefail
 
-for seed_file in "$3"/*; do
-    echo "$seed_file"
-    TRIGGERED_FOLDER="$1" "$2" "$seed_file"
+ls -la samples/file_harness/
+
+IFS=$'\n'
+for args in $3; do
+    OLDIFS=$IFS
+    IFS=' ' read -ra args_array <<< "$args"
+    IFS=$OLDIFS
+    echo "executing:" "$2" ${args_array[@]}
+    TRIGGERED_FOLDER="$1" "$2" ${args_array[@]}
 done
