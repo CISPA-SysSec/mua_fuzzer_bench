@@ -26,8 +26,8 @@ std::vector<std::string> look_for_pattern(IRBuilder<>* builder,
                                           Instruction* instr,
                                           std::mutex& builderMutex,
                                           Module& M);
-void populatePatternVectors();
-void insertMutationApiFunctions(Module& M);
+void populatePatternVectors(bool cpp);
+void insertMutationApiFunctions(Module& M, bool cpp);
 
 
 #endif //LLVM_MUTATION_TOOL_PATTERN_LIB_H

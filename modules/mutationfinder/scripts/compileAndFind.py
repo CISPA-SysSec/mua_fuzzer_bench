@@ -7,6 +7,7 @@ llvm_bindir = "@LLVM_BINDIR@"
 clang = f"{llvm_bindir}/clang"
 opt = f"{llvm_bindir}/opt"
 mutatorplugin = "@MUTATOR_PLUGIN@"
+is_cpp = False
 
 dynamic_libraries_folder = "@DYN_LIB_FOLDER@"
 linked_libraries = "dynamiclibrary"
@@ -33,9 +34,13 @@ def main():
     # "${LLVM}/opt" -S -instnamer -reg2mem -load "${TRACEPLUGIN}" -traceplugin -exclude_functions "${EXCLUDED_FUNCTIONS}" -disable-verify "${PROG_SOURCE}.uninstrumented.bc" -o  "${PROG_SOURCE}.opt_debug.bc"
 
     with open(f"{progsource}.ll", "r") as progsource_file:
-        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutationfinder",
+        sp_call_args = [opt, "-S", "-load", mutatorplugin, "-mutationfinder",
             "-mutation_patterns", f"{progsource}.mutationlocations",  "-disable-verify",
-            "-o", f"{progsource}.opt_mutate.ll"], stdin=progsource_file)
+            "-o", f"{progsource}.opt_mutate.ll"]
+        if is_cpp:
+            sp_call_args.append("-cpp")
+
+        subprocess.call(sp_call_args, stdin=progsource_file)
 
     # compile to a binary to find out what mutations could possibly be triggered
     print("Now Compile!")
@@ -67,6 +72,7 @@ if __name__=="__main__":
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
+        is_cpp = True
 
     if args.args:
         compilerargs = args.args.split(" ")

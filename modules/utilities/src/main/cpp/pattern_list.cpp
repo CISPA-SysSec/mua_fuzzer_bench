@@ -51,7 +51,9 @@ void populateICmpInstPatterns(){
 }
 
 // Add new MiscInstPattern objects here as you add them.
-void populateMiscInstPatterns(){
+void populateMiscInstPatterns(bool cpp){
+    // also make changes to populateCallInstPatterns above if cpp-only rule also
+    // applicable to "new"
     MiscInstPatterns.push_back(std::make_unique <FreeArgumentReturnPattern>());
     MiscInstPatterns.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstPatterns.push_back(std::make_unique <ATOMICRMWPattern>());
@@ -60,12 +62,14 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <CompareEqualToPattern>());
     MiscInstPatterns.push_back(std::make_unique <SwitchPlusMinus>());
     MiscInstPatterns.push_back(std::make_unique <RedirectBranch>());
-    MiscInstPatterns.push_back(std::make_unique <DeleteArgumentReturnPattern>());
+    if (cpp){
+        MiscInstPatterns.push_back(std::make_unique <DeleteArgumentReturnPattern>());
+    }
 }
 
 // Global function to call all the vector populators
-void populatePatternVectors(){
+void populatePatternVectors(bool cpp){
     populateCallInstPatterns();
     populateICmpInstPatterns();
-    populateMiscInstPatterns();
+    populateMiscInstPatterns(cpp);
 }

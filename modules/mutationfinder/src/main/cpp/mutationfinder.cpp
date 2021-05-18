@@ -23,7 +23,7 @@ using namespace llvm;
 cl::opt<std::string> MutationLocationFile("mutation_patterns",
                                    cl::desc("file containing the mutation patterns"),
                                    cl::value_desc("filename"));
-
+cl::opt<bool> CPP ("cpp", cl::desc("Enable CPP-only mutations"));
 namespace {
 // a counter and the number of functions to print the current status
 int number_functions = 0;
@@ -171,8 +171,9 @@ struct MutatorPlugin : public ModulePass
             threadFunctions[i % concurrentThreadsSupported].push_back(&f);
             ++i;
         }
-        populatePatternVectors();
-        insertMutationApiFunctions(M);
+        std::cout << "[INFO C] CPP: " << CPP << "\n";
+        populatePatternVectors(CPP);
+        insertMutationApiFunctions(M, CPP);
         number_functions = i;
         std::vector<std::thread> threads;
         for (auto& functions : threadFunctions)

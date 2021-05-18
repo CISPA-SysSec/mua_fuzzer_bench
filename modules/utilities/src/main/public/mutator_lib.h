@@ -32,7 +32,7 @@ bool mutatePattern(
     Module& M
 );
 
-void populatePatternVectors();
-void insertMutationApiFunctions(Module& M);
+void populatePatternVectors(bool cpp);
+void insertMutationApiFunctions(Module& M, bool cpp);
 
 #endif //LLVM_MUTATION_TOOL_MUTATOR_LIB_H
