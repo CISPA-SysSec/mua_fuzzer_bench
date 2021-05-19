@@ -224,7 +224,7 @@
         "typeID": 27,
         "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
         "pattern_class": "DeleteArgumentReturnPattern",
-        "description": "Mutating all functions that receive a pointer type function argument to achieve double delete and possibly illegal memory access errors.",
+        "description": "Mutating all functions in cpp files that receive a pointer type function argument to achieve double delete and possibly illegal memory access errors.",
         "procedure": "We check for functions that receive a pointer type argument. Before returning at the end of the function, one argument per mutant is deleted. (Only in cpp files?)"
     },
     {

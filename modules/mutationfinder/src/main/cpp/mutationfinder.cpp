@@ -171,7 +171,6 @@ struct MutatorPlugin : public ModulePass
             threadFunctions[i % concurrentThreadsSupported].push_back(&f);
             ++i;
         }
-        std::cout << "[INFO C] CPP: " << CPP << "\n";
         populatePatternVectors(CPP);
         insertMutationApiFunctions(M, CPP);
         number_functions = i;
