@@ -17,11 +17,23 @@ CXXFLAGS="$CXXFLAGS -g -O2"
 make clean
 make -j obj/libre2.a
 
+cp obj/libre2.a re2_fuzzer.a
+
 # Second, build the fuzzer (distributed with RE2).
 LIB_FUZZING_ENGINE="../re2_harness/harness.cc"
-$CXX $CXXFLAGS -std=c++11 -I. \
-        -o re2_fuzzer \
-	re2/fuzzing/re2_fuzzer.cc \
-	$LIB_FUZZING_ENGINE \
-        obj/libre2.a \
-        -lpthread
+$CXX $CXXFLAGS -std=c++11 -static -c -I. \
+    -o re2_fuzzer.o \
+    re2/fuzzing/re2_fuzzer.cc \
+    re2_fuzzer.a
+
+llvm-ar r re2_fuzzer.a re2_fuzzer.o
+get-bc -b re2_fuzzer.a
+mv re2_fuzzer.a.bc re2_fuzzer.bc
+
+LIB_FUZZING_ENGINE="../re2_harness/harness.cc"
+$CXX $CXXFLAGS -std=c++11 \
+    $LIB_FUZZING_ENGINE \
+    re2_fuzzer.bc \
+    -lpthread \
+    -o re2_fuzzer
+

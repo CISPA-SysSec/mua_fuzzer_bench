@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import defaultdict
 from json import decoder
+import sys
 import os
 import time
 import subprocess
@@ -73,24 +74,23 @@ PROGRAMS = {
     #     "path": "binutil/binutil/",
     #     "args": "--dwarf-check -C -g -f -dwarf -x @@",
     # },
-    # "re2": {
-    #     "compile_args": [
-    #         # {'val': "-v", 'action': None},
-    #         # {'val': "-static", 'action': None},
-    #         # {'val': "-std=c++11", 'action': None},
-    #         {'val': "-lpthread", 'action': None},
-    #         # {'val': "samples/re2/re2_fuzzer.cc", 'action': "prefix_workdir"},
-    #         {'val': "-I", 'action': None},
-    #         {'val': "samples/re2-code/", 'action': "prefix_workdir"},
-    #         # {'val': "-lc++", 'action': None},
-    #         # {'val': "-lstdc++", 'action': None},
-    #         # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
-    #     ],
-    #     "path": "samples/re2/",
-    #     "args": "@@",
-    # },
+    "re2": {
+        "bc_compile_args": [
+            {'val': "-std=c++11", 'action': None},
+        ],
+        "bin_compile_args": [
+            {'val': "tmp/samples/re2_harness/harness.cc", 'action': 'prefix_workdir'},
+            {'val': "-lpthread", 'action': None},
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/re2-code/re2_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/re2-code/re2_fuzzer.bc")),
+        "path": "samples/re2-code",
+        "seeds": "tmp/samples/re2_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
-        "compile_args": [
+        "bc_compile_args": [
             # {'val': "-v", 'action': None},
             # {'val': "-static", 'action': None},
             # {'val': "-std=c++11", 'action': None},
@@ -103,57 +103,69 @@ PROGRAMS = {
             # {'val': "-D_GLIBCXX_USE_CXX11_ABI=0", 'action': None},
             # {'val': "samples/guetzli/fuzz_target.bc", 'action': "prefix_workdir"},
         ],
+        "bin_compile_args": [
+        ],
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
         "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
         "path": "samples/guetzli/",
-        "seeds": "samples/guetzli_harness/seeds/",
+        "seeds": "tmp/samples/guetzli_harness/seeds/",
         "args": "@@",
     },
     "mjs": {
-        "compile_args": [
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
             {'val': "-ldl", 'action': None},
         ],
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
         "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
         "path": "samples/mjs/",
-        "seeds": "samples/mjs_harness/seeds/",
-        "args": "@@", # TODO add -f ?
+        "seeds": "tmp/samples/mjs_harness/seeds/",
+        "args": "@@",
     },
     "harfbuzz": {
-        "compile_args": [
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
         ],
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer")),
         "orig_bc": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer.bc")),
         "path": "samples/harfbuzz/",
-        "seeds": "samples/harfbuzz/test/fuzzing/fonts/",
+        "seeds": "tmp/samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
     },
     "file": {
-        "compile_args": [
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
             {'val': "-lz", 'action': None},
         ],
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/file/magic_fuzzer")),
         "orig_bc": str(Path("tmp/samples/file/magic_fuzzer.bc")),
         "path": "samples/file/",
-        "seeds": "samples/file_harness/seeds/",
+        "seeds": "tmp/samples/file_harness/seeds/",
         "args": "<WORK>/samples/file_harness/magic.mgc @@",
     },
     "libjpeg": {
-        "compile_args": [
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
         ],
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer")),
         "orig_bc": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc")),
         "path": "samples/libjpeg-turbo/",
-        "seeds": "samples/libjpeg-turbo_harness/seeds/",
+        "seeds": "tmp/samples/libjpeg-turbo_harness/seeds/",
         "args": "@@",
     },
     "sqlite3": {
-        "compile_args": [
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
             {'val': "-lpthread", 'action': None},
             {'val': "-ldl", 'action': None},
         ],
@@ -161,7 +173,7 @@ PROGRAMS = {
         "orig_bin": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz")),
         "orig_bc": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz.bc")),
         "path": "samples/sqlite3/",
-        "seeds": "samples/sqlite3_harness/seeds/",
+        "seeds": "tmp/samples/sqlite3_harness/seeds/",
         "args": "@@",
     },
 }
@@ -254,7 +266,8 @@ class Stats():
         c.execute('''
         CREATE TABLE progs (
             prog,
-            compile_args,
+            bc_compile_args,
+            bin_compile_args,
             args,
             seeds,
             orig_bin
@@ -302,10 +315,8 @@ class Stats():
             mut_return_code,
             orig_cmd,
             mut_cmd,
-            orig_stdout,
-            mut_stdout,
-            orig_stderr,
-            mut_stderr,
+            orig_output,
+            mut_output,
             num_triggered
         )''')
 
@@ -343,7 +354,7 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_bla_run(self, c, data):
+    def new_run(self, c, data):
         c.execute('INSERT INTO all_runs VALUES (?, ?, ?)',
             (
                 data['prog'],
@@ -372,10 +383,11 @@ class Stats():
     @connection
     def new_prog(self, c, prog, data):
         print(data)
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?)',
             (
                 prog,
-                json.dumps(data['compile_args']),
+                json.dumps(data['bc_compile_args']),
+                json.dumps(data['bin_compile_args']),
                 data['args'],
                 str(data['seeds']),
                 str(data['orig_bin']),
@@ -430,8 +442,8 @@ class Stats():
     @connection
     def new_crashing_inputs(self, c, crashing_inputs, prog, mutation_id, fuzzer):
         for path, data in crashing_inputs.items():
-            if data['orig_returncode'] != data['mut_returncode']:
-                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
+                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         prog,
                         mutation_id,
@@ -444,10 +456,8 @@ class Stats():
                         data['mut_returncode'],
                         ' '.join((str(v) for v in data['orig_cmd'])),
                         ' '.join((str(v) for v in data['mut_cmd'])),
-                        data['orig_res'][0],
-                        data['mut_res'][0],
-                        data['orig_res'][1],
-                        data['mut_res'][1],
+                        data['orig_res'],
+                        data['mut_res'],
                         data['num_triggered']
                     )
                 )
@@ -500,10 +510,10 @@ def start_testing_container(core_to_use, trigger_file):
         ipc_mode="host",
         auto_remove=True,
         environment={
-            'LD_LIBRARY_PATH': "/workdir/lib/",
+            'LD_LIBRARY_PATH': "/workdir/tmp/lib/",
             'TRIGGERED_FOLDER': str(trigger_file),
         },
-        volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR),
+        volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/",
                                       'mode': 'ro'}},
         working_dir=str(IN_DOCKER_WORKDIR),
         cpuset_cpus=str(core_to_use),
@@ -538,12 +548,8 @@ def start_mutation_container():
     container.stop()
 
 def run_exec_in_container(container, cmd):
-    sub_cmd = ["docker", "exec",
-        container.name,
-        *cmd]
-    return subprocess.run(sub_cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
+    sub_cmd = ["docker", "exec", container.name, *cmd]
+    return subprocess.run(sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 class CoveredFile:
     def __init__(self, workdir, start_time) -> None:
@@ -569,7 +575,7 @@ def seed_func_aflpp(run_data):
     global should_run
     # extract used values
     workdir = run_data['workdir']
-    prog_bc = Path(IN_DOCKER_WORKDIR)/Path(run_data['prog_bc']).relative_to(HOST_TMP_PATH)
+    prog_bc = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(run_data['prog_bc']).relative_to(HOST_TMP_PATH)
     compile_args = run_data['compile_args']
     aflpp_args = run_data['fuzzer_args']
     args = run_data['args']
@@ -709,7 +715,7 @@ def get_seed_runs(prog_name, prog_info):
         # instrumented).
         prog_bc = prog_info['orig_bc'].absolute()
         # Get the path to the file that should be included during compilation
-        compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
+        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
         # Arguments on how to execute the binary
         args = prog_info['args']
         # Prepare seeds
@@ -769,7 +775,7 @@ def gather_seeds():
         "."])
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
-        exit(1)
+        sys.exit(1)
 
     proc = subprocess.run([
         "docker", "build",
@@ -778,7 +784,7 @@ def gather_seeds():
         "."])
     if proc.returncode != 0:
         print("Could not build mutator_seed_aflpp image.", proc)
-        exit(1)
+        sys.exit(1)
 
     # for each program gather the seeds
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
@@ -847,20 +853,21 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin] + shlex.split(input_args)
                 proc = run_exec_in_container(testing_container, orig_cmd)
-                orig_res = (proc.stdout, proc.stderr)
+                orig_res = proc.stdout
                 orig_returncode = proc.returncode
+                if orig_returncode != 0:
+                    print("orig bin returncode != 0, something might be wrong with the setup:")
+                    print("args:", orig_cmd, "returncode:", orig_returncode)
+                    print(orig_res)
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin] + shlex.split(input_args)
                 proc = run_exec_in_container(testing_container, mut_cmd)
-                mut_res = (proc.stdout, proc.stderr)
+                mut_res = proc.stdout
 
-                num_triggered = len(mut_res[0].split(TRIGGERED_STR)) - 1
-                num_triggered += len(mut_res[1].split(TRIGGERED_STR)) - 1
-                mut_res = (
-                    mut_res[0].replace(TRIGGERED_STR, b""),
-                    mut_res[1].replace(TRIGGERED_STR, b"")
-                )
+                num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
+                mut_res = mut_res.replace(TRIGGERED_STR, b"")
+                mut_res = mut_res
                 mut_returncode = proc.returncode
 
                 covered.check(stage == "initial")
@@ -899,7 +906,7 @@ def base_eval(run_data, docker_image, executable):
     compile_args = run_data['compile_args']
     args = run_data['args']
     seeds = run_data['seeds']
-    orig_bin = IN_DOCKER_WORKDIR/Path(run_data['orig_bin']).relative_to(HOST_TMP_PATH)
+    orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(run_data['orig_bin']).relative_to(HOST_TMP_PATH)
     core_to_use = run_data['used_core']
     docker_mut_bin = Path(workdir)/"testing"
     docker_mut_bin.parent.mkdir(parents=True, exist_ok=True)
@@ -920,11 +927,15 @@ def base_eval(run_data, docker_image, executable):
                 "-v",
                 "-o", str(docker_mut_bin),
                 *shlex.split(compile_args),
-                "/workdir/lib/libdynamiclibrary.so",
+                "/workdir/tmp/lib/libdynamiclibrary.so",
                 str(prog_bc)
             ]
         )
         if compile_mut_bin_res.returncode != 0:
+            print("error during compilation of mut bin: =======================",
+                    compile_mut_bin_res.args,
+                    compile_mut_bin_res.stdout.decode(),
+                    sep="\n")
             raise ValueError(compile_mut_bin_res)
 
         # set up data for crashing inputs
@@ -964,7 +975,7 @@ def base_eval(run_data, docker_image, executable):
                 cpuset_cpus=str(core_to_use),
                 auto_remove=True,
                 volumes={
-                    str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR), 'mode': 'ro'},
+                    str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
                     "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
                 },
                 working_dir=str(workdir),
@@ -977,7 +988,8 @@ def base_eval(run_data, docker_image, executable):
             logs_queue = queue.Queue()
             DockerLogStreamer(logs_queue, container).start()
 
-            while time.time() < start_time + TIMEOUT and should_run:
+            fuzz_time = time.time()
+            while time.time() < fuzz_time + TIMEOUT and should_run:
                 # check if the process stopped, this should only happen in an
                 # error case
                 try:
@@ -1107,16 +1119,20 @@ def libfuzzer_eval(run_data):
 #     return aflpp_base_eval(
 #         run_data, "mutator_aflppmsan", "/home/user/eval.sh")
 
-def build_compile_args(args, workdir):
-    res = ""
+def resolve_compile_args(args, workdir):
+    resolved = []
     for arg in args:
         if arg['action'] is None:
-            res += arg['val'] + " "
+            resolved.append(arg['val'])
         elif arg['action'] == 'prefix_workdir':
-            res += str(Path(workdir)/arg['val']) + " "
+            resolved.append(str(Path(workdir)/arg['val']))
         else:
             raise ValueError("Unknown action: {}", arg)
-    return res
+    return resolved
+
+def build_compile_args(args, workdir):
+    args = resolve_compile_args(args, workdir)
+    return " ".join(map(shlex.quote, args))
 
 # The fuzzers that can be evaluated, value is the function used to start an
 # evaluation run
@@ -1146,7 +1162,7 @@ def get_all_mutations(stats, mutator, progs):
         except Exception as err:
             print(err)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
-            quit()
+            sys.exit(1)
         stats.new_prog(prog, prog_info)
         start = time.time()
         print(f"Compiling base and locating mutations for {prog}")
@@ -1160,11 +1176,16 @@ def get_all_mutations(stats, mutator, progs):
             seeds = Path(prog_info['seeds'])
 
         # Compile the mutation location detector for the prog.
-        args = ["./run_mutation.py", "-bc", prog_info['orig_bc']]
+        args = ["./run_mutation.py",
+                "-bc", prog_info['orig_bc'],
+                "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], IN_DOCKER_WORKDIR),
+                "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)]
         if prog_info['is_cpp']:
             args.insert(1, "-cpp")
         res = run_exec_in_container(mutator, args)
-        # print(res.args, res.returncode, res.stdout.decode(), res.stderr.decode(), sep="\n")
+        if res.returncode != 0:
+            print("error during run_mutation: ========================",
+                res.args, res.returncode, res.stdout.decode(), sep="\n")
 
 
         if FILTER_MUTATIONS and DETECT_MUTATIONS:
@@ -1180,10 +1201,8 @@ def get_all_mutations(stats, mutator, progs):
                 detector_args = detector_args.replace("<WORK>/", "").replace("@@", str(seed))
                 detector_args_lines += detector_args
                 detector_args_lines += "\n"
-            run = run_exec_in_container(mutator,
+            run_exec_in_container(mutator,
                     ["./iterate_seeds.sh", mutation_list_dir, detector_bin, detector_args_lines])
-            #  print(run.stdout.decode())
-            #  print(run.stderr.decode())
 
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
@@ -1216,7 +1235,7 @@ def get_all_mutations(stats, mutator, progs):
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
-def get_next_run(stats, mutator, fuzzers, progs):
+def get_all_runs(stats, mutator, fuzzers, progs):
     all_mutations = get_all_mutations(stats, mutator, progs)
 
     random.shuffle(all_mutations)
@@ -1231,7 +1250,7 @@ def get_next_run(stats, mutator, fuzzers, progs):
             except Exception as err:
                 print(err)
                 print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
-                quit()
+                sys.exit(1)
             # Get the working directory based on program and mutation id and
             # fuzzer, which is a unique path for each run
             workdir = Path("/dev/shm/mutator/")/prog/mutation_id/fuzzer
@@ -1241,7 +1260,7 @@ def get_next_run(stats, mutator, fuzzers, progs):
             prog_bc_base.mkdir(parents=True, exist_ok=True)
             prog_bc = prog_bc_base/(Path(prog_info['orig_bc']).with_suffix(f".ll.{mutation_id}.mut.bc").name)
             # Get the path to the file that should be included during compilation
-            compile_args = build_compile_args(prog_info['compile_args'], IN_DOCKER_WORKDIR)
+            compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
             # Arguments on how to execute the binary
             args = prog_info['args']
             # Prepare seeds
@@ -1264,13 +1283,11 @@ def get_next_run(stats, mutator, fuzzers, progs):
                 'mutation_data': mutation_data[int(mutation_id)],
             }
             # Add that run to the database, so that we know it is possible
-            stats.new_bla_run(run_data)
+            stats.new_run(run_data)
             # Build our list of runs
             all_runs.append(run_data)
 
-    # Yield the individual eval runs
-    for run in all_runs:
-        yield run
+    return all_runs
 
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
@@ -1330,7 +1347,10 @@ def wait_for_runs(stats, runs, cores_in_use, active_mutants, break_after_one):
         if RM_WORKDIR:
             workdir = Path(data['workdir'])
             if workdir.is_dir():
-                shutil.rmtree(workdir)
+                try:
+                    shutil.rmtree(workdir)
+                except OSError:
+                    traceback.print_exc()
             try:
                 # Also remove parent if it doesn't contain anything anymore.
                 # That is all runs for this mutation are done.
@@ -1365,7 +1385,7 @@ def run_eval(progs, fuzzers):
         ])
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
-        exit(1)
+        sys.exit(1)
 
     # build the fuzzer docker images
     for tag, name in [
@@ -1387,7 +1407,7 @@ def run_eval(progs, fuzzers):
             "."])
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
-            exit(1)
+            sys.exit(1)
 
     UNSOLVED_MUTANTS_DIR.mkdir(exist_ok=True, parents=True)
 
@@ -1405,9 +1425,11 @@ def run_eval(progs, fuzzers):
         # start time
         start_time = time.time()
         # Get each run
-        for ii, run_data in enumerate(get_next_run(stats, mutator, fuzzers, progs)):
-            print("" + str(ii) + " @ " + str(int((time.time() - start_time)//60)),
-                  end=', ', flush=True)
+        all_runs = get_all_runs(stats, mutator, fuzzers, progs)
+        for ii, run_data in enumerate(all_runs):
+            cur_time = (time.time() - start_time)/(60*60)
+            print(f"{ii:8}/{len(all_runs)} ({ii/len(all_runs)*100:5.2f}%) @ {cur_time:5.2f}: "
+                  f"{run_data['prog']} {run_data['mutation_id']} - {run_data['fuzzer']}")
             # Create the mutant if reference count is 0
             if active_mutants[run_data['prog_bc']]['ref_cnt'] == 0:
                 args = ["./run_mutation.py", "-bc", "-cpp",
@@ -1415,7 +1437,6 @@ def run_eval(progs, fuzzers):
                 res = run_exec_in_container(mutator, args)
                 if res.returncode != 0:
                     print(res.stdout.decode())
-                    print(res.stderr.decode())
                 mut_name = Path(run_data['prog_bc']).name
                 res = run_exec_in_container(mutator,
                     ["cp",
@@ -1423,7 +1444,6 @@ def run_eval(progs, fuzzers):
                      str(Path(run_data['prog_bc']))])
                 if res.returncode != 0:
                     print(res.stdout.decode())
-                    print(res.stderr.decode())
             # Update mutant count
             active_mutants[run_data['prog_bc']]['ref_cnt'] += 1
             # If we should stop, do so now to not create any new run.

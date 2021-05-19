@@ -3,6 +3,7 @@ import sys
 import os
 import shutil
 import json
+import shlex
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import argparse
@@ -17,8 +18,6 @@ linked_libraries = "dynamiclibrary"
 sysroot = ""
 progsource = None
 uname = os.uname()
-
-compilerargs = list()
 
 
 def main(prog: str):
@@ -58,6 +57,10 @@ def mutate_file(information):
         counter, mutation, folder to put result in, name of program to mutate,
     :return:
     """
+    bc_args = shlex.split(args.bc_args)
+    bin_args = shlex.split(args.bin_args)
+
+
     # Macos catalina and newer need sysroot to be defined when compiling
     # According to https://en.wikipedia.org/wiki/Darwin_%28operating_system%29#Release_history,
     # MacOS Catalina corresponds to Darwin's major version number 19.
@@ -75,24 +78,24 @@ def mutate_file(information):
     if args.bitcode:
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-isysroot",
-                             f"{sysroot}", "-o", f"{mutations_folder}/{progname}.{uid}.mut.bc",
-                             "-c", f"{mutations_folder}/{progname}.{uid}.mut.ll"] + compilerargs)
+                             f"{sysroot}", *bc_args,
+                             "-c", f"{mutations_folder}/{progname}.{uid}.mut.ll",
+                             "-o", f"{mutations_folder}/{progname}.{uid}.mut.bc"])
         else:
-            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-o",
-                             f"{mutations_folder}/{progname}.{uid}.mut.bc", "-c",
-                             f"{mutations_folder}/{progname}.{uid}.mut.ll"] + compilerargs)
+            subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", *bc_args,
+                             "-c", f"{mutations_folder}/{progname}.{uid}.mut.ll",
+                             "-o", f"{mutations_folder}/{progname}.{uid}.mut.bc"])
 
     if args.binary:
         arguments = [
             # "-v",
-            "-o",
-            f"{mutations_folder}/{progname}.{uid}.mut",  # output file
             f"{mutations_folder}/{progname}.{uid}.mut.ll",  # input file
+            *bc_args, *bin_args,
             f"-L{dynamic_libraries_folder}",  # points the runtime linker to the location of the included shared library
             "-lm", "-lz", "-ldl",  # some often used libraries
             f"-l{linked_libraries}",  # the library containing all the api functions that were called by mutations
+            "-o", f"{mutations_folder}/{progname}.{uid}.mut",  # output file
         ]
-        arguments += compilerargs
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
         else:
@@ -115,7 +118,10 @@ if __name__ == "__main__":
                         help="Uses clang++ instead of clang for compilation.")
     parser.add_argument("-m", "--mutate", type=int,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
-    parser.add_argument('-a', "--args", default="", help="Compiler arguments that should be used for compilation")
+    parser.add_argument("--bc-args", default="",
+                        help="Compiler arguments that should be used for compilation for all artifacts.")
+    parser.add_argument("--bin-args", default="",
+                        help="Compiler arguments that should be used for compilation of the binary.")
     parser.add_argument("program", type=str,
                         help="Path to the source file that will be mutated.")
 
@@ -127,9 +133,7 @@ if __name__ == "__main__":
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
 
-    if args.args:
-        compilerargs = args.args.split(" ")
-
     progsource = args.program
     sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/"
     main(progsource)
+

@@ -29,7 +29,8 @@ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
 echo yes | ./mutator-docker-wrapper.py -s
 echo yes | ./mutator-docker-wrapper.py -b
 
-rm -rf /dev/shm/mutator/
+sudo rm /dev/shm/fuzz.file* || true
+sudo rm -rf /dev/shm/mutator/
 sudo rm -rf ./tmp/*
 
 docker rm dummy || true

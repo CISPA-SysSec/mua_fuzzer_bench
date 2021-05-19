@@ -48,37 +48,6 @@ WORKDIR /
 RUN rm -rf /kcov
 
 # ################################################################################
-# # vorbis
-
-# RUN apt-get install -y automake libtool
-
-# WORKDIR /home/mutator/samples
-# RUN git clone https://github.com/xiph/vorbis.git
-# WORKDIR /home/mutator/samples/vorbis
-# RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
-
-# WORKDIR /home/mutator/samples/vorbis/
-# ENV SRC=/home/mutator/samples/vorbis
-# ENV OUT=/home/mutator/samples/vorbis/out
-# ENV WORK=/home/mutator/samples/vorbis/work
-# RUN ./autogen.sh && \
-#     ./configure --prefix="$WORK" --enable-static --disable-shared --disable-crc && \
-#     make clean && \
-#     make -j$(nproc) && \
-#     make install && \
-#     cd $SRC && \
-#     ./autogen.sh && \
-#     ./configure --prefix="$WORK" --enable-static --disable-shared && \
-#     make clean && \
-#     make -j$(nproc) && \
-#     make install && \
-#     wllvm++ $SRC/vorbis/contrib/oss-fuzz/decode_fuzzer.cc -o $OUT/decode_fuzzer -L"$WORK/lib" -I"$WORK/include" $LIB_FUZZING_ENGINE -lvorbisfile -lvorbis -logg
-
-# # WORKDIR /home/mutator
-
-# # RUN ./run_mutation.py -p samples/re2/re2_fuzzer.bc -bc
-
-# ################################################################################
 # # sqlite3
 # WORKDIR /home/mutator/samples
 # RUN apt-get install -y make autoconf automake libtool curl tcl zlib1g-dev
@@ -125,20 +94,20 @@ RUN git checkout c23672ce52ae53bd846b555439aa0a070b6d2c07
 COPY samples/libjpeg-turbo_harness /home/mutator/samples/libjpeg-turbo_harness
 RUN ../libjpeg-turbo_harness/build.sh
 
-################################################################################
-# harfbuzz
-WORKDIR /home/mutator/samples
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
-RUN git clone https://github.com/harfbuzz/harfbuzz.git
-WORKDIR /home/mutator/samples/harfbuzz
-RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
-RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
-RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
-RUN get-bc hb-subset-fuzzer
-COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
-# RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
-# WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
-# RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
+# ################################################################################
+# # harfbuzz
+# WORKDIR /home/mutator/samples
+# RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
+# RUN git clone https://github.com/harfbuzz/harfbuzz.git
+# WORKDIR /home/mutator/samples/harfbuzz
+# RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
+# RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
+# RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
+# RUN get-bc hb-subset-fuzzer
+# COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
+# # RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
+# # WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
+# # RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
 
 ################################################################################
 # mjs
@@ -160,6 +129,16 @@ RUN git checkout 58141dc9c92189ed8d046f494f5e034d5db91bea
 COPY samples/re2_harness /home/mutator/samples/re2_harness
 RUN CC=gclang CXX=gclang++ CXXFLAGS="" ../re2_harness/build.sh
 
+# ################################################################################
+# # vorbis
+# RUN apt-get install -y automake libtool
+# WORKDIR /home/mutator/samples
+# RUN git clone https://github.com/xiph/vorbis.git
+# WORKDIR /home/mutator/samples/vorbis
+# RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
+# COPY samples/vorbis_harness /home/mutator/samples/vorbis_harness
+# RUN CC=gclang CXX=gclang++ CXXFLAGS="" ../vorbis_harness/build.sh
+
 ################################################################################
 # other stuff
 
@@ -169,3 +148,4 @@ RUN CC=gclang CXX=gclang++ CXXFLAGS="" ../re2_harness/build.sh
 
 WORKDIR /home/mutator
 COPY iterate_seeds.sh /home/mutator/
+
