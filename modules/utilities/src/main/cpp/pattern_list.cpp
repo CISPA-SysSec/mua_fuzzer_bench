@@ -4,7 +4,7 @@ std::vector<std::unique_ptr<CallInstPattern>> CallInstPatterns;
 std::vector<std::unique_ptr<ICmpInstPattern>> ICmpInstPatterns;
 std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 
-void populateCallInstPatterns(){
+void populateCallInstPatterns(bool cpp){
     CallInstPatterns.push_back(std::make_unique <PThreadPattern>());
     CallInstPatterns.push_back(std::make_unique <MallocPattern>());
     CallInstPatterns.push_back(std::make_unique <CallocPattern>());
@@ -13,7 +13,10 @@ void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <PrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
-    CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
+    if (cpp){
+        CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
+    }
+
 }
 
 // Add new ICmpInstPattern objects here as you add them.
@@ -69,7 +72,7 @@ void populateMiscInstPatterns(bool cpp){
 
 // Global function to call all the vector populators
 void populatePatternVectors(bool cpp){
-    populateCallInstPatterns();
+    populateCallInstPatterns(cpp);
     populateICmpInstPatterns();
     populateMiscInstPatterns(cpp);
 }
