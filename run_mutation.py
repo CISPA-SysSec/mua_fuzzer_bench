@@ -58,11 +58,15 @@ def run_mutation(args):
             arguments.append("-bn")
         if args.cpp:
             arguments.append("-cpp")
+        # mutation(s) to apply
         arguments.append("-m")
         arguments.append(str(args.mutate))  # type must be string when running the subprocess
-        arguments.append(mutate)
+        # compiler args
         arguments.append("--bc-args=" + args.bc_args)
         arguments.append("--bin-args=" + args.bin_args)
+        arguments.append("--out-dir=" + args.out_dir)
+        # program path
+        arguments.append(mutate)
         proc_res = run(arguments)
     sys.exit(proc_res.returncode)
 
@@ -84,6 +88,8 @@ def main():
                         help="Compiler arguments that should be used for compilation for all artifacts.")
     parser.add_argument("--bin-args", default="",
                         help="Compiler arguments that should be used for compilation of the binary.")
+    parser.add_argument("--out-dir", type=str, default="",
+                        help="Path to output directory, where artifacts will be written to.")
     parser.add_argument("program",
                         help="Path to the source file that will be mutated.")
 
