@@ -1767,10 +1767,9 @@ def header():
 def crash_stats(con):
     import pandas as pd
     crashes = pd.read_sql_query("""
-        select prog, fuzzer, sum(unknown_crash_reason) as unknown_crashes
-        from crashed_runs_overview
-        where unknown_crash_reason == 1
-        group by prog, fuzzer
+        select *
+        from crashed_runs_summary
+        -- where unknown_crash_reason > 0 or multiple_crash_reason > 0
     """, con)
     print(crashes)
     res = "<h2>Crashes</h2>"
