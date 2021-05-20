@@ -2,7 +2,7 @@
 DROP VIEW IF EXISTS table_sizes;
 CREATE VIEW table_sizes
 as
-SELECT name, printf("%.2f", cast(SUM("pgsize") as float) / (1024*1024)) as "MiBi" FROM "dbstat" group by name;
+SELECT name, printf("%.2f", cast(SUM("pgsize") as float) / (1024*1024)) as "MiBi" FROM dbstat group by name;
 
 -- collect info on all runs
 DROP VIEW IF EXISTS runs;
@@ -270,15 +270,35 @@ order by mut_type, mut_file_path, mut_line;
 DROP VIEW IF EXISTS crashed_runs_overview;
 CREATE VIEW crashed_runs_overview
 as
-select not (seed_crash or seed_timeout or all_seeds_crash) as unknown_crash_reason, seed_crash + seed_timeout + all_seeds_crash > 1 as multiple_reasons, *
+select
+	not (seed_crash or seed_timeout or all_seeds_crash or mut_compile_failed) as unknown_crash_reason,
+	seed_crash + seed_timeout + all_seeds_crash + mut_compile_failed > 1 as multiple_reasons,
+	*
 from (
 	select
 		crash_trace like '%[-] PROGRAM ABORT : %Test case % results in a crash%' as seed_crash,
 		crash_trace like '%[-] PROGRAM ABORT : %Test case % results in a timeout%' as seed_timeout,
 		crash_trace like '%[-] PROGRAM ABORT : %We need at least one valid input seed that does not crash!%' as all_seeds_crash,
+		crash_trace like '%error: no such file or directory: ''/dev/shm/mutated_bcs/%/fuzz_target.ll.%.mut.bc''%' as mut_compile_failed,
 		* from run_crashed
 )
 order by unknown_crash_reason, multiple_reasons;
+
+DROP VIEW IF EXISTS crashed_runs_summary;
+CREATE VIEW crashed_runs_summary
+as
+select
+	prog,
+	fuzzer,
+	sum(unknown_crash_reason) as unknown_crash_reason,
+	sum(multiple_reasons) as multiple_reasons,
+	sum(seed_crash) as seed_crash,
+	sum(seed_timeout) as seed_timeout,
+	sum(all_seeds_crash) as all_seeds_crash,
+	sum(mut_compile_failed) as mut_compile_failed
+from crashed_runs_overview
+group by prog, fuzzer
+order by unknown_crash_reason, multiple_reasons, prog, fuzzer;
 
 
 -- 
