@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from collections import defaultdict
-from json
 import sys
 import os
 import time
@@ -303,6 +302,23 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE seed_crashing_inputs (
+            prog,
+            mutation_id INTEGER,
+            time_found,
+            stage,
+            path,
+            crashing_input,
+            orig_return_code,
+            mut_return_code,
+            orig_cmd,
+            mut_cmd,
+            orig_output,
+            mut_output,
+            num_triggered
+        )''')
+
+        c.execute('''
         CREATE TABLE crashing_inputs (
             prog,
             mutation_id INTEGER,
@@ -450,6 +466,29 @@ class Stats():
                         prog,
                         mutation_id,
                         fuzzer,
+                        data['time_found'],
+                        data['stage'],
+                        path,
+                        data['data'],
+                        data['orig_returncode'],
+                        data['mut_returncode'],
+                        ' '.join((str(v) for v in data['orig_cmd'])),
+                        ' '.join((str(v) for v in data['mut_cmd'])),
+                        data['orig_res'],
+                        data['mut_res'],
+                        data['num_triggered']
+                    )
+                )
+        self.conn.commit()
+
+    @connection
+    def new_seed_crashing_inputs(self, c, prog, mutation_id, crashing_inputs):
+        for path, data in crashing_inputs.items():
+            if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
+                c.execute('INSERT INTO seed_crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        prog,
+                        mutation_id,
                         data['time_found'],
                         data['stage'],
                         path,
@@ -967,97 +1006,83 @@ def base_eval(run_data, docker_image, executable):
 
         # set up data for crashing inputs
         crashing_inputs = {}
-        # check if seeds are already crashing
-        checked_seeds = {}
-        # do an initial check to see if the seed files are already crashing
-        if check_crashing_inputs(testing_container, checked_seeds, seeds,
-                                 orig_bin, docker_mut_bin, args, start_time,
-                                 covered, "initial"):
-            return {
-                'total_time': time.time() - start_time,
-                'covered_file_seen': covered.found,
-                'covered_by_seed': covered.found_by_seed,
-                'crashing_inputs': checked_seeds,
-                'all_logs': ["found crashing seed input"]
-            }
 
-        if not JUST_CHECK_SEED_CRASHES:
-            # get access to the docker client to start the container
-            docker_client = docker.from_env()
-            # Start and run the container
-            container = docker_client.containers.run(
-                docker_image, # the image
-                [
-                    executable,
-                    str(compile_args),
-                    str(prog_bc),
-                    str(IN_DOCKER_WORKDIR/seeds),
-                    str(args)
-                ], # the arguments
-                environment={
-                    'TRIGGERED_OUTPUT': str(""),
-                    'TRIGGERED_FOLDER': str(covered.path),
-                },
-                init=True,
-                cpuset_cpus=str(core_to_use),
-                auto_remove=True,
-                volumes={
-                    str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-                    "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
-                },
-                working_dir=str(workdir),
-                mem_limit="1g",
-                log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-                    config={'max-size': '10m'}),
-                detach=True
-            )
+        # get access to the docker client to start the container
+        docker_client = docker.from_env()
+        # Start and run the container
+        container = docker_client.containers.run(
+            docker_image, # the image
+            [
+                executable,
+                str(compile_args),
+                str(prog_bc),
+                str(IN_DOCKER_WORKDIR/seeds),
+                str(args)
+            ], # the arguments
+            environment={
+                'TRIGGERED_OUTPUT': str(""),
+                'TRIGGERED_FOLDER': str(covered.path),
+            },
+            init=True,
+            cpuset_cpus=str(core_to_use),
+            auto_remove=True,
+            volumes={
+                str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+                "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            },
+            working_dir=str(workdir),
+            mem_limit="1g",
+            log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+                config={'max-size': '10m'}),
+            detach=True
+        )
 
-            logs_queue = queue.Queue()
-            DockerLogStreamer(logs_queue, container).start()
+        logs_queue = queue.Queue()
+        DockerLogStreamer(logs_queue, container).start()
 
-            fuzz_time = time.time()
-            while time.time() < fuzz_time + TIMEOUT and should_run:
-                # check if the process stopped, this should only happen in an
-                # error case
-                try:
-                    container.reload()
-                except docker.errors.NotFound:
-                    # container is dead stop waiting
-                    break
-                if container.status not in ["running", "created"]:
-                    break
-
-                # Check if covered file is seen
-                covered.check(False)
-
-                # Check if a crashing input has already been found
-                if check_crashing_inputs(testing_container, crashing_inputs,
-                                         crash_dir, orig_bin, docker_mut_bin, args,
-                                         start_time, covered, "runtime"):
-                    break
-
-                # Sleep so we only check sometimes and do not busy loop
-                time.sleep(CHECK_INTERVAL)
-
-            # Check if container is still running
+        fuzz_time = time.time()
+        while time.time() < fuzz_time + TIMEOUT and should_run:
+            # check if the process stopped, this should only happen in an
+            # error case
             try:
                 container.reload()
-                if container.status in ["running", "created"]:
-
-                    # Send sigint to the process
-                    container.kill(2)
-
-                    # Wait up to 10 seconds then send sigkill
-                    container.stop()
             except docker.errors.NotFound:
-                # container is dead just continue maybe it worked
-                pass
+                # container is dead stop waiting
+                break
+            if container.status not in ["running", "created"]:
+                break
+
+            # Check if covered file is seen
+            covered.check(False)
+
+            # Check if a crashing input has already been found
+            if check_crashing_inputs(testing_container, crashing_inputs,
+                                     crash_dir, orig_bin, docker_mut_bin, args,
+                                     start_time, covered, "runtime"):
+                break
+
+            # Sleep so we only check sometimes and do not busy loop
+            time.sleep(CHECK_INTERVAL)
+
+        # Check if container is still running
+        try:
+            container.reload()
+            if container.status in ["running", "created"]:
+
+                # Send sigint to the process
+                container.kill(2)
+
+                # Wait up to 10 seconds then send sigkill
+                container.stop()
+        except docker.errors.NotFound:
+            # container is dead just continue maybe it worked
+            pass
 
 
-            # Also collect all crashing outputs
-            check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
-                                    orig_bin, docker_mut_bin, args, start_time,
-                                    covered, "final")
+        # Also collect all crashing outputs
+        check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
+                                orig_bin, docker_mut_bin, args, start_time,
+                                covered, "final")
 
         all_logs = []
         while True:
@@ -1328,6 +1353,15 @@ def get_all_runs(stats, fuzzers, progs):
     return all_runs
 
 
+def clean_up_mut_base_dir(mut_data):
+    # Remove mut base dir.
+    mut_base_dir = get_mut_base_dir(mut_data)
+    try:
+        shutil.rmtree(mut_base_dir)
+    except OSError:
+        traceback.print_exc()
+
+
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
@@ -1372,12 +1406,7 @@ def handle_run_result(stats, active_mutants, run_future, data):
             if prog_bc.is_file():
                 shutil.copy(str(prog_bc), UNSOLVED_MUTANTS_DIR)
 
-        # Remove mut base dir.
-        mut_base_dir = get_mut_base_dir(mut_data)
-        try:
-            shutil.rmtree(mut_base_dir)
-        except OSError:
-            traceback.print_exc()
+        clean_up_mut_base_dir(mut_data)
     elif active_mutants[prog_bc]['ref_cnt'] < 0:
         print("error negative mutant reference count")
 
@@ -1399,22 +1428,33 @@ def handle_run_result(stats, active_mutants, run_future, data):
 
 def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, data):
     _, mut_data, fuzzer_runs = data
+    prog = mut_data['prog']
+    mutation_id = mut_data['mutation_id']
 
     try:
         # If there was no exception get the data.
         task_result = task_future.result()
-        print(f"= mutation [+]: {mut_data['prog']}:{mut_data['mutation_id']}")
     except Exception:
         # If there was an exception record it.
         trace = traceback.format_exc()
-        stats.mutation_preparation_crashed(mut_data['prog'], mut_data['mutation_id'], trace)
-        print(f"= mutation ###: crashed {mut_data['prog']}:{mut_data['mutation_id']}")
+        stats.mutation_preparation_crashed(prog, mutation_id, trace)
+        print(f"= mutation ###: crashed {prog}:{mutation_id}")
 
         # Nothing more to do.
         return
 
-    # TODO Record if seeds found the mutant, if so, do not add to prepared runs.
-    if False:
+    # Record if seeds found the mutant, if so, do not add to prepared runs.
+    if task_result is not None:
+        print(f"= mutation [+]: (seed found) {prog}:{mutation_id}")
+        stats.new_seed_crashing_inputs(prog, mutation_id, task_result['crashing_inputs'])
+        clean_up_mut_base_dir(mut_data)
+        return
+
+    print(f"= mutation [+]: {prog}:{mutation_id}")
+
+    # If we just want to check if the seeds find a mutation, do not start any fuzzer runs.
+    if JUST_CHECK_SEED_CRASHES:
+        clean_up_mut_base_dir(mut_data)
         return
 
     # Otherwise add all possible runs to prepared runs.
@@ -1481,6 +1521,30 @@ def prepare_mutation(core_to_use, data):
                     str(prog_bc)
                 ]
         )
+
+        seeds = data['seeds']
+        orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(data['orig_bin']).relative_to(HOST_TMP_PATH)
+        args = data['args']
+        docker_mut_bin = get_mut_base_bin(data)
+
+        # check if seeds are already crashing
+        checked_seeds = {}
+
+        start_time = time.time()
+
+        # do an initial check to see if the seed files are already crashing
+        if check_crashing_inputs(testing, checked_seeds, seeds,
+                                 orig_bin, docker_mut_bin, args, start_time,
+                                 covered, "initial"):
+            return {
+                'total_time': time.time() - start_time,
+                'covered_file_seen': covered.found,
+                'covered_by_seed': covered.found_by_seed,
+                'crashing_inputs': checked_seeds,
+                'all_logs': ["found crashing seed input"]
+            }
+        # If there mutation was not detected by the seeds, then return None.
+        return None
 
 
 class CpuCores():
