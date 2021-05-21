@@ -7,7 +7,7 @@ for file in /home/mutator/samples/file_harness/seeds/* /home/mutator/samples/fil
   if [ -f "$file" ]
   then
     echo $file;
-    kcov "${NAME}_tmp_${COUNTER}" /home/mutator/samples/file/magic_fuzzer $file;
+    kcov "${NAME}_tmp_${COUNTER}" /home/mutator/samples/file/magic_fuzzer /home/mutator/samples/file_harness/magic.mgc $file;
     COUNTER=$((COUNTER+1))
   fi
 done
