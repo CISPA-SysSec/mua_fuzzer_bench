@@ -25,6 +25,7 @@ using namespace llvm;
 cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
+cl::opt<bool> CPP ("cpp", cl::desc("Enable CPP-only mutations"));
 
 namespace {
 //counter for method calls, each method call gets a unique ID
@@ -150,8 +151,8 @@ namespace {
             std::mutex builderMutex;
             std::mutex fileMutex;
             // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-            populatePatternVectors();
-            insertMutationApiFunctions(M);
+            populatePatternVectors(CPP);
+            insertMutationApiFunctions(M, CPP);
             //Parsing the string into a json
             std::string segment;
             seglist = json::parse(Mutation);

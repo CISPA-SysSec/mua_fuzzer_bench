@@ -539,3 +539,55 @@ bool CompareEqualToPattern::mutate(
     }
     return false;
 }
+
+std::vector<std::string>
+DeleteArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
+        const Function *outerFunction = returnInst->getFunction();
+        for (auto op = outerFunction->arg_begin(); op != outerFunction->arg_end(); op++) {
+            if (op->getType()->isPointerTy()) {
+                json j;
+                j["argnumber"] = op->getArgNo();
+                results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_FUNCTION_ARGUMENT, j));
+            }
+        }
+    }
+    return results;
+}
+
+/**
+ * On all function returns it deletes all arguments that are pointers, for each argument a unique mutant is created.
+ */
+bool DeleteArgumentReturnPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        json *seglist,
+        Module& M
+) {
+    auto segref = *seglist;
+    if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
+        const Function *outerFunction = returnInst->getFunction();
+        // llvm has only one exit point per function, hence checking for a return instruction and the function name is
+        // sufficient; checking for the actual location might sometimes fail as the debug information might be missing
+        if (isMutationLocation(instr, seglist, DELETE_FUNCTION_ARGUMENT)) {
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            LLVMContext &llvmContext = M.getContext();
+            // first bitcast to i8* as this is the type delete expects
+            int extra_arg = segref["additionalInfo"]["argnumber"];
+            auto funArg = returnInst->getFunction()->getArg(extra_arg);
+            auto bitcasted = builder->CreateBitCast(funArg, Type::getInt8PtrTy(llvmContext));
+            std::vector<Value*> cfn_args;
+            cfn_args.push_back(bitcasted);
+            auto signalFunction = M.getFunction("mutate_delete");
+            builder->CreateCall(signalFunction, cfn_args);
+            builderMutex.unlock();
+
+            return true;
+        }
+    }
+    return false;
+}

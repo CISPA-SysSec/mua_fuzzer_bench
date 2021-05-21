@@ -13,6 +13,7 @@ opt = f"{llvm_bindir}/opt"
 mutatorplugin = "@MUTATOR_PLUGIN@"
 dynamic_libraries_folder = "@DYN_LIB_FOLDER@"
 linked_libraries = "dynamiclibrary"
+is_cpp = False
 
 sysroot = ""
 progsource = None
@@ -68,9 +69,13 @@ def mutate_file(information):
     uid = mutation["UID"]
     print(f"[INFO] Mutating {mutation} to file {mutations_folder}/{progname}.{uid}.mut\n")
     with open(f"{progsource}.ll") as progsource_file:
-        subprocess.call([opt, "-S", "-load", mutatorplugin, "-mutatorplugin",
+        sp_call_args = [opt, "-S", "-load", mutatorplugin, "-mutatorplugin",
                          "-mutation_pattern", json.dumps(mutation), "-disable-verify", "-o",
-                         f"{mutations_folder}/{progname}.{uid}.mut.ll"], stdin=progsource_file)
+                         f"{mutations_folder}/{progname}.{uid}.mut.ll"]
+        if is_cpp:
+            sp_call_args.append("-cpp")
+
+        subprocess.call(sp_call_args, stdin=progsource_file)
 
     if args.bitcode:
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
@@ -126,6 +131,7 @@ if __name__ == "__main__":
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
+        is_cpp = True
 
     if args.args:
         compilerargs = args.args.split(" ")

@@ -107,6 +107,11 @@ int mutate_snprintf_string(char *str, size_t size, const char *format, ...){
     free(stringbuffer);
     return printf_ret_val;
 }
+
+void mutate_delete(void* my_ptr){
+    delete my_ptr;
+}
+
 #ifdef __cplusplus
 }
 #endif

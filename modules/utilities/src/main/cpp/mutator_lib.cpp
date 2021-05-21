@@ -107,7 +107,7 @@ bool mutatePattern(
     return mutated;
 }
 
-void insertMutationApiFunctions(Module& M) {
+void insertMutationApiFunctions(Module& M, bool cpp) {
     LLVMContext &llvmContext = M.getContext();
     M.getOrInsertFunction("signal_triggered_mutation", Type::getVoidTy(llvmContext), Type::getInt64Ty(llvmContext));
 
@@ -124,4 +124,8 @@ void insertMutationApiFunctions(Module& M) {
     mutate_snprintf_args.push_back(Type::getIntNTy(llvmContext, bitsize));
     mutate_snprintf_args.push_back(Type::getInt8PtrTy(llvmContext));
     M.getOrInsertFunction("mutate_snprintf_string", FunctionType::get(Type::getInt32Ty(llvmContext),  mutate_snprintf_args, true));
+
+    if (cpp){
+        M.getOrInsertFunction("mutate_delete", Type::getVoidTy(llvmContext), Type::getInt8PtrTy(llvmContext));
+    }
 }

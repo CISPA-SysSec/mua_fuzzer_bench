@@ -4,7 +4,7 @@ std::vector<std::unique_ptr<CallInstPattern>> CallInstPatterns;
 std::vector<std::unique_ptr<ICmpInstPattern>> ICmpInstPatterns;
 std::vector<std::unique_ptr<Pattern>> MiscInstPatterns;
 
-void populateCallInstPatterns(){
+void populateCallInstPatterns(bool cpp){
     CallInstPatterns.push_back(std::make_unique <PThreadPattern>());
     CallInstPatterns.push_back(std::make_unique <MallocPattern>());
     CallInstPatterns.push_back(std::make_unique <CallocPattern>());
@@ -13,7 +13,10 @@ void populateCallInstPatterns(){
     CallInstPatterns.push_back(std::make_unique <PrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
-    CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
+    if (cpp){
+        CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
+    }
+
 }
 
 // Add new ICmpInstPattern objects here as you add them.
@@ -51,7 +54,9 @@ void populateICmpInstPatterns(){
 }
 
 // Add new MiscInstPattern objects here as you add them.
-void populateMiscInstPatterns(){
+void populateMiscInstPatterns(bool cpp){
+    // also make changes to populateCallInstPatterns above if cpp-only rule also
+    // applicable to "new"
     MiscInstPatterns.push_back(std::make_unique <FreeArgumentReturnPattern>());
     MiscInstPatterns.push_back(std::make_unique <CMPXCHGPattern>());
     MiscInstPatterns.push_back(std::make_unique <ATOMICRMWPattern>());
@@ -60,11 +65,14 @@ void populateMiscInstPatterns(){
     MiscInstPatterns.push_back(std::make_unique <CompareEqualToPattern>());
     MiscInstPatterns.push_back(std::make_unique <SwitchPlusMinus>());
     MiscInstPatterns.push_back(std::make_unique <RedirectBranch>());
+    if (cpp){
+        MiscInstPatterns.push_back(std::make_unique <DeleteArgumentReturnPattern>());
+    }
 }
 
 // Global function to call all the vector populators
-void populatePatternVectors(){
-    populateCallInstPatterns();
+void populatePatternVectors(bool cpp){
+    populateCallInstPatterns(cpp);
     populateICmpInstPatterns();
-    populateMiscInstPatterns();
+    populateMiscInstPatterns(cpp);
 }
