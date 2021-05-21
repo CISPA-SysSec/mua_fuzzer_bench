@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-_term() { 
+_term() {
   echo "Caught SIGINT signal!"
   kill -INT "$child"
 }
@@ -29,7 +29,7 @@ export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
 afl-fuzz -d -i $SEEDS -o output -- ./put $@ &
-child=$! 
+child=$!
 
 echo "setup done"
 
