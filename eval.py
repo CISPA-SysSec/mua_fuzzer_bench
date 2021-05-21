@@ -278,7 +278,14 @@ class Stats():
             mutation_id INTEGER,
             fuzzer,
             covered_file_seen,
-            covered_by_seed,
+            total_time
+        )''')
+
+        c.execute('''
+        CREATE TABLE executed_seeds (
+            prog,
+            mutation_id INTEGER,
+            covered_file_seen,
             total_time
         )''')
 
@@ -414,14 +421,13 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def run_executed(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, cf_by_seed, total_time):
-        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?)',
+    def new_run_executed(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
             (
                 prog,
                 mutation_id,
                 fuzzer,
                 cf_seen,
-                cf_by_seed,
                 total_time,
             )
         )
@@ -455,6 +461,18 @@ class Stats():
                         rest,
                     )
                 )
+        self.conn.commit()
+
+    @connection
+    def new_seeds_executed(self, c, prog, mutation_id, cf_seen, total_time):
+        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?)',
+            (
+                prog,
+                mutation_id,
+                cf_seen,
+                total_time,
+            )
+        )
         self.conn.commit()
 
     @connection
@@ -550,22 +568,40 @@ class DockerLogStreamer(threading.Thread):
         self.q.put(None)
 
 
+class CoveredFile:
+    def __init__(self, workdir, start_time) -> None:
+        super().__init__()
+        self.found = None
+        self.path = Path(workdir)/"covered"
+        self.start_time = start_time
+
+        if self.path.is_file():
+            self.path.unlink()
+
+    def check(self):
+        if self.found is None and self.path.exists():
+            self.found = time.time() - self.start_time
+
+    def file_path(self):
+        return self.path
+
+
 @contextlib.contextmanager
-def start_testing_container(core_to_use, trigger_file):
+def start_testing_container(core_to_use, trigger_file: CoveredFile):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_testing", # the image
-        ["sleep", str(TIMEOUT * 2 + 120)], # the arguments
+        ["sleep", "infinity"], # the arguments
         init=True,
         ipc_mode="host",
         auto_remove=True,
         user=os.getuid(),
         environment={
             'LD_LIBRARY_PATH': "/workdir/tmp/lib/",
-            'TRIGGERED_FOLDER': str(trigger_file),
+            'TRIGGERED_FOLDER': str(trigger_file.path),
         },
         volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/",
                                       'mode': 'ro'}},
@@ -622,23 +658,6 @@ def run_exec_in_container(container, raise_on_error, cmd):
                 sep="\n")
         raise ValueError(proc)
     return proc
-
-
-class CoveredFile:
-    def __init__(self, workdir, start_time) -> None:
-        super().__init__()
-        self.found = None
-        self.found_by_seed = False
-        self.path = Path(workdir)/"covered"
-        self.start_time = start_time
-
-        if self.path.is_file():
-            self.path.unlink()
-
-    def check(self, by_seed):
-        if self.found is None and self.path.exists():
-            self.found = time.time() - self.start_time
-            self.found_by_seed = by_seed
 
 
 def get_mut_base_dir(mut_data: dict) -> Path:
@@ -938,7 +957,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 orig_res = proc.stdout
                 orig_returncode = proc.returncode
                 if orig_returncode != 0:
-                    print("orig bin returncode != 0, something might be wrong with the setup:")
+                    print("orig bin returncode != 0, crashing base bin:")
                     print("args:", orig_cmd, "returncode:", orig_returncode)
                     print(orig_res)
 
@@ -952,7 +971,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 mut_res = mut_res
                 mut_returncode = proc.returncode
 
-                covered.check(stage == "initial")
+                covered.check()
 
                 try:
                     crash_file_data = path.read_bytes()
@@ -980,6 +999,9 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 # Eval function for the afl plus plus fuzzer, compiles the mutated program
 # and fuzzes it. Finally various eval data is returned
 def base_eval(run_data, docker_image, executable):
+    # get start time for the eval
+    start_time = time.time()
+
     global should_run
     # extract used values
     mut_data = run_data['mut_data']
@@ -995,14 +1017,11 @@ def base_eval(run_data, docker_image, executable):
 
     workdir.mkdir(parents=True, exist_ok=True)
 
-    # get start time for the eval
-    start_time = time.time()
-
     # get path for covered file and rm the file if it exists
     covered = CoveredFile(workdir, start_time)
 
     # start testing container
-    with start_testing_container(core_to_use, covered.path) as testing_container:
+    with start_testing_container(core_to_use, covered) as testing_container:
 
         # set up data for crashing inputs
         crashing_inputs = {}
@@ -1053,7 +1072,7 @@ def base_eval(run_data, docker_image, executable):
                 break
 
             # Check if covered file is seen
-            covered.check(False)
+            covered.check()
 
             # Check if a crashing input has already been found
             if check_crashing_inputs(testing_container, crashing_inputs,
@@ -1094,7 +1113,6 @@ def base_eval(run_data, docker_image, executable):
         return {
             'total_time': time.time() - start_time,
             'covered_file_seen': covered.found,
-            'covered_by_seed': covered.found_by_seed,
             'crashing_inputs': crashing_inputs,
             'all_logs': all_logs,
         }
@@ -1378,13 +1396,12 @@ def handle_run_result(stats, active_mutants, run_future, data):
         print(f"= run ###:      {mut_data['prog']}:{mut_data['mutation_id']}:{data['fuzzer']}")
     else:
         # if successful log the run
-        stats.run_executed(
+        stats.new_run_executed(
             run_result['plot_data'],
             mut_data['prog'],
             mut_data['mutation_id'],
             data['fuzzer'],
             run_result['covered_file_seen'],
-            run_result['covered_by_seed'],
             run_result['total_time'])
         stats.new_crashing_inputs(
             run_result['crashing_inputs'],
@@ -1443,8 +1460,11 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         # Nothing more to do.
         return
 
+    stats.new_seeds_executed(prog, mutation_id,
+            task_result['covered_file_seen'], task_result['total_time'])
+
     # Record if seeds found the mutant, if so, do not add to prepared runs.
-    if task_result is not None:
+    if task_result['found_by_seeds']:
         print(f"= mutation [+]: (seed found) {prog}:{mutation_id}")
         stats.new_seed_crashing_inputs(prog, mutation_id, task_result['crashing_inputs'])
         clean_up_mut_base_dir(mut_data)
@@ -1489,6 +1509,8 @@ def wait_for_task(stats, tasks, cores, prepared_runs, active_mutants):
 
 
 def prepare_mutation(core_to_use, data):
+    start_time = time.time()
+
     prog_bc = data['prog_bc']
     compile_args = data['compile_args']
     mut_base_dir = get_mut_base_dir(data)
@@ -1496,31 +1518,29 @@ def prepare_mutation(core_to_use, data):
     prog_bc.parent.mkdir(parents=True, exist_ok=True)
 
     # get path for covered file and rm the file if it exists
-    covered = CoveredFile(mut_base_dir/"covered", time.time())
+    covered = CoveredFile(mut_base_dir, time.time())
 
     with start_mutation_container(core_to_use) as mutator, \
          start_testing_container(core_to_use, covered) as testing:
 
         run_exec_in_container(mutator, True, [
-            "./run_mutation.py",
-            "-bc",
-            *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
-            "-m", data['mutation_id'],
-            "--out-dir", str(mut_base_dir),
-            data['orig_bc']
+                "./run_mutation.py",
+                "-bc",
+                *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
+                "-m", data['mutation_id'],
+                "--out-dir", str(mut_base_dir),
+                data['orig_bc']
         ])
 
         # compile the compare version of the mutated binary
-        run_exec_in_container(testing, True,
-                [
-                    "/usr/bin/clang++-11",
-                    "-v",
-                    "-o", str(mut_base_dir/"mut_base"),
-                    *shlex.split(compile_args),
-                    "/workdir/tmp/lib/libdynamiclibrary.so",
-                    str(prog_bc)
-                ]
-        )
+        run_exec_in_container(testing, True, [
+                "/usr/bin/clang++-11",
+                "-v",
+                "-o", str(mut_base_dir/"mut_base"),
+                *shlex.split(compile_args),
+                "/workdir/tmp/lib/libdynamiclibrary.so",
+                str(prog_bc)
+        ] )
 
         seeds = data['seeds']
         orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(data['orig_bin']).relative_to(HOST_TMP_PATH)
@@ -1530,21 +1550,17 @@ def prepare_mutation(core_to_use, data):
         # check if seeds are already crashing
         checked_seeds = {}
 
-        start_time = time.time()
-
         # do an initial check to see if the seed files are already crashing
-        if check_crashing_inputs(testing, checked_seeds, seeds,
-                                 orig_bin, docker_mut_bin, args, start_time,
-                                 covered, "initial"):
-            return {
-                'total_time': time.time() - start_time,
-                'covered_file_seen': covered.found,
-                'covered_by_seed': covered.found_by_seed,
-                'crashing_inputs': checked_seeds,
-                'all_logs': ["found crashing seed input"]
-            }
-        # If there mutation was not detected by the seeds, then return None.
-        return None
+        found_by_seeds = check_crashing_inputs(testing, checked_seeds, seeds,
+                orig_bin, docker_mut_bin, args, start_time,
+                covered, "initial")
+        return {
+            'total_time': time.time() - start_time,
+            'covered_file_seen': covered.found,
+            'crashing_inputs': checked_seeds,
+            'found_by_seeds': found_by_seeds,
+            'all_logs': ["found crashing seed input"]
+        }
 
 
 class CpuCores():
@@ -1576,12 +1592,15 @@ def print_mutation_prepare_start_msg(ii, mut_data, fuzzer_runs, start_time, num_
     cur_time = (time.time() - start_time)/(60*60)
     percentage_done = ii/num_mutations
     try:
-        time_to_go = cur_time / percentage_done
+        time_total = cur_time / percentage_done
+        time_left = time_total - cur_time
     except ZeroDivisionError:
-        time_to_go = 0
+        time_total = 0
+        time_left = 0
     fuzzers = " ".join(ff['fuzzer'] for ff in fuzzer_runs)
-    print(f"> mutation:     {ii}/{num_mutations} ({percentage_done*100:05.2f}%) @ {cur_time:.2f}|{time_to_go:.2f} hours: "
-            f"{mut_data['prog']}:{mut_data['mutation_id']} - {fuzzers}")
+    print(f"> mutation:     {ii}/{num_mutations} ({percentage_done*100:05.2f}%) @ "
+          f"{cur_time:.2f}|{time_left:.2f}|{time_total:.2f} hours: "
+          f"{mut_data['prog']}:{mut_data['mutation_id']} - {fuzzers}")
 
 
 def run_eval(progs, fuzzers):
