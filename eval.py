@@ -22,8 +22,18 @@ from pathlib import Path
 
 import docker
 
+# If no fuzzing should happen and only the seed files should be run once.
+JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
+
+if JUST_CHECK_SEED_CRASHES:
+    # no fuzzing is done use all resources available
+    logical_cores = True
+else:
+    # only use physical cores to avoid runs influencing each other
+    logical_cores = False
+
 # set the number of concurrent runs
-NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=False)))
+NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=logical_cores)))
 
 # If container logs should be shown
 SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
@@ -39,9 +49,6 @@ SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 
 # If true do filtering of mutations
 FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
-
-# If no fuzzing should happen and only the seed files should be run once.
-JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
 
 # If true redetect which mutations are used
 DETECT_MUTATIONS = True
