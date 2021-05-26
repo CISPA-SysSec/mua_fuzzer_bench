@@ -71,8 +71,7 @@ select
 	then 1 else NULL end
 	as found_by_seed,
 	
-	-- (ifnull(executed_seeds.total_time, 0) + ifnull(executed_runs.total_time, 0)) / 60 as total_time,
-	ifnull(executed_runs.total_time, 0) / 60 as total_time,
+	(ifnull(executed_seeds.total_time, 0) + ifnull(executed_runs.total_time, 0)) / 60 as total_time,
 	
 	case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed,
 	
@@ -247,28 +246,55 @@ from aflpp_runs_last_line
 group by prog, fuzzer;
 
 -- get the number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers, grouped by mutation type
+-- DROP VIEW IF EXISTS unique_finds;
+-- CREATE VIEW unique_finds
+-- as
+-- select mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, count(case when (a.found == 1 and b.found == 0) then 1 else NULL end) as finds from (
+-- 	select prog,
+-- 		   mut_id,
+-- 		   mut_type,
+-- 		   fuzzer,
+-- 		   case when time_found is null then 0 else 1 end as found
+-- 	from run_results
+-- ) a
+-- join (
+-- 	select prog,
+-- 	       mut_id,
+-- 		   fuzzer,
+-- 		   case when time_found is null then 0 else 1 end as found
+-- 	from run_results
+-- ) b
+-- on a.prog == b.prog and a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
+-- group by mut_type, a.fuzzer, b.fuzzer;
+-- 
+-- get the overall number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers
+-- DROP VIEW IF EXISTS unique_finds_overall;
+-- CREATE VIEW unique_finds_overall
+-- as
+-- select fuzzer, other_fuzzer, sum(finds) as finds from unique_finds
+-- group by fuzzer, other_fuzzer;
+
+DROP VIEW IF EXISTS unique_finds_results;
+CREATE VIEW unique_finds_results
+as
+select all_runs.prog,
+	   mutation_id as mut_id,
+	   mut_type,
+	   fuzzer,
+	   case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed
+from all_runs
+left join distinct_seed_crashing_inputs as dsci using (prog, mutation_id) 
+left join distinct_crashing_inputs as dci using (prog, mutation_id, fuzzer)
+inner join mutations using (prog, mutation_id)
+inner join completed_runs on all_runs.prog = completed_runs.prog and all_runs.mutation_id = completed_runs.mut_id;
+
 DROP VIEW IF EXISTS unique_finds;
 CREATE VIEW unique_finds
 as
-select mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, count(case when (a.found == 1 and b.found == 0) then 1 else NULL end) as finds from (
-	select prog,
-		   mut_id,
-		   mut_type,
-		   fuzzer,
-		   case when time_found is null then 0 else 1 end as found
-	from run_results
-) a
-join (
-	select prog,
-	       mut_id,
-		   fuzzer,
-		   case when time_found is null then 0 else 1 end as found
-	from run_results
-) b
-on a.prog == b.prog and a.mut_id == b.mut_id and a.fuzzer != b.fuzzer
-group by mut_type, a.fuzzer, b.fuzzer;
+select a.mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, case when (a.confirmed == 1 and b.confirmed is null) then 1 else 0 end as finds
+from unique_finds_results as a
+join unique_finds_results as b on a.prog == b.prog and a.mut_id == b.mut_id and a.fuzzer != b.fuzzer;
 
--- get the overall number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers
 DROP VIEW IF EXISTS unique_finds_overall;
 CREATE VIEW unique_finds_overall
 as
@@ -321,3 +347,12 @@ from crashed_runs_overview
 group by prog, fuzzer
 order by unknown_crash_reason, multiple_reasons, prog, fuzzer;
 
+DROP VIEW IF EXISTS base_bin_crashes;
+CREATE VIEW base_bin_crashes
+as
+select prog, mutation_id, fuzzer, orig_return_code
+from crashing_inputs
+union all
+select prog, mutation_id, NULL, orig_return_code
+from seed_crashing_inputs
+where orig_return_code != 0;

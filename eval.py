@@ -1807,11 +1807,24 @@ def crash_stats(con):
     crashes = pd.read_sql_query("""
         select *
         from crashed_runs_summary
-        -- where unknown_crash_reason > 0 or multiple_crash_reason > 0
     """, con)
-    print(crashes)
-    res = "<h2>Crashes</h2>"
-    res += crashes.to_html()
+    res = ""
+    if len(crashes) > 0:
+        print("Crashed runs:")
+        print(crashes)
+        res += "<h2>Crashes</h2>"
+        res += crashes.to_html()
+
+    crashes = pd.read_sql_query("""
+        select *
+        from base_bin_crashes
+    """, con)
+    res = ""
+    if len(crashes) > 0:
+        print("Base bin crashes:")
+        print(crashes)
+        res += "<h2>Base Bin Crashes</h2>"
+        res += crashes.to_html()
     return res
 
 def fuzzer_stats(con):
@@ -2157,7 +2170,7 @@ def generate_plots(db_path):
         cur.executescript(f.read())
 
     res = header()
-    print("crahes")
+    print("crashes")
     res += crash_stats(con)
     print("fuzzer stats")
     res += fuzzer_stats(con)
@@ -2168,11 +2181,17 @@ def generate_plots(db_path):
     print("afl stats")
     res += aflpp_stats(con)
 
+    print("select mut_types")
     mut_types = pd.read_sql_query("SELECT * from mut_types", con)
+    print("select runs")
     runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
+    print("select run_results")
     run_results = pd.read_sql_query("select * from run_results", con)
+    print("select unique_finds")
     unique_finds = pd.read_sql_query("select * from unique_finds", con)
+    print("select unique_finds_overall")
     unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
+    print("select mutation_types")
     mutation_info = pd.read_sql_query("select * from mutation_types", con)
 
     res += "<h2>Plots</h2>"
