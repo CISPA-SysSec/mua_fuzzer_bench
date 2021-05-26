@@ -2216,8 +2216,8 @@ def generate_plots(db_path):
     run_results = pd.read_sql_query("select * from run_results", con)
     print("select unique_finds")
     unique_finds = pd.read_sql_query("select * from unique_finds", con)
-    print("select unique_finds_overall")
-    unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
+    #  print("select unique_finds_overall")
+    #  unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
     print("select mutation_types")
     mutation_info = pd.read_sql_query("select * from mutation_types", con)
 
@@ -2229,9 +2229,9 @@ def generate_plots(db_path):
         res += plot(plot_dir, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
         res += plot(plot_dir, f"Killed Mutants Overall", "overall", total_plot_data['total'], total_plot_data['num_mutations'], False)
         res += plot(plot_dir, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
-    res += '<h4>Unique Finds</h4>'
-    res += 'Left finds what upper does not.'
-    res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
+    #  res += '<h4>Unique Finds</h4>'
+    #  res += 'Left finds what upper does not.'
+    #  res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
 
     for mut_type in mut_types['mut_type']:
         print(mut_type)

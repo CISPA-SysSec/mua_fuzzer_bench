@@ -1,3 +1,27 @@
+-- indeces to create:
+drop index if exists index_all_runs;
+create unique index index_all_runs on all_runs (prog, mutation_id, fuzzer);
+
+drop index if exists index_all_runs_pm;
+create index index_all_runs_pm on all_runs (prog, mutation_id);
+
+drop index if exists index_executed_seeds;
+create unique index index_executed_seeds on executed_seeds (prog, mutation_id);
+
+drop index if exists index_executed_runs;
+create unique index index_executed_runs on executed_runs (prog, mutation_id, fuzzer);
+
+drop index if exists index_crashing_mutation_preparation;
+create unique index index_crashing_mutation_preparation on crashing_mutation_preparation (prog, mutation_id);
+ 
+drop index if exists index_progs;
+create unique index index_progs on progs (prog);
+
+drop index if exists index_mutations;
+create index index_mutations on mutations (prog, mutation_id);
+
+-- useful views:
+
 -- size of the tables in the database
 DROP VIEW IF EXISTS table_sizes;
 CREATE VIEW table_sizes
@@ -318,8 +342,8 @@ DROP VIEW IF EXISTS crashed_runs_overview;
 CREATE VIEW crashed_runs_overview
 as
 select
-	not (seed_crash or seed_timeout or all_seeds_crash or mut_compile_failed) as unknown_crash_reason,
-	seed_crash + seed_timeout + all_seeds_crash + mut_compile_failed > 1 as multiple_reasons,
+	not (seed_crash or seed_timeout or all_seeds_crash or mut_compile_failed or sigint) as unknown_crash_reason,
+	seed_crash + seed_timeout + all_seeds_crash + mut_compile_failed + sigint > 1 as multiple_reasons,
 	*
 from (
 	select
@@ -327,6 +351,7 @@ from (
 		crash_trace like '%[-] PROGRAM ABORT : %Test case % results in a timeout%' as seed_timeout,
 		crash_trace like '%[-] PROGRAM ABORT : %We need at least one valid input seed that does not crash!%' as all_seeds_crash,
 		crash_trace like '%error: no such file or directory: ''/dev/shm/mutated_bcs/%/fuzz_target.ll.%.mut.bc''%' as mut_compile_failed,
+		crash_trace like '%Caught SIGINT signal!%' as sigint,
 		* from run_crashed
 )
 order by unknown_crash_reason, multiple_reasons;
@@ -342,7 +367,8 @@ select
 	sum(seed_crash) as seed_crash,
 	sum(seed_timeout) as seed_timeout,
 	sum(all_seeds_crash) as all_seeds_crash,
-	sum(mut_compile_failed) as mut_compile_failed
+	sum(mut_compile_failed) as mut_compile_failed,
+	sum(sigint) as sigint
 from crashed_runs_overview
 group by prog, fuzzer
 order by unknown_crash_reason, multiple_reasons, prog, fuzzer;
@@ -350,9 +376,14 @@ order by unknown_crash_reason, multiple_reasons, prog, fuzzer;
 DROP VIEW IF EXISTS base_bin_crashes;
 CREATE VIEW base_bin_crashes
 as
-select prog, mutation_id, fuzzer, orig_return_code
-from crashing_inputs
-union all
-select prog, mutation_id, NULL, orig_return_code
-from seed_crashing_inputs
-where orig_return_code != 0;
+select prog, fuzzer, count(*) as amount
+from (
+	select prog, mutation_id, fuzzer, orig_return_code
+	from crashing_inputs
+	where orig_return_code != 0
+	union all
+	select prog, mutation_id, NULL as fuzzer, orig_return_code
+	from seed_crashing_inputs
+	where orig_return_code != 0
+);
+
