@@ -47,6 +47,10 @@ RUN git clone https://github.com/SimonKagstrom/kcov.git && \
 WORKDIR /
 RUN rm -rf /kcov
 
+################################################################################
+# common files
+COPY samples/common /home/mutator/samples/common
+
 # ################################################################################
 # # sqlite3
 # WORKDIR /home/mutator/samples
@@ -130,15 +134,31 @@ RUN git checkout 58141dc9c92189ed8d046f494f5e034d5db91bea
 COPY samples/re2_harness /home/mutator/samples/re2_harness
 RUN CC=gclang CXX=gclang++ CXXFLAGS="" ../re2_harness/build.sh
 
-# ################################################################################
-# # vorbis
-# RUN apt-get install -y automake libtool
-# WORKDIR /home/mutator/samples
-# RUN git clone https://github.com/xiph/vorbis.git
-# WORKDIR /home/mutator/samples/vorbis
+################################################################################
+# vorbis
+RUN apt-get install -y automake libtool
+WORKDIR /home/mutator/samples
+
+# clone vorbis
+RUN git clone https://github.com/xiph/vorbis.git
+WORKDIR /home/mutator/samples/vorbis/vorbis
+RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
+
+# clone ogg
+WORKDIR /home/mutator/samples/vorbis
+RUN git clone https://gitlab.xiph.org/xiph/ogg.git 
+# WORKDIR /home/mutator/samples/vorbis/ogg
 # RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
-# COPY samples/vorbis_harness /home/mutator/samples/vorbis_harness
-# RUN CC=gclang CXX=gclang++ CXXFLAGS="" ../vorbis_harness/build.sh
+
+# build
+WORKDIR /home/mutator/samples/vorbis
+COPY samples/vorbis_harness /home/mutator/samples/vorbis_harness
+RUN CC=gclang CXX=gclang++ CXXFLAGS="" \
+    SRC="/home/mutator/samples/vorbis" \
+    WORK="/home/mutator/samples/vorbis/install" \
+    OUT="/home/mutator/samples/vorbis/out" \
+    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+    ../vorbis_harness/build.sh
 
 ################################################################################
 # other stuff

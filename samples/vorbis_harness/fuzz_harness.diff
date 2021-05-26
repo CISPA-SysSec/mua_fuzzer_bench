@@ -1,0 +1,105 @@
+diff --git a/re2/fuzzing/re2_fuzzer.cc b/re2/fuzzing/re2_fuzzer.cc
+index 8306f88..afd1b4a 100644
+--- a/re2/fuzzing/re2_fuzzer.cc
++++ b/re2/fuzzing/re2_fuzzer.cc
+@@ -2,6 +2,9 @@
+ // Use of this source code is governed by a BSD-style
+ // license that can be found in the LICENSE file.
+ 
++#include <stdio.h>
++#include <stdlib.h>
++
+ #include <fuzzer/FuzzedDataProvider.h>
+ #include <stddef.h>
+ #include <stdint.h>
+@@ -9,6 +12,17 @@
+ #include <queue>
+ #include <string>
+ #include <vector>
++#include <fstream>
++#include <algorithm>
++#include <climits>
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include <initializer_list>
++#include <string>
++#include <type_traits>
++#include <utility>
++#include <vector>
+ 
+ #include "re2/prefilter.h"
+ #include "re2/re2.h"
+@@ -169,3 +183,72 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+   TestOneInput(pattern, options, text);
+   return 0;
+ }
++
++int main(int argc, char** argv) {
++
++    std::ifstream file(argv[1]);
++    if (file)
++    {
++        /*
++         * Get the size of the file
++         */
++        file.seekg(0,std::ios::end);
++        std::streampos length = file.tellg();
++        file.seekg(0,std::ios::beg);
++
++        /*
++         * Use a vector as the buffer.
++         * It is exception safe and will be tidied up correctly.
++         * This constructor creates a buffer of the correct length.
++         * Because char is a POD data type it is not initialized.
++         *
++         * Then read the whole file into the buffer.
++         */
++        std::vector<char> buffer(length);
++        file.read(&buffer[0],length);
++
++        /* Call function to be fuzzed, e.g.: */
++        LLVMFuzzerTestOneInput(reinterpret_cast<const uint8_t*>(buffer.data()), length);
++    }
++
++    return 0;
++
++    // char *buf = NULL;
++    // int len, read_size;
++    // FILE *handler = fopen(argv[1], "r");
++
++    // if (handler)
++    // {
++    //     // Seek the last byte of the file
++    //     fseek(handler, 0, SEEK_END);
++    //     // Offset from the first to the last byte, or in other words, filesize
++    //     len = ftell(handler);
++    //     // go back to the start of the file
++    //     rewind(handler);
++
++    //     // Allocate a buf that can hold it all
++    //     buf = (const uint8_t*) malloc(sizeof(uint8_t) * (len) );
++
++    //     // Read it all in one operation
++    //     read_size = fread(buf, sizeof(uint8_t), len, handler);
++
++    //     if (len != read_size)
++    //     {
++    //         // Something went wrong, throw away the memory and set
++    //         // the buf to NULL
++    //         free(buf);
++    //         buf = NULL;
++    //     }
++
++    //     // Always remember to close the file.
++    //     fclose(handler);
++
++    //     return 1;
++    // }
++
++    /* Setup function call, e.g. struct target *tmp = libtarget_init() */
++    /* Reset state. e.g. libtarget_free(tmp) */
++
++    return 0;
++
++}

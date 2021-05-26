@@ -131,6 +131,18 @@ PROGRAMS = {
         "seeds": "tmp/samples/mjs_harness/seeds/",
         "args": "@@",
     },
+    "vorbis": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/vorbis/out/decode_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/vorbis/out/decode_fuzzer.bc")),
+        "path": "samples/vorbis/",
+        "seeds": "tmp/samples/vorbis_harness/seeds/",
+        "args": "@@",
+    },
     "harfbuzz": {
         "bc_compile_args": [
         ],
