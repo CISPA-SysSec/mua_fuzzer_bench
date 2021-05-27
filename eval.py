@@ -131,6 +131,18 @@ PROGRAMS = {
         "seeds": "tmp/samples/c-ares_harness/seeds",
         "args": "@@",
     },
+    "freetype": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
+        "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
+        "path": "samples/ftfuzzer",
+        "seeds": "tmp/samples/freetype_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
         "bc_compile_args": [
         ],

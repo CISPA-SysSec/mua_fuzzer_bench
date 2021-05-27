@@ -174,10 +174,29 @@ RUN git checkout 809d5e84f3423ab8165650d923acb0e246cbd006
 COPY samples/c-ares_harness /home/mutator/samples/c-ares_harness
 RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/c-ares" \
-    WORK="/home/mutator/samples/c-ares/install" \
+    WORK="/home/mutator/samples/c-ares/work" \
     OUT="/home/mutator/samples/c-ares/out" \
     LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../c-ares_harness/build.sh
+
+################################################################################
+# freetype
+WORKDIR /home/mutator/samples
+RUN apt-get install -y autoconf cmake libtool pkg-config make
+
+# clone
+RUN git clone https://github.com/freetype/freetype2-testing.git freetype
+WORKDIR /home/mutator/samples/freetype/
+RUN git checkout ca6201f250316e6efd445a7fd92c4d82950e4cb0
+
+# build
+COPY samples/freetype_harness /home/mutator/samples/freetype_harness
+RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/freetype" \
+    WORK="/home/mutator/samples/freetype/work" \
+    OUT="/home/mutator/samples/freetype/out" \
+    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+    ../freetype_harness/build.sh
 
 ################################################################################
 # other stuff
