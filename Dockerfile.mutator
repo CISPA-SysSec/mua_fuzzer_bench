@@ -98,21 +98,6 @@ RUN git checkout c23672ce52ae53bd846b555439aa0a070b6d2c07
 COPY samples/libjpeg-turbo_harness /home/mutator/samples/libjpeg-turbo_harness
 RUN ../libjpeg-turbo_harness/build.sh
 
-# ################################################################################
-# # harfbuzz
-# WORKDIR /home/mutator/samples
-# RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
-# RUN git clone https://github.com/harfbuzz/harfbuzz.git
-# WORKDIR /home/mutator/samples/harfbuzz
-# RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
-# RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
-# RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
-# RUN get-bc hb-subset-fuzzer
-# COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
-# # RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
-# # WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
-# # RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
-
 ################################################################################
 # mjs
 WORKDIR /home/mutator/samples
@@ -159,6 +144,21 @@ RUN CC=gclang CXX=gclang++ CXXFLAGS="" \
     OUT="/home/mutator/samples/vorbis/out" \
     LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../vorbis_harness/build.sh
+
+################################################################################
+# harfbuzz
+WORKDIR /home/mutator/samples
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
+RUN git clone https://github.com/harfbuzz/harfbuzz.git
+WORKDIR /home/mutator/samples/harfbuzz
+RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
+RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
+RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
+RUN get-bc hb-subset-fuzzer
+COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
+# RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
+# WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
+# RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
 
 ################################################################################
 # other stuff
