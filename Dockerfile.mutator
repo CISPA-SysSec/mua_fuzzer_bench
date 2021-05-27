@@ -216,23 +216,25 @@ RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
 #     LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
 #     ../libcxx_harness/build.sh
 
-################################################################################
-# libcxx
-WORKDIR /home/mutator/samples
-
-# clone
-RUN git clone --depth=1 https://github.com/llvm/llvm-project.git --branch llvmorg-12.0.0 --single-branch libcxx
-WORKDIR /home/mutator/samples/libcxx/
-
-# build
-COPY samples/libcxx_harness /home/mutator/samples/libcxx_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
-    SRC="/home/mutator/samples/libcxx" \
-    WORK="/home/mutator/samples/libcxx/work" \
-    OUT="/home/mutator/samples/libcxx/out" \
-    SANITIZER="undefined" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
-    ../libcxx_harness/build.sh
+# ################################################################################
+# # openthread
+# WORKDIR /home/mutator/samples
+#
+# # clone
+# RUN apt-get install -y autoconf cmake ninja-build
+# RUN git clone https://github.com/openthread/openthread
+# WORKDIR /home/mutator/samples/openthread/
+# RUN git checkout d3464814948a457f33b2df3a02856ab2f3533a19
+#
+# # build
+# COPY samples/openthread_harness /home/mutator/samples/openthread_harness
+# RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+#     SRC="/home/mutator/samples/openthread" \
+#     WORK="/home/mutator/samples/openthread/work" \
+#     OUT="/home/mutator/samples/openthread/out" \
+#     SANITIZER="undefined" \
+#     LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+#     ../openthread_harness/build.sh
 
 ################################################################################
 # other stuff
