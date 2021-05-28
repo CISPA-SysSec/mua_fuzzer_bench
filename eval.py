@@ -183,6 +183,18 @@ PROGRAMS = {
         "seeds": "tmp/samples/aspell_harness/seeds",
         "args": "@@",
     },
+    "bloaty": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/bloaty/out/fuzz_target")),
+        "orig_bc": str(Path("tmp/samples/bloaty/out/fuzz_target.bc")),
+        "path": "samples/bloaty/",
+        "seeds": "tmp/samples/bloaty_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
         "bc_compile_args": [
         ],
