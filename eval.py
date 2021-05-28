@@ -195,6 +195,24 @@ PROGRAMS = {
         "seeds": "tmp/samples/bloaty_harness/seeds",
         "args": "@@",
     },
+    "curl": {
+        "bc_compile_args": [
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/curl/out/lib", 'action': 'prefix_workdir'},
+            {'val': "-lpthread", 'action': None},
+            {'val': "-lidn2", 'action': None},
+            {'val': "-lz", 'action': None},
+            {'val': "-lnghttp2", 'action': None},
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
+        "path": "samples/curl/",
+        "seeds": "tmp/samples/curl_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
         "bc_compile_args": [
         ],
