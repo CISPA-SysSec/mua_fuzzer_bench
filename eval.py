@@ -169,6 +169,20 @@ PROGRAMS = {
         "seeds": "tmp/samples/woff2_harness/seeds",
         "args": "@@",
     },
+    "aspell": {
+        "bc_compile_args": [
+            {'val': "-lpthread", 'action': None},
+            {'val': "-ldl", 'action': None},
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/aspell/out/aspell_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/aspell/out/aspell_fuzzer.bc")),
+        "path": "samples/aspell/",
+        "seeds": "tmp/samples/aspell_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
         "bc_compile_args": [
         ],
