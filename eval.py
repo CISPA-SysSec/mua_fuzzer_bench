@@ -143,6 +143,32 @@ PROGRAMS = {
         "seeds": "tmp/samples/freetype_harness/seeds",
         "args": "@@",
     },
+    "woff2_base": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+            {'val': "tmp/samples/common/main.cc", 'action': 'prefix_workdir'},
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.bc")),
+        "path": "samples/woff2/out/convert_woff2ttf_fuzzer",
+        "seeds": "tmp/samples/woff2_harness/seeds",
+        "args": "@@",
+    },
+    "woff2_new": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+            {'val': "tmp/samples/common/main.cc", 'action': 'prefix_workdir'},
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry")),
+        "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.bc")),
+        "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
+        "seeds": "tmp/samples/woff2_harness/seeds",
+        "args": "@@",
+    },
     "guetzli": {
         "bc_compile_args": [
         ],
