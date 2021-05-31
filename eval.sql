@@ -1,24 +1,23 @@
 -- indeces to create:
+
 drop index if exists index_all_runs;
-create unique index index_all_runs on all_runs (prog, mutation_id, fuzzer);
+create unique index index_all_runs on all_runs (exec_id, prog, mutation_id, run_ctr, fuzzer);
 
-drop index if exists index_all_runs_pm;
-create index index_all_runs_pm on all_runs (prog, mutation_id);
-
-drop index if exists index_executed_seeds;
-create unique index index_executed_seeds on executed_seeds (prog, mutation_id);
-
-drop index if exists index_executed_runs;
-create unique index index_executed_runs on executed_runs (prog, mutation_id, fuzzer);
-
-drop index if exists index_crashing_mutation_preparation;
-create unique index index_crashing_mutation_preparation on crashing_mutation_preparation (prog, mutation_id);
- 
 drop index if exists index_progs;
-create unique index index_progs on progs (prog);
+create unique index index_progs on progs (exec_id, prog);
 
 drop index if exists index_mutations;
-create index index_mutations on mutations (prog, mutation_id);
+create unique index index_mutations on mutations (exec_id, prog, mutation_id);
+
+drop index if exists index_mutations_types;
+create index index_mutations_types on mutations (mut_type);
+
+drop index if exists index_distinct_seed_crashing_inputs;
+create index index_distinct_seed_crashing_inputs on seed_crashing_inputs (exec_id, prog, mutation_id) where orig_return_code != mut_return_code;
+
+drop index if exists index_distinct_crashing_inputs;
+create index index_distinct_crashing_inputs on crashing_inputs (exec_id, prog, mutation_id, run_ctr, fuzzer) where orig_return_code != mut_return_code;
+
 
 -- useful views:
 
@@ -28,13 +27,14 @@ CREATE VIEW table_sizes
 as
 SELECT name, printf("%.2f", cast(SUM("pgsize") as float) / (1024*1024)) as "MiBi" FROM dbstat group by name;
 
+
 -- collect info on all runs
 DROP VIEW IF EXISTS runs;
 CREATE VIEW runs
 as
 select * from all_runs
-inner join progs using (prog)
-inner join mutations using (prog, mutation_id);
+inner join progs using (exec_id, prog)
+inner join mutations using (exec_id, prog, mutation_id);
 
 -- results for all mut types
 DROP VIEW IF EXISTS mut_types;
@@ -49,7 +49,7 @@ CREATE VIEW distinct_seed_crashing_inputs
 as
 select * from seed_crashing_inputs
 where orig_return_code != mut_return_code
-group by prog, mutation_id;
+group by exec_id, prog, mutation_id;
 
 -- a distinct list of crashing inputs one for each prog, mutation_id, fuzzer if available
 DROP VIEW IF EXISTS distinct_crashing_inputs;
@@ -57,15 +57,17 @@ CREATE VIEW distinct_crashing_inputs
 as
 select * from crashing_inputs
 where orig_return_code != mut_return_code
-group by prog, mutation_id, fuzzer;
+group by exec_id, prog, mutation_id, run_ctr, fuzzer;
 
 -- results for all runs
 DROP VIEW IF EXISTS all_run_results;
 CREATE VIEW all_run_results
 as
 select
+	exec_id,
 	prog,
 	mutation_id as mut_id,
+	run_ctr,
 	fuzzer,
 	mut_type,
 	
@@ -111,29 +113,29 @@ select
 	end
 	as stage
 from all_runs
-left join executed_seeds using (prog, mutation_id)
-left join executed_runs using (prog, mutation_id, fuzzer)
-left join distinct_seed_crashing_inputs as dsci using (prog, mutation_id) 
-left join distinct_crashing_inputs as dci using (prog, mutation_id, fuzzer)
-left join crashing_mutation_preparation using (prog, mutation_id)
-left join run_crashed using (prog, mutation_id, fuzzer)
-inner join progs using (prog)
-inner join mutations using (prog, mutation_id);
+left join executed_seeds using (exec_id, prog, mutation_id)
+left join executed_runs using (exec_id, prog, mutation_id, run_ctr, fuzzer)
+left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
+left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)
+left join crashing_mutation_preparation using (exec_id, prog, mutation_id)
+left join run_crashed using (exec_id, prog, mutation_id, run_ctr, fuzzer)
+inner join progs using (exec_id, prog)
+inner join mutations using (exec_id, prog, mutation_id);
 
 -- get the prog and mut_id for all run_results that have been completed for all fuzzers
 DROP VIEW IF EXISTS completed_runs;
 CREATE VIEW completed_runs
 as
-select a.prog, a.mut_id, complete from (
+select a.exec_id, a.prog, a.mut_id, a.run_ctr, complete from (
 	select group_concat(fuzzer) as complete, length(group_concat(fuzzer)) as len, prog, mut_id, * from (
 		select * from all_run_results where stage is not null order by fuzzer
-	) group by prog, mut_id
+	) group by exec_id, prog, mut_id, run_ctr
 ) a
 left join (
 	select max(length(complete)) as max_len from (
 		select group_concat(fuzzer) as complete, prog, mut_id, * from (
 			select * from all_run_results where stage is not null order by fuzzer
-		) group by prog, mut_id
+		) group by exec_id, prog, mut_id, run_ctr
 	)
 ) m
 where a.len = m.max_len;
@@ -142,8 +144,7 @@ DROP VIEW IF EXISTS run_results;
 CREATE VIEW run_results
 as
 select * from all_run_results
-inner join completed_runs
-on all_run_results.prog = completed_runs.prog and all_run_results.mut_id = completed_runs.mut_id;
+inner join completed_runs using (exec_id, prog, mut_id, run_ctr);
 
 -- results for all runs grouped by mut_type
 DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
@@ -171,6 +172,7 @@ from (
 left join (
 	select mut_type,
 	       fuzzer,
+		   exec_id,
 		   prog,
 		   count(*) as done,
 		   count(covered_file_seen) as covered,
@@ -180,7 +182,7 @@ left join (
 		   count(case when stage = "seed_found" and confirmed then 1 else null end) as f_by_seed,
 		   sum(total_time) as total_time
     from run_results
-	group by mut_type, fuzzer, prog
+	group by mut_type, fuzzer, exec_id, prog
 ) res using (mut_type, prog, fuzzer)
 group by runs_mut_type.mut_type, runs_mut_type.prog, runs_mut_type.fuzzer;
 	
@@ -255,7 +257,7 @@ select * from (
 	select * from aflpp_runs
 	order by totals_execs
 ) a
-group by prog, mutation_id, fuzzer;
+group by exec_id, prog, mutation_id, run_ctr, fuzzer;
 
 -- get runtime stats for afl++ based fuzzers
 DROP VIEW IF EXISTS aflpp_runtime_stats;
@@ -301,23 +303,35 @@ group by prog, fuzzer;
 DROP VIEW IF EXISTS unique_finds_results;
 CREATE VIEW unique_finds_results
 as
-select all_runs.prog,
+select 
+	   all_runs.exec_id,
+	   all_runs.prog,
 	   mutation_id as mut_id,
 	   mut_type,
+	   all_runs.run_ctr,
 	   fuzzer,
 	   case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed
 from all_runs
-left join distinct_seed_crashing_inputs as dsci using (prog, mutation_id) 
-left join distinct_crashing_inputs as dci using (prog, mutation_id, fuzzer)
-inner join mutations using (prog, mutation_id)
-inner join completed_runs on all_runs.prog = completed_runs.prog and all_runs.mutation_id = completed_runs.mut_id;
+left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
+left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)
+inner join mutations using (exec_id, prog, mutation_id)
+inner join completed_runs on
+	all_runs.exec_id = completed_runs.exec_id and
+	all_runs.prog = completed_runs.prog and
+	all_runs.mutation_id = completed_runs.mut_id and
+	all_runs.run_ctr = completed_runs.run_ctr;
 
 DROP VIEW IF EXISTS unique_finds;
 CREATE VIEW unique_finds
 as
 select a.mut_type, a.fuzzer as fuzzer, b.fuzzer as other_fuzzer, case when (a.confirmed == 1 and b.confirmed is null) then 1 else 0 end as finds
 from unique_finds_results as a
-join unique_finds_results as b on a.prog == b.prog and a.mut_id == b.mut_id and a.fuzzer != b.fuzzer;
+join unique_finds_results as b on
+	a.exec_id == b.exec_id and
+	a.prog == b.prog and
+	a.mut_id == b.mut_id and
+	a.run_ctr == b.run_ctr and
+	a.fuzzer != b.fuzzer;
 
 DROP VIEW IF EXISTS unique_finds_overall;
 CREATE VIEW unique_finds_overall
@@ -326,17 +340,18 @@ select fuzzer, other_fuzzer, sum(finds) as finds from unique_finds
 group by fuzzer, other_fuzzer;
 
 
-DROP VIEW IF EXISTS unsolved_mutations;
-CREATE VIEW unsolved_mutations
-as
-select a.mut_type, mut_id, mut_file_path, mut_line, mut_column, pattern_class, description, procedure, * from (
-	select mut_type, mut_id, sum(case WHEN covered_file_seen is null then 0 else 1 end) as covered_num, sum(case WHEN confirmed is null then 0 else 1 end) as confirmed_num from run_results
-	group by mut_id
-	having covered_num > 0 and confirmed_num = 0
-) a inner join runs on a.mut_id = runs.mutation_id
-inner join mutation_types on a.mut_type = mutation_types.mut_type
-group by mut_id
-order by mut_type, mut_file_path, mut_line;
+-- needs to be fixed: add exec_id and run_ctr
+-- DROP VIEW IF EXISTS unsolved_mutations;
+-- CREATE VIEW unsolved_mutations
+-- as
+-- select a.mut_type, mut_id, mut_file_path, mut_line, mut_column, pattern_class, description, procedure, * from (
+-- 	select mut_type, mut_id, sum(case WHEN covered_file_seen is null then 0 else 1 end) as covered_num, sum(case WHEN confirmed is null then 0 else 1 end) as confirmed_num from run_results
+-- 	group by mut_id
+-- 	having covered_num > 0 and confirmed_num = 0
+-- ) a inner join runs on a.mut_id = runs.mutation_id
+-- inner join mutation_types on a.mut_type = mutation_types.mut_type
+-- group by mut_id
+-- order by mut_type, mut_file_path, mut_line;
 
 DROP VIEW IF EXISTS crashed_runs_overview;
 CREATE VIEW crashed_runs_overview
