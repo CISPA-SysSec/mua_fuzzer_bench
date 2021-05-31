@@ -2212,7 +2212,7 @@ def main():
     args = parser.parse_args()
 
     if args.cmd == 'eval':
-        run_eval(args.progs, args.fuzzers)
+        run_eval(args.progs, args.fuzzers, args.num_repeats)
     elif args.cmd == 'plot':
         generate_plots(args.db_path)
     else:
