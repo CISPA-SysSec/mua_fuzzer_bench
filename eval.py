@@ -18,9 +18,13 @@ import psutil
 import contextlib
 import concurrent.futures
 import shlex
+import uuid
+import platform
 from pathlib import Path
 
 import docker
+
+EXEC_ID = str(uuid.uuid4())
 
 # If no fuzzing should happen and only the seed files should be run once.
 JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
@@ -360,6 +364,16 @@ class Stats():
         c = self.conn.cursor()
 
         c.execute('''
+        CREATE TABLE execution (
+            exec_id,
+            hostname,
+            git_status,
+            start_time,
+            total_time
+        )
+        ''')
+
+        c.execute('''
         CREATE TABLE mutation_types (
             pattern_name,
             mut_type,
@@ -371,13 +385,16 @@ class Stats():
 
         c.execute('''
         CREATE TABLE all_runs (
+            exec_id,
             prog,
             mutation_id INTEGER,
+            run_ctr,
             fuzzer
         )''')
 
         c.execute('''
         CREATE TABLE mutations (
+            exec_id,
             prog,
             mutation_id INTEGER,
             mut_additional_info,
@@ -390,6 +407,7 @@ class Stats():
 
         c.execute('''
         CREATE TABLE progs (
+            exec_id,
             prog,
             bc_compile_args,
             bin_compile_args,
@@ -400,8 +418,10 @@ class Stats():
 
         c.execute('''
         CREATE TABLE executed_runs (
+            exec_id,
             prog,
             mutation_id INTEGER,
+            run_ctr,
             fuzzer,
             covered_file_seen,
             total_time
@@ -409,6 +429,7 @@ class Stats():
 
         c.execute('''
         CREATE TABLE executed_seeds (
+            exec_id,
             prog,
             mutation_id INTEGER,
             covered_file_seen,
@@ -417,8 +438,10 @@ class Stats():
 
         c.execute('''
         CREATE TABLE aflpp_runs (
+            exec_id,
             prog,
             mutation_id INTEGER,
+            run_ctr,
             fuzzer,
             time,
             cycles_done,
@@ -436,6 +459,7 @@ class Stats():
 
         c.execute('''
         CREATE TABLE seed_crashing_inputs (
+            exec_id,
             prog,
             mutation_id INTEGER,
             time_found,
@@ -453,8 +477,10 @@ class Stats():
 
         c.execute('''
         CREATE TABLE crashing_inputs (
+            exec_id,
             prog,
             mutation_id INTEGER,
+            run_ctr,
             fuzzer,
             time_found,
             stage,
@@ -471,6 +497,7 @@ class Stats():
 
         c.execute('''
         CREATE TABLE crashing_mutation_preparation (
+            exec_id,
             prog,
             mutation_id INTEGER,
             crash_trace
@@ -478,8 +505,10 @@ class Stats():
 
         c.execute('''
         CREATE TABLE run_crashed (
+            exec_id,
             prog,
             mutation_id INTEGER,
+            run_ctr,
             fuzzer,
             crash_trace
         )''')
@@ -487,6 +516,29 @@ class Stats():
         self.conn.commit()
 
     def commit(self):
+        self.conn.commit()
+
+    @connection
+    def new_execution(self, c, exec_id, hostname, git_status, start_time):
+        c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?)',
+            (
+                exec_id,
+                hostname,
+                git_status,
+                start_time,
+                None
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def execution_done(self, c, exec_id, total_time):
+        c.execute('UPDATE execution SET total_time = ? where exec_id = ?',
+            (
+                total_time,
+                exec_id,
+            )
+        )
         self.conn.commit()
 
     @connection
@@ -504,21 +556,24 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_run(self, c, data):
+    def new_run(self, c, exec_id, data):
         mut_data = data['mut_data']
-        c.execute('INSERT INTO all_runs VALUES (?, ?, ?)',
+        c.execute('INSERT INTO all_runs VALUES (?, ?, ?, ?, ?)',
             (
+                exec_id,
                 mut_data['prog'],
                 mut_data['mutation_id'],
+                data['run_ctr'],
                 data['fuzzer'],
             )
         )
         self.conn.commit()
 
     @connection
-    def new_mutation(self, c, data):
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    def new_mutation(self, c, exec_id, data):
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
+                exec_id,
                 data['prog'],
                 data['mutation_id'],
                 json.dumps(data['mutation_data']['additionalInfo']),
@@ -532,10 +587,11 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_prog(self, c, prog, data):
+    def new_prog(self, c, exec_id, prog, data):
         print(data)
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
+                exec_id,
                 prog,
                 json.dumps(data['bc_compile_args']),
                 json.dumps(data['bin_compile_args']),
@@ -547,11 +603,13 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_run_executed(self, c, plot_data, prog, mutation_id, fuzzer, cf_seen, total_time):
-        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?)',
+    def new_run_executed(self, c, plot_data, exec_id, run_ctr, prog, mutation_id, fuzzer, cf_seen, total_time):
+        c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
+                exec_id,
                 prog,
                 mutation_id,
+                run_ctr,
                 fuzzer,
                 cf_seen,
                 total_time,
@@ -568,10 +626,12 @@ class Stats():
                     rest = row[None][0].strip()
                 except:
                     rest = None
-                c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
+                        exec_id,
                         prog,
                         mutation_id,
+                        run_ctr,
                         fuzzer,
                         cur_time,
                         row[' cycles_done'].strip(),
@@ -590,9 +650,10 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_seeds_executed(self, c, prog, mutation_id, cf_seen, total_time):
-        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?)',
+    def new_seeds_executed(self, c, exec_id, prog, mutation_id, cf_seen, total_time):
+        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?)',
             (
+                exec_id,
                 prog,
                 mutation_id,
                 cf_seen,
@@ -602,13 +663,15 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_crashing_inputs(self, c, crashing_inputs, prog, mutation_id, fuzzer):
+    def new_crashing_inputs(self, c, crashing_inputs, exec_id, prog, mutation_id, run_ctr, fuzzer):
         for path, data in crashing_inputs.items():
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
-                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
+                        exec_id,
                         prog,
                         mutation_id,
+                        run_ctr,
                         fuzzer,
                         data['time_found'],
                         data['stage'],
@@ -626,11 +689,12 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_seed_crashing_inputs(self, c, prog, mutation_id, crashing_inputs):
+    def new_seed_crashing_inputs(self, c, exec_id, prog, mutation_id, crashing_inputs):
         for path, data in crashing_inputs.items():
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
-                c.execute('INSERT INTO seed_crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO seed_crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
+                        exec_id,
                         prog,
                         mutation_id,
                         data['time_found'],
@@ -649,11 +713,13 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def run_crashed(self, c, prog, mutation_id, fuzzer, trace):
-        c.execute('INSERT INTO run_crashed VALUES (?, ?, ?, ?)',
+    def run_crashed(self, c, exec_id, prog, mutation_id, run_ctr, fuzzer, trace):
+        c.execute('INSERT INTO run_crashed VALUES (?, ?, ?, ?, ?, ?)',
             (
+                exec_id,
                 prog,
                 mutation_id,
+                run_ctr,
                 fuzzer,
                 trace,
             )
@@ -661,9 +727,10 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def mutation_preparation_crashed(self, c, prog, mutation_id, trace):
-        c.execute('INSERT INTO crashing_mutation_preparation VALUES (?, ?, ?)',
+    def mutation_preparation_crashed(self, c, exec_id, prog, mutation_id, trace):
+        c.execute('INSERT INTO crashing_mutation_preparation VALUES (?, ?, ?, ?)',
             (
+                exec_id,
                 prog,
                 mutation_id,
                 trace,
@@ -1364,7 +1431,7 @@ def get_all_mutations(stats, mutator, progs):
             print(err)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             sys.exit(1)
-        stats.new_prog(prog, prog_info)
+        stats.new_prog(EXEC_ID, prog, prog_info)
         start = time.time()
         print(f"Compiling base and locating mutations for {prog}")
 
@@ -1420,7 +1487,7 @@ def get_all_mutations(stats, mutator, progs):
         print(f"Found {len(mutations)} mutations for {prog}")
 
         for mut in mutations:
-            stats.new_mutation({
+            stats.new_mutation(EXEC_ID, {
                 'prog': mut[1],
                 'mutation_id': mut[0],
                 'mutation_data': mut[4][int(mut[0])],
@@ -1459,7 +1526,7 @@ def sequence_mutations(all_mutations):
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
-def get_all_runs(stats, fuzzers, progs):
+def get_all_runs(stats, fuzzers, progs, num_repeats):
     with start_mutation_container(None) as mutator:
         all_mutations = get_all_mutations(stats, mutator, progs)
 
@@ -1507,17 +1574,19 @@ def get_all_runs(stats, fuzzers, progs):
                     sys.exit(1)
                 # Get the working directory based on program and mutation id and
                 # fuzzer, which is a unique path for each run
-                workdir = Path("/dev/shm/mutator/")/prog/mutation_id/fuzzer
-                # gather all info
-                run_data = {
-                    'fuzzer': fuzzer,
-                    'eval_func': eval_func,
-                    'workdir': workdir,
-                    'mut_data': mut_data,
-                }
-                # Add that run to the database, so that we know it is possible
-                stats.new_run(run_data)
-                fuzzer_runs.append(run_data)
+                for run_ctr in range(num_repeats):
+                    workdir = Path("/dev/shm/mutator/")/prog/mutation_id/fuzzer/str(run_ctr)
+                    # gather all info
+                    run_data = {
+                        'run_ctr': run_ctr,
+                        'fuzzer': fuzzer,
+                        'eval_func': eval_func,
+                        'workdir': workdir,
+                        'mut_data': mut_data,
+                    }
+                    # Add that run to the database, so that we know it is possible
+                    stats.new_run(EXEC_ID, run_data)
+                    fuzzer_runs.append(run_data)
             # Build our list of runs
             all_runs.append((mut_data, fuzzer_runs))
 
@@ -1545,12 +1614,14 @@ def handle_run_result(stats, active_mutants, run_future, data):
     except Exception:
         # if there was an exception record it
         trace = traceback.format_exc()
-        stats.run_crashed(mut_data['prog'], mut_data['mutation_id'], data['fuzzer'], trace)
+        stats.run_crashed(EXEC_ID, mut_data['prog'], mut_data['mutation_id'], data['run_ctr'], data['fuzzer'], trace)
         print(f"= run ###:      {mut_data['prog']}:{mut_data['mutation_id']}:{data['fuzzer']}")
     else:
         # if successful log the run
         stats.new_run_executed(
             run_result['plot_data'],
+            EXEC_ID,
+            data['run_ctr'],
             mut_data['prog'],
             mut_data['mutation_id'],
             data['fuzzer'],
@@ -1558,8 +1629,10 @@ def handle_run_result(stats, active_mutants, run_future, data):
             run_result['total_time'])
         stats.new_crashing_inputs(
             run_result['crashing_inputs'],
+            EXEC_ID,
             mut_data['prog'],
             mut_data['mutation_id'],
+            data['run_ctr'],
             data['fuzzer'])
         # Update if the mutant has at least been killed once
         if active_mutants[prog_bc]['killed'] is False:
@@ -1607,19 +1680,19 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     except Exception:
         # If there was an exception record it.
         trace = traceback.format_exc()
-        stats.mutation_preparation_crashed(prog, mutation_id, trace)
+        stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
         print(f"= mutation ###: crashed {prog}:{mutation_id}")
 
         # Nothing more to do.
         return
 
-    stats.new_seeds_executed(prog, mutation_id,
+    stats.new_seeds_executed(EXEC_ID, prog, mutation_id,
             task_result['covered_file_seen'], task_result['total_time'])
 
     # Record if seeds found the mutant, if so, do not add to prepared runs.
     if task_result['found_by_seeds']:
         print(f"= mutation [+]: (seed found) {prog}:{mutation_id}")
-        stats.new_seed_crashing_inputs(prog, mutation_id, task_result['crashing_inputs'])
+        stats.new_seed_crashing_inputs(EXEC_ID, prog, mutation_id, task_result['crashing_inputs'])
         clean_up_mut_base_dir(mut_data)
         return
 
@@ -1737,7 +1810,8 @@ def print_run_start_msg(run_data):
     prog = run_data['mut_data']['prog']
     mutation_id = run_data['mut_data']['mutation_id']
     fuzzer = run_data['fuzzer']
-    print(f"> run:          {prog}:{mutation_id}:{fuzzer}")
+    run_ctr = run_data['run_ctr']
+    print(f"> run:          {prog}:{mutation_id}:{fuzzer}:{run_ctr}")
 
 
 
@@ -1750,20 +1824,41 @@ def print_mutation_prepare_start_msg(ii, mut_data, fuzzer_runs, start_time, num_
     except ZeroDivisionError:
         time_total = 0
         time_left = 0
-    fuzzers = " ".join(ff['fuzzer'] for ff in fuzzer_runs)
+    fuzzers = " ".join(set(ff['fuzzer'] for ff in fuzzer_runs))
+    num_repeats = max(ff['run_ctr'] for ff in fuzzer_runs) + 1
     print(f"> mutation:     {ii}/{num_mutations} ({percentage_done*100:05.2f}%) @ "
           f"{cur_time:.2f}|{time_left:.2f}|{time_total:.2f} hours: "
-          f"{mut_data['prog']}:{mut_data['mutation_id']} - {fuzzers}")
+          f"{mut_data['prog']}:{mut_data['mutation_id']} - {num_repeats} - {fuzzers}")
+
+def get_git_status():
+    proc_rev = subprocess.run(['git', 'rev-parse', 'HEAD'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc_rev.returncode != 0:
+        print("Could not get git rev.", proc_rev)
+        sys.exit(1)
+    proc_status = subprocess.run(['git', 'status'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc_status.returncode != 0:
+        print("Could not get git status.", proc_status)
+        sys.exit(1)
+
+    return proc_rev.stdout.decode() + '\n' + proc_status.stdout.decode()
 
 
-def run_eval(progs, fuzzers):
+def run_eval(progs, fuzzers, num_repeats):
     global should_run
+
+    execution_start_time = time.time()
+
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator")
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize the stats object
     stats = Stats("/dev/shm/mutator/stats.db")
+
+    # Record current eval execution data
+    # Get the current git status
+    git_status = get_git_status()
+    stats.new_execution(EXEC_ID, platform.uname()[1], git_status, execution_start_time)
 
     # Get a record of all mutation types.
     with open("mutation_doc.json", "rt") as f:
@@ -1822,7 +1917,7 @@ def run_eval(progs, fuzzers):
         # start time
         start_time = time.time()
         # Get each run
-        all_runs = get_all_runs(stats, fuzzers, progs)
+        all_runs = get_all_runs(stats, fuzzers, progs, num_repeats)
         num_runs = len(all_runs)
         all_runs = enumerate(all_runs)
 
@@ -1871,6 +1966,10 @@ def run_eval(progs, fuzzers):
         while len(tasks) > 0:
             print(f"{len(tasks)}")
             wait_for_task(stats, tasks, cores, prepared_runs, active_mutants)
+
+    # Record total time for this execution.
+    stats.execution_done(EXEC_ID, time.time() - execution_start_time)
+
     print("eval done :)")
 
 
@@ -2365,17 +2464,18 @@ def main():
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='cmd', help="These are the possible actions for the eval, "
-                                                        "see their individual descriptions.")
+            "see their individual descriptions.")
 
     parser_seed = subparsers.add_parser('seed', help="Run a seed gathering stage, to gather seed that are shared by "
-                                                     "all fuzzers")
+            "all fuzzers")
 
     parser_eval = subparsers.add_parser('eval', help="Run the evaluation executing the requested fuzzers (--fuzzers) on "
-                                                     "the requested programs (--progs) and gather the resulting data.")
+            "the requested programs (--progs) and gather the resulting data.")
     parser_eval.add_argument("--fuzzers", nargs='+', required=True,
-        help='The fuzzers to evaluate, will fail if the name is not known.')
+            help='The fuzzers to evaluate, will fail if the name is not known.')
     parser_eval.add_argument("--progs", nargs='+', required=True,
-        help='The programs to evaluate on, will fail if the name is not known.')
+            help='The programs to evaluate on, will fail if the name is not known.')
+    parser_eval.add_argument("--num-repeats", type=int, default=1, help="How often to repeat each mutation for each fuzzer.")
 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
     parser_seed.add_argument("db_path", help="The sqlite database to plot.")
@@ -2385,7 +2485,7 @@ def main():
     if args.cmd == 'seed':
         gather_seeds()
     elif args.cmd == 'eval':
-        run_eval(args.progs, args.fuzzers)
+        run_eval(args.progs, args.fuzzers, args.num_repeats)
     elif args.cmd == 'plot':
         generate_plots(args.db_path)
     else:
