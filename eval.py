@@ -2187,6 +2187,44 @@ def generate_plots(db_path):
         f.write(res)
     print(f"Open: file://{out_path}")
 
+
+def merge_dbs(out_path, in_paths):
+    assert len(in_paths) >= 2, f"Need at least two dbs to merge but got: {in_paths}"
+    print(out_path, in_paths)
+
+    out_db_path = Path(out_path)
+    if out_db_path.is_file():
+        print(f"Removing file: {out_db_path}")
+        out_db_path.unlink()
+
+    # copy the first database
+    proc = subprocess.run(f'sqlite3 {in_paths[0]} ".dump" | sqlite3 {out_path}',
+            shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        print("Failed to copy the first db.", proc)
+        sys.exit(1)
+
+    # TODO check that the other database come from the same commit and git state?
+
+    # copy all data
+    for in_db in in_paths[1:]:
+        inserts = "\n".join((
+                f"insert into {table} select * from to_merge.{table};"
+                for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 'aflpp_runs',
+                'seed_crashing_inputs', 'crashing_inputs', 'crashing_mutation_preparation', 'run_crashed']))
+        command = f'''sqlite3 {out_db_path} "
+attach '{in_db}' as to_merge;
+BEGIN;
+{inserts}
+COMMIT;
+detach to_merge;"'''
+        print(command)
+        proc = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if proc.returncode != 0:
+            print("Failed to copy the first db.", proc)
+            sys.exit(1)
+
+
 def main():
     import sys
     import argparse
@@ -2209,12 +2247,21 @@ def main():
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
     parser_seed.add_argument("db_path", help="The sqlite database to plot.")
 
+    parser_eval = subparsers.add_parser('merge', help="Merge result databases.")
+    parser_eval.add_argument("out_db_path",
+        help='The path where the database that contains all other databases will be stored. '
+             'If this file exists it will be deleted!')
+    parser_eval.add_argument("in_db_paths", nargs='+',
+        help='Paths of the databases that will be merged, these dbs will not be modified.')
+
     args = parser.parse_args()
 
     if args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers, args.num_repeats)
     elif args.cmd == 'plot':
         generate_plots(args.db_path)
+    elif args.cmd == 'merge':
+        merge_dbs(args.out_db_path, args.in_db_paths)
     else:
         parser.print_help(sys.stderr)
 
