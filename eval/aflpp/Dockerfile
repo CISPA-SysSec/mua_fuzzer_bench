@@ -1,4 +1,4 @@
-FROM mutation-testing-system
+FROM mutation-testing-fuzzer-system
 
 USER user
 RUN wget https://github.com/AFLplusplus/AFLplusplus/archive/3.11c.tar.gz && tar xfv 3.11c.tar.gz && mv AFLplusplus* AFLplusplus

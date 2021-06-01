@@ -1,4 +1,4 @@
-FROM mutation-testing-system
+FROM mutation-testing-fuzzer-system
 
 USER user
 RUN git clone https://github.com/carolemieux/afl-rb.git && cd afl-rb && git checkout e529c1f1b366

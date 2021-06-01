@@ -1,0 +1,20 @@
+FROM mutator_mutator
+
+################################################################################
+# libcxx
+WORKDIR /home/mutator/samples
+
+# clone
+RUN git clone --depth=1 https://github.com/llvm/llvm-project.git --branch llvmorg-12.0.0 --single-branch libcxx
+WORKDIR /home/mutator/samples/libcxx/
+
+# build
+COPY samples/libcxx_harness /home/mutator/samples/libcxx_harness
+RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/libcxx" \
+    WORK="/home/mutator/samples/libcxx/work" \
+    OUT="/home/mutator/samples/libcxx/out" \
+    SANITIZER="undefined" \
+    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+    ../libcxx_harness/build.sh
+

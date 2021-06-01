@@ -1,0 +1,23 @@
+FROM mutator_mutator
+
+################################################################################
+# aspell
+WORKDIR /home/mutator/samples
+
+# clone
+RUN apt-get install -y pkg-config
+WORKDIR /home/mutator/samples/aspell/
+RUN git clone https://github.com/gnuaspell/aspell.git aspell
+RUN git clone --depth 1 -b master https://github.com/gnuaspell/aspell-fuzz.git aspell-fuzz
+
+# build
+COPY samples/aspell_harness /home/mutator/samples/aspell_harness
+WORKDIR /home/mutator/samples/aspell/aspell-fuzz
+RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/aspell" \
+    WORK="/home/mutator/samples/aspell/work" \
+    OUT="/home/mutator/samples/aspell/out" \
+    SANITIZER="undefined" \
+    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+    ../../aspell_harness/build.sh
+

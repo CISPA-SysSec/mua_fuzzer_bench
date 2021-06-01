@@ -1,4 +1,4 @@
-FROM mutation-testing-system
+FROM mutation-testing-fuzzer-system
 
 USER user
 RUN wget https://github.com/google/honggfuzz/archive/2.3.1.tar.gz && tar xfv 2.3.1.tar.gz && mv honggfuzz* honggfuzz && cd honggfuzz && make -j && ls && ./honggfuzz --help

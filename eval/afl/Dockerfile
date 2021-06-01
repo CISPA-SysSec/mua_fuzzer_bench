@@ -1,4 +1,4 @@
-FROM mutation-testing-system
+FROM mutation-testing-fuzzer-system
 
 USER user
 RUN wget https://github.com/google/AFL/archive/v2.57b.tar.gz && tar xfv v2.57b.tar.gz && mv AFL* afl

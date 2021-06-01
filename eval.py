@@ -95,6 +95,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/re2-code/re2_fuzzer")),
         "orig_bc": str(Path("tmp/samples/re2-code/re2_fuzzer.bc")),
+        "name": "re2",
         "path": "samples/re2-code",
         "seeds": "tmp/samples/re2_harness/seeds",
         "args": "@@",
@@ -113,6 +114,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares_parse_reply_fuzzer")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
+        "name": "cares",
         "path": "samples/c-ares",
         "seeds": "tmp/samples/c-ares_harness/seeds",
         "args": "@@",
@@ -131,6 +133,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares_create_query_fuzzer")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
+        "name": "cares",
         "path": "samples/c-ares",
         "seeds": "tmp/samples/c-ares_harness/seeds",
         "args": "@@",
@@ -143,6 +146,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
         "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
+        "name": "freetype",
         "path": "samples/ftfuzzer",
         "seeds": "tmp/samples/freetype_harness/seeds",
         "args": "@@",
@@ -156,6 +160,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer")),
         "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.bc")),
+        "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer",
         "seeds": "tmp/samples/woff2_harness/seeds",
         "args": "@@",
@@ -169,6 +174,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry")),
         "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.bc")),
+        "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
         "seeds": "tmp/samples/woff2_harness/seeds",
         "args": "@@",
@@ -183,6 +189,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/aspell/out/aspell_fuzzer")),
         "orig_bc": str(Path("tmp/samples/aspell/out/aspell_fuzzer.bc")),
+        "name": "aspell",
         "path": "samples/aspell/",
         "seeds": "tmp/samples/aspell_harness/seeds",
         "args": "@@",
@@ -195,6 +202,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/bloaty/out/fuzz_target")),
         "orig_bc": str(Path("tmp/samples/bloaty/out/fuzz_target.bc")),
+        "name": "bloaty",
         "path": "samples/bloaty/",
         "seeds": "tmp/samples/bloaty_harness/seeds",
         "args": "@@",
@@ -213,6 +221,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
         "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
+        "name": "curl",
         "path": "samples/curl/",
         "seeds": "tmp/samples/curl_harness/seeds",
         "args": "@@",
@@ -225,6 +234,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
         "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
+        "name": "guetzli",
         "path": "samples/guetzli/",
         "seeds": "tmp/samples/guetzli_harness/seeds/",
         "args": "@@",
@@ -238,6 +248,7 @@ PROGRAMS = {
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
         "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
+        "name": "mjs",
         "path": "samples/mjs/",
         "seeds": "tmp/samples/mjs_harness/seeds/",
         "args": "@@",
@@ -250,6 +261,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/vorbis/out/decode_fuzzer")),
         "orig_bc": str(Path("tmp/samples/vorbis/out/decode_fuzzer.bc")),
+        "name": "vorbis",
         "path": "samples/vorbis/",
         "seeds": "tmp/samples/vorbis_harness/seeds/",
         "args": "@@",
@@ -262,6 +274,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer")),
         "orig_bc": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer.bc")),
+        "name": "harfbuzz",
         "path": "samples/harfbuzz/",
         "seeds": "tmp/samples/harfbuzz/test/fuzzing/fonts/",
         "args": "@@",
@@ -275,6 +288,7 @@ PROGRAMS = {
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/file/magic_fuzzer")),
         "orig_bc": str(Path("tmp/samples/file/magic_fuzzer.bc")),
+        "name": "file",
         "path": "samples/file/",
         "seeds": "tmp/samples/file_harness/seeds/",
         "args": "<WORK>/samples/file_harness/magic.mgc @@",
@@ -287,6 +301,7 @@ PROGRAMS = {
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer")),
         "orig_bc": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc")),
+        "name": "libjpeg",
         "path": "samples/libjpeg-turbo/",
         "seeds": "tmp/samples/libjpeg-turbo_harness/seeds/",
         "args": "@@",
@@ -301,11 +316,18 @@ PROGRAMS = {
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz")),
         "orig_bc": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz.bc")),
+        "name": "sqlite",
         "path": "samples/sqlite3/",
         "seeds": "tmp/samples/sqlite3_harness/seeds/",
         "args": "@@",
     },
 }
+
+def fuzzer_container_tag(name):
+    return f"mutation-testing-fuzzer-{name}"
+
+def subject_container_tag(name):
+    return f"mutation-testing-subject-{name}"
 
 # Indicates if the evaluation should continue, is mainly used to shut down
 # after a keyboard interrupt by the user.
@@ -1064,47 +1086,47 @@ def get_aflpp_logs(workdir, all_logs):
 def aflpp_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, "mutation-testing-aflpp", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflpp"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def afl_eval(run_data):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, "mutation-testing-afl", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("afl"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppfastexploit_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, "mutation-testing-aflppfastexploit", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflppfastexploit"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppmopt_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, "mutation-testing-aflppmopt", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflppmopt"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def fairfuzz_eval(run_data):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, "mutation-testing-fairfuzz", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("fairfuzz"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def honggfuzz_eval(run_data):
     run_data['crash_dir'] = "crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args'].replace("@@", "___FILE___")
-    result = base_eval(run_data, "mutation-testing-honggfuzz", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("honggfuzz"), "/home/user/eval.sh")
     result['plot_data'] = []
     return result
 
 def libfuzzer_eval(run_data):
-    result = base_eval(run_data, "mutation-testing-libfuzzer", "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("libfuzzer"), "/home/user/eval.sh")
     return result
 
 # def aflppasan_eval(run_data):
@@ -1611,16 +1633,8 @@ def run_eval(progs, fuzzers, num_repeats):
         sys.exit(1)
 
     # build the fuzzer docker images
-    for tag, name in [
-        ("mutation-testing-system", "system"),
-        ("mutation-testing-afl", "afl"),
-        ("mutation-testing-aflpp", "aflpp"),
-        ("mutation-testing-aflppmopt", "aflppmopt"),
-        ("mutation-testing-aflppfastexploit", "aflppfastexploit"),
-        ("mutation-testing-fairfuzz", "fairfuzz"),
-        ("mutation-testing-honggfuzz", "honggfuzz"),
-        ("mutation-testing-libfuzzer", "libfuzzer"),
-    ]:
+    for name in ["system"] + fuzzers:
+        tag = fuzzer_container_tag(name)
         print(f"Building docker image for {tag} ({name})")
         proc = subprocess.run([
             "docker", "build",
@@ -1630,6 +1644,29 @@ def run_eval(progs, fuzzers, num_repeats):
             "."])
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
+            sys.exit(1)
+
+    # build the subject docker images
+    for name in set(PROGRAMS[prog]['name'] for prog in progs):
+        tag = subject_container_tag(name)
+        print(f"Building docker image for {tag} ({name})")
+        proc = subprocess.run([
+            "docker", "build",
+            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
+            "--tag", tag,
+            "-f", f"subjects/Dockerfile.{name}",
+            "."])
+        if proc.returncode != 0:
+            print(f"Could not build {tag} image.", proc)
+            sys.exit(1)
+        # extract sample files
+        proc = subprocess.run(f"""
+            docker rm dummy || true
+            docker create -ti --name dummy {tag} bash
+            docker cp dummy:/home/mutator/samples tmp/
+            docker rm -f dummy""", shell=True)
+        if proc.returncode != 0:
+            print(f"Could not extract {tag} image sample files.", proc)
             sys.exit(1)
 
     UNSOLVED_MUTANTS_DIR.mkdir(exist_ok=True, parents=True)

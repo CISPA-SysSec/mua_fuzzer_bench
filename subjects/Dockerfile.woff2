@@ -1,0 +1,21 @@
+FROM mutator_mutator
+
+################################################################################
+# woff2
+WORKDIR /home/mutator/samples
+
+# clone
+RUN apt-get install -y make autoconf automake libtool
+RUN git clone --depth 1 --recursive https://github.com/google/woff2
+WORKDIR /home/mutator/samples/woff2/
+
+# build
+COPY samples/woff2_harness /home/mutator/samples/woff2_harness
+RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/woff2" \
+    WORK="/home/mutator/samples/woff2/work" \
+    OUT="/home/mutator/samples/woff2/out" \
+    SANITIZER="undefined" \
+    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
+    ../woff2_harness/build.sh
+
