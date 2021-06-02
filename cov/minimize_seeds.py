@@ -9,17 +9,34 @@ from typing import List, Tuple, Set
 instrument = {
     "guetzli": ["./run_mutation.py", "samples/guetzli/fuzz_target.bc", "-cpp", "-bn"],
     "libjpeg": ["./run_mutation.py", "samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc", "-cpp", "-bn"],
+    "aspell": ["./run_mutation.py", "samples/aspell/aspell-fuzz/aspell_fuzzer.bc", "-cpp", "-bn"],
+    "caresparse": ["./run_mutation.py", "samples/c-ares/out/ares_parse_reply_fuzzer.bc", "-cpp", "-bn"],
+    "caresquery": ["./run_mutation.py", "samples/c-ares/out/ares_create_query_fuzzer.bc", "-cpp", "-bn"],
+    "woff2base": ["./run_mutation.py", "samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.bc", "-cpp", "-bn"],
+    "woff2new": ["./run_mutation.py", "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.bc", "-cpp", "-bn"],
 }
 
 
 run = {
     "guetzli": ["/home/mutator/samples/guetzli/fuzz_target.ll.opt_mutate"],
     "libjpeg": ["/home/mutator/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.ll.opt_mutate"],
+    "aspell": ["/home/mutator/samples/aspell/aspell-fuzz/aspell_fuzzer.ll.opt_mutate"],
+    "caresparse": ["/home/mutator/samples/c-ares/out/ares_parse_reply_fuzzer.ll.opt_mutate"],
+    "caresquery": ["/home/mutator/samples/c-ares/out/ares_create_query_fuzzer.ll.opt_mutate"],
+    "vorbis": ["/home/mutator/samples/vorbis/out/decode_fuzzer.ll.opt_mutate"],
+    "woff2base": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.ll.opt_mutate"],
+    "woff2new": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.ll.opt_mutate"],
 }
 
 seeds = {
     "guetzli": ["/home/mutator/samples/guetzli_harness/seeds"],
     "libjpeg": ["/home/mutator/samples/libjpeg-turbo_harness/seeds"],
+    "aspell": ["/home/mutator/samples/aspell_harness/seeds"],
+    "caresparse": ["/home/mutator/samples/c-ares_harness/seeds"],
+    "caresquery": ["/home/mutator/samples/c-ares_harness/seeds"],
+    "vorbis": ["/home/mutator/samples/vorbis_harness/seeds"],
+    "woff2base": ["/home/mutator/samples/woff2_harness/seeds"],
+    "woff2new": ["/home/mutator/samples/woff2_harness/seeds"],
 }
 
 def main():
@@ -43,7 +60,7 @@ def main():
         # gives for each seed input the triggered signals
         signal_list: List[Tuple[str, List[str]]] = list()
         signal_folder = "trigger_signal"
-        for abs_seed in collected_seeds[:10]:
+        for abs_seed in collected_seeds:
             print(f"Running {' '.join(run[target] + [abs_seed])}.")
             shutil.rmtree(signal_folder, ignore_errors=True)
             subprocess.run(run[target] + [abs_seed])
