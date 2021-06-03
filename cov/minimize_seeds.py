@@ -14,6 +14,7 @@ instrument = {
     "caresquery": ["./run_mutation.py", "samples/c-ares/out/ares_create_query_fuzzer.bc", "-cpp", "-bn"],
     "woff2base": ["./run_mutation.py", "samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.bc", "-cpp", "-bn"],
     "woff2new": ["./run_mutation.py", "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.bc", "-cpp", "-bn"],
+    "re2": ["./run_mutation.py", "samples/re2-code/re2_fuzzer.bc", "-cpp", "-bn", '--bin-args="-lpthread"'],
 }
 
 
@@ -26,6 +27,7 @@ run = {
     "vorbis": ["/home/mutator/samples/vorbis/out/decode_fuzzer.ll.opt_mutate"],
     "woff2base": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.ll.opt_mutate"],
     "woff2new": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.ll.opt_mutate"],
+    "re2": ["/home/mutator/samples/re2-code/re2_fuzzer.ll.opt_mutate"],
 }
 
 seeds = {
@@ -37,6 +39,7 @@ seeds = {
     "vorbis": ["/home/mutator/samples/vorbis_harness/seeds"],
     "woff2base": ["/home/mutator/samples/woff2_harness/seeds"],
     "woff2new": ["/home/mutator/samples/woff2_harness/seeds"],
+    "re2": ["/home/mutator/samples/re2_harness/seeds"],
 }
 
 def main():
@@ -60,11 +63,13 @@ def main():
         # gives for each seed input the triggered signals
         signal_list: List[Tuple[str, List[str]]] = list()
         signal_folder = "trigger_signal"
+        counter = 1
         for abs_seed in collected_seeds:
-            print(f"Running {' '.join(run[target] + [abs_seed])}.")
+            print(f"Running {counter} of {len(collected_seeds)} {' '.join(run[target] + [abs_seed])}.")
             shutil.rmtree(signal_folder, ignore_errors=True)
             subprocess.run(run[target] + [abs_seed])
             signal_list.append((abs_seed, set(os.listdir(signal_folder))))
+            counter += 1
         shutil.rmtree(signal_folder, ignore_errors=True)
 
         # all signals are collected, now we can see which seeds to take for minimalization
