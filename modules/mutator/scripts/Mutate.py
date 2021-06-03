@@ -140,6 +140,7 @@ def main():
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"
+        global is_cpp
         is_cpp = True
     else:
         clang = f"{llvm_bindir}/clang"
