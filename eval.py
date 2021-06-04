@@ -77,6 +77,8 @@ IN_DOCKER_WORKDIR = "/workdir/"
 
 TRIGGERED_STR = b"Triggered!\r\n"
 
+MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
+
 # The programs that can be evaluated
 PROGRAMS = {
     # "objdump": {
@@ -883,6 +885,7 @@ def run_exec_in_container(container, raise_on_error, cmd):
     sub_cmd = ["docker", "exec", container.name, *cmd]
     proc = subprocess.run(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
     if raise_on_error and proc.returncode != 0:
         print("process error: =======================",
