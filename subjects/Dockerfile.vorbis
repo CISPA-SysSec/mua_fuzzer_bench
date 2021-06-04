@@ -13,8 +13,8 @@ RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
 # clone ogg
 WORKDIR /home/mutator/samples/vorbis
 RUN git clone https://gitlab.xiph.org/xiph/ogg.git
-# WORKDIR /home/mutator/samples/vorbis/ogg
-# RUN git checkout 83a82dd9296400d811b78c06e9ca429e24dd1e5c
+WORKDIR /home/mutator/samples/vorbis/ogg
+RUN git checkout e1774cd77f471443541596e09078e78fdc342e4f
 
 # build
 WORKDIR /home/mutator/samples/vorbis
