@@ -98,6 +98,7 @@ PROGRAMS = {
         "name": "re2",
         "path": "samples/re2-code",
         "seeds": "tmp/samples/re2_harness/seeds",
+        "dict": "tmp/samples/re2_harness/re2.dict",
         "args": "@@",
     },
     "cares_parse_reply": {
@@ -117,6 +118,7 @@ PROGRAMS = {
         "name": "cares",
         "path": "samples/c-ares",
         "seeds": "tmp/samples/c-ares_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "cares_name": {
@@ -136,6 +138,7 @@ PROGRAMS = {
         "name": "cares",
         "path": "samples/c-ares",
         "seeds": "tmp/samples/c-ares_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "freetype": {
@@ -149,6 +152,7 @@ PROGRAMS = {
         "name": "freetype",
         "path": "samples/ftfuzzer",
         "seeds": "tmp/samples/freetype_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "woff2_base": {
@@ -163,6 +167,7 @@ PROGRAMS = {
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer",
         "seeds": "tmp/samples/woff2_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "woff2_new": {
@@ -177,6 +182,7 @@ PROGRAMS = {
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
         "seeds": "tmp/samples/woff2_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "aspell": {
@@ -192,6 +198,7 @@ PROGRAMS = {
         "name": "aspell",
         "path": "samples/aspell/",
         "seeds": "tmp/samples/aspell_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "bloaty": {
@@ -205,6 +212,7 @@ PROGRAMS = {
         "name": "bloaty",
         "path": "samples/bloaty/",
         "seeds": "tmp/samples/bloaty_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "curl": {
@@ -224,6 +232,7 @@ PROGRAMS = {
         "name": "curl",
         "path": "samples/curl/",
         "seeds": "tmp/samples/curl_harness/seeds",
+        "dict": None,
         "args": "@@",
     },
     "guetzli": {
@@ -237,6 +246,7 @@ PROGRAMS = {
         "name": "guetzli",
         "path": "samples/guetzli/",
         "seeds": "tmp/samples/guetzli_harness/seeds/",
+        "dict": "tmp/samples/guetzli_harness/guetzli.dict",
         "args": "@@",
     },
     "mjs": {
@@ -251,6 +261,7 @@ PROGRAMS = {
         "name": "mjs",
         "path": "samples/mjs/",
         "seeds": "tmp/samples/mjs_harness/seeds/",
+        "dict": None,
         "args": "@@",
     },
     "vorbis": {
@@ -264,6 +275,7 @@ PROGRAMS = {
         "name": "vorbis",
         "path": "samples/vorbis/",
         "seeds": "tmp/samples/vorbis_harness/seeds/",
+        "dict": "tmp/samples/vorbis_harness/vorbis.dict",
         "args": "@@",
     },
     "harfbuzz": {
@@ -277,6 +289,7 @@ PROGRAMS = {
         "name": "harfbuzz",
         "path": "samples/harfbuzz/",
         "seeds": "tmp/samples/harfbuzz/test/fuzzing/fonts/",
+        "dict": None,
         "args": "@@",
     },
     "file": {
@@ -291,6 +304,7 @@ PROGRAMS = {
         "name": "file",
         "path": "samples/file/",
         "seeds": "tmp/samples/file_harness/seeds/",
+        "dict": None,
         "args": "<WORK>/samples/file_harness/magic.mgc @@",
     },
     "libjpeg": {
@@ -304,6 +318,7 @@ PROGRAMS = {
         "name": "libjpeg",
         "path": "samples/libjpeg-turbo/",
         "seeds": "tmp/samples/libjpeg-turbo_harness/seeds/",
+        "dict": "tmp/samples/libjpeg-turbo_harness/libjpeg.dict",
         "args": "@@",
     },
     "sqlite3": {
@@ -319,6 +334,7 @@ PROGRAMS = {
         "name": "sqlite",
         "path": "samples/sqlite3/",
         "seeds": "tmp/samples/sqlite3_harness/seeds/",
+        "dict": None,
         "args": "@@",
     },
 }
@@ -435,6 +451,7 @@ class Stats():
             bin_compile_args,
             args,
             seeds,
+            dict,
             orig_bin
         )''')
 
@@ -611,7 +628,7 @@ class Stats():
     @connection
     def new_prog(self, c, exec_id, prog, data):
         print(data)
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
@@ -619,6 +636,7 @@ class Stats():
                 json.dumps(data['bin_compile_args']),
                 data['args'],
                 str(data['seeds']),
+                str(data['dict']),
                 str(data['orig_bin']),
             )
         )
@@ -958,6 +976,7 @@ def base_eval(run_data, docker_image, executable):
     compile_args = mut_data['compile_args']
     args = run_data['fuzzer_args']
     seeds = mut_data['seeds']
+    dictionary = mut_data['dict']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     core_to_use = run_data['used_core']
     docker_mut_bin = get_mut_base_bin(mut_data)
@@ -988,6 +1007,7 @@ def base_eval(run_data, docker_image, executable):
             environment={
                 'TRIGGERED_OUTPUT': str(""),
                 'TRIGGERED_FOLDER': str(covered.path),
+                **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
             },
             init=True,
             cpuset_cpus=str(core_to_use),
@@ -1100,14 +1120,14 @@ def afl_eval(run_data):
 def aflppfastexploit_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflppfastexploit"), "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflpp_fast_exploit"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppmopt_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflppmopt"), "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflpp_mopt"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
@@ -1171,7 +1191,7 @@ FUZZERS = {
     "afl": afl_eval,
     "aflpp_fast_exploit": aflppfastexploit_eval,
     "aflpp_mopt": aflppmopt_eval,
-    "afl_fairfuzz": fairfuzz_eval,
+    "fairfuzz": fairfuzz_eval,
     "honggfuzz": honggfuzz_eval,
 }
 
@@ -1306,6 +1326,7 @@ def get_all_runs(stats, fuzzers, progs, num_repeats):
                 'args': args,
                 'prog': prog,
                 'seeds': seeds,
+                'dict': prog_info['dict'],
                 'orig_bin': orig_bin,
                 'mutation_id': mutation_id,
                 'mutation_data': mutation_data[int(mutation_id)],

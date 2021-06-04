@@ -28,10 +28,14 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-afl-fuzz -d -i $SEEDS -o output -- ./put $@ &
-child=$!
 
-echo "setup done"
+args=(-d -i $SEEDS -o output)
 
-wait "$child"
-echo "fuzzing done"
+if [[ ! -z ${DICT_PATH:+x} ]]; then
+    args+=(-x)
+    args+=("${DICT_PATH}")
+fi
+
+echo "afl-fuzz ${args[@]} -- ./put $@"
+exec afl-fuzz ${args[@]} -- ./put $@
+

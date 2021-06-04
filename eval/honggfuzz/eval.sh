@@ -28,4 +28,14 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-exec honggfuzz --input $SEEDS --output output --crashdir crashes -n 1 -- ./a.out $@
+
+args=(--input $SEEDS --output output --crashdir crashes -n 1)
+
+if [[ ! -z ${DICT_PATH:+x} ]]; then
+    args+=(--dict)
+    args+=("${DICT_PATH}")
+fi
+
+echo "honggfuzz ${args[@]} -- ./a.out $@"
+exec honggfuzz ${args[@]} -- ./a.out $@
+

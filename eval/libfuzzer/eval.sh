@@ -28,4 +28,16 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-exec afl-fuzz -d -i $SEEDS -o output -- ./a.out $@
+
+args=(-d -i $SEEDS -o output)
+
+if [[ ! -z ${DICT_PATH:+x} ]]; then
+    args+=("-dict=${DICT_PATH}")
+fi
+
+echo "not implemented yet"
+exit 1
+
+echo "afl-fuzz ${args[@]} -- ./a.out $@"
+exec afl-fuzz ${args[@]} -- ./a.out $@
+

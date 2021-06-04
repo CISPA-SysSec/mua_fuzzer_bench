@@ -28,4 +28,14 @@ shift
 export TRIGGERED_OUTPUT="$@"
 export TRIGGERED_FILE="$(pwd)/covered"
 export AFL_NO_AFFINITY=1
-exec afl-fuzz -p exploit -d -i $SEEDS -o output -- ./a.out $@
+
+args=(-L -1 -d -i $SEEDS -o output)
+
+if [[ ! -z ${DICT_PATH:+x} ]]; then
+    args+=(-x)
+    args+=("${DICT_PATH}")
+fi
+
+echo "afl-fuzz ${args[@]} -- ./a.out $@"
+exec afl-fuzz ${args[@]} -- ./a.out $@
+
