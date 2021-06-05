@@ -13,7 +13,7 @@ import queue
 import json
 import shutil
 import random
-from typing import Union
+from typing import Union, List, Tuple, Set
 import psutil
 import contextlib
 import concurrent.futures
@@ -852,7 +852,7 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile):
 
 
 @contextlib.contextmanager
-def start_mutation_container(core_to_use):
+def start_mutation_container(core_to_use, docker_run_kwargs=None):
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -870,19 +870,20 @@ def start_mutation_container(core_to_use):
         cpuset_cpus=str(core_to_use) if core_to_use is not None else None,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
-        detach=True
+        detach=True,
+        **(docker_run_kwargs if docker_run_kwargs is not None else {})
     )
     yield container
     container.stop()
 
 
-def run_exec_in_container(container, raise_on_error, cmd):
+def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
-    sub_cmd = ["docker", "exec", container.name, *cmd]
+    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container.name, *cmd]
     proc = subprocess.run(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
@@ -1198,6 +1199,43 @@ FUZZERS = {
     "honggfuzz": honggfuzz_eval,
 }
 
+
+def instrument_prog(container, prog_info):
+    # Compile the mutation location detector for the prog.
+    args = ["./run_mutation.py",
+            "-bc", prog_info['orig_bc'],
+            *(["-cpp"] if prog_info['is_cpp'] else []),  # conditionally add cpp flag
+            "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], IN_DOCKER_WORKDIR),
+            "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)]
+
+    run_exec_in_container(container, True, args)
+
+
+def build_detector_binary(container, prog_info, detector_path, workdir):
+    run_exec_in_container(container, True, [
+            "./run_mutation.py",
+            str(prog_info['orig_bc']),
+            *(['-cpp'] if prog_info['is_cpp'] else []),
+            "-bn",
+            "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], workdir),
+            "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], workdir),
+            "--out-dir", str(detector_path.parent)
+            ]
+    )
+
+    # compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], workdir)
+
+    # Assumes the prog has already been instrumented.
+    #  run_exec_in_container(container, True, [
+    #          "/usr/bin/clang++-11",
+    #          "-v",
+    #          "-o", str(detector_path),
+    #          *shlex.split(compile_args),
+    #          str(Path(workdir)/"tmp/lib/libdynamiclibrary.so"),
+    #          str(prog_info['orig_bc'])
+    #  ] )
+
+
 def get_all_mutations(stats, mutator, progs):
     all_mutations = []
     # For all programs that can be done by our evaluation
@@ -1220,23 +1258,16 @@ def get_all_mutations(stats, mutator, progs):
         else:
             seeds = Path(prog_info['seeds'])
 
-        # Compile the mutation location detector for the prog.
-        args = ["./run_mutation.py",
-                "-bc", prog_info['orig_bc'],
-                *(["-cpp"] if prog_info['is_cpp'] else []),  # conditionally add cpp flag
-                "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], IN_DOCKER_WORKDIR),
-                "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)]
-
-        run_exec_in_container(mutator, True, args)
-
+        instrument_prog(mutator, prog_info)
 
         if FILTER_MUTATIONS and DETECT_MUTATIONS:
+            detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
+            build_detector_binary(mutator, prog_info, detector_bin, IN_DOCKER_WORKDIR)
             print("Filtering mutations, running all seed files.")
             # Prepare the folder where the number of the generated seeds is put.
             shutil.rmtree(mutation_list_dir, ignore_errors=True)
             mutation_list_dir.mkdir(parents=True)
             # Run the seeds through the detector binary.
-            detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
             detector_args_lines = ""
             for seed in list(seeds.glob("*")):
                 detector_args = prog_info['args']
@@ -1621,6 +1652,31 @@ def get_git_status():
     return proc_rev.stdout.decode() + '\n' + proc_status.stdout.decode()
 
 
+def build_subject_docker_images(progs):
+    # build the subject docker images
+    for name in set(PROGRAMS[prog]['name'] for prog in progs):
+        tag = subject_container_tag(name)
+        print(f"Building docker image for {tag} ({name})")
+        proc = subprocess.run([
+            "docker", "build",
+            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
+            "--tag", tag,
+            "-f", f"subjects/Dockerfile.{name}",
+            "."])
+        if proc.returncode != 0:
+            print(f"Could not build {tag} image.", proc)
+            sys.exit(1)
+        # extract sample files
+        proc = subprocess.run(f"""
+            docker rm dummy || true
+            docker create -ti --name dummy {tag} bash
+            docker cp dummy:/home/mutator/samples tmp/
+            docker rm -f dummy""", shell=True)
+        if proc.returncode != 0:
+            print(f"Could not extract {tag} image sample files.", proc)
+            sys.exit(1)
+
+
 def run_eval(progs, fuzzers, num_repeats):
     global should_run
 
@@ -1670,28 +1726,7 @@ def run_eval(progs, fuzzers, num_repeats):
             print(f"Could not build {tag} image.", proc)
             sys.exit(1)
 
-    # build the subject docker images
-    for name in set(PROGRAMS[prog]['name'] for prog in progs):
-        tag = subject_container_tag(name)
-        print(f"Building docker image for {tag} ({name})")
-        proc = subprocess.run([
-            "docker", "build",
-            "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
-            "--tag", tag,
-            "-f", f"subjects/Dockerfile.{name}",
-            "."])
-        if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc)
-            sys.exit(1)
-        # extract sample files
-        proc = subprocess.run(f"""
-            docker rm dummy || true
-            docker create -ti --name dummy {tag} bash
-            docker cp dummy:/home/mutator/samples tmp/
-            docker rm -f dummy""", shell=True)
-        if proc.returncode != 0:
-            print(f"Could not extract {tag} image sample files.", proc)
-            sys.exit(1)
+    build_subject_docker_images(progs)
 
     UNSOLVED_MUTANTS_DIR.mkdir(exist_ok=True, parents=True)
 
@@ -2286,6 +2321,115 @@ detach to_merge;"'''
             sys.exit(1)
 
 
+def update_signal_list(signal_list, to_delete: Set[int]):
+    """
+    Takes a list of signal tuples and updates the set s.t. all
+    :param signal_list:
+    :param to_delete:
+    :return:
+    """
+    result = list()
+    for val in signal_list:
+        new_set = val[1] - to_delete
+        # do a diff on the value and then check if there are still unseen signals, if so put the value
+        # with the updated set back into the return list
+        if new_set:
+            result.append((val[0], new_set))
+    return result
+
+
+def minimize_seeds(seed_path, res_path, target):
+    global should_run
+
+    build_subject_docker_images([target])
+
+    SIGNAL_FOLDER_NAME = Path("trigger_signal")
+    mutator_home = Path("/home/mutator")
+    mutator_tmp_path = mutator_home/"tmp"
+    seed_path = Path(seed_path).relative_to(HOST_TMP_PATH)
+    res_path = HOST_TMP_PATH/Path(res_path).relative_to(HOST_TMP_PATH)
+    print(f'Minimizing seed files for {target} coming from {seed_path}, writing result to {res_path}.')
+    prog_info = PROGRAMS.get(target)
+    if prog_info is None:
+        print(f"{target} not found available are: {list(PROGRAMS.keys())}")
+    with start_mutation_container(None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}) as mutation_container:
+        # Instrument program, so that covered mutations are detected.
+        print(f"Instrumenting {target}")
+        instrument_prog(mutation_container, prog_info)
+
+        detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
+        build_detector_binary(mutation_container, prog_info, detector_bin, mutator_home)
+
+        prog_path = mutator_home/detector_bin
+        print(f"Instrumented prog path: {prog_path}")
+        
+        # Get a list of all seed paths
+        seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
+
+        # gives for each seed input the triggered signals
+        signal_list: List[Tuple[Path, Set[int]]] = list()
+
+        def eval_seed(counter, seed):
+            seed_abs = mutator_tmp_path/seed
+            workdir = Path(f"/tmp/seed_abs/{counter}/")
+            signal_folder = workdir/SIGNAL_FOLDER_NAME
+
+            run_exec_in_container(mutation_container, True,
+                ['mkdir', '-p', str(signal_folder)])
+            args = prog_info['args'].replace("<WORK>/", str(mutator_home)).replace("@@", str(seed_abs))
+            args = " ".join(shlex.split(args))
+            run_exec_in_container(mutation_container, True,
+                ['bash', '-c', f"TRIGGERED_FOLDER={signal_folder} {prog_path} {args}"],
+                exec_args=["-w", str(workdir)])
+            found_mutations = run_exec_in_container(mutation_container, True,
+                ['find', str(workdir/signal_folder), '-printf', '%f\n'])
+            found_mutations = set((
+                int(mut_id)
+                for mut_id
+                in found_mutations.stdout.decode().strip().splitlines()
+                if mut_id.isdecimal()
+            ))
+            run_exec_in_container(mutation_container, True,
+                ['rm', '-r', workdir])
+            return seed, found_mutations
+
+        print(f"Executing seeds with {psutil.cpu_count()} cores.")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=psutil.cpu_count()) as executor:
+            tasks = {executor.submit(eval_seed, counter + 1, seed) for counter, seed in enumerate(seeds)}
+            done = 0
+            while tasks:
+                completed_task = next(concurrent.futures.as_completed((tasks)))
+                tasks.remove(completed_task)
+                try:
+                    task_result = completed_task.result()
+                except Exception:
+                    trace = traceback.format_exc()
+                    print(f"seed eval crashed: {trace}")
+                else:
+                    seed, found_mutations = task_result
+                    signal_list.append((seed, found_mutations))
+                    done += 1
+                    print(f"Ran {done}/{len(seeds) - 1}: {seed} found: {len(found_mutations)}")
+
+        # all signals are collected, now we can see which seeds to take for minimalization
+        minimized_seeds = list()
+        while signal_list:
+            max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
+            minimized_seeds.append(max_val)
+            signal_list.remove(max_val)
+            signal_list = update_signal_list(signal_list, max_val[1])
+
+        print("="*50)
+
+        # now we put the minimized seeds into a new folder
+        shutil.rmtree(res_path, ignore_errors=True)
+        res_path.mkdir(parents=True, exist_ok=True)
+        for counter, min_seed in enumerate(minimized_seeds):
+            min_seed_path = min_seed[0]
+            print(f"Taking seed with {len(min_seed[1])} additional signals found: {min_seed_path}")
+            shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
+
+
 def main():
     import sys
     import argparse
@@ -2315,6 +2459,16 @@ def main():
     parser_eval.add_argument("in_db_paths", nargs='+',
         help='Paths of the databases that will be merged, these dbs will not be modified.')
 
+    parser_eval = subparsers.add_parser('minimize_seeds',
+            help="Minimize the seeds by finding the minimum set (greedily) "
+            "that covers all mutations reached by the full set of seeds.")
+    parser_eval.add_argument("seed_path",
+            help=f'The base dir for the seed files. Needs to be inside: {HOST_TMP_PATH}')
+    parser_eval.add_argument("res_path",
+            help=f'The path where the minimized seeds will be written to. Needs to be inside: {HOST_TMP_PATH}')
+    parser_eval.add_argument("target",
+        help='The target on which to apply the seed files.')
+
     args = parser.parse_args()
 
     if args.cmd == 'eval':
@@ -2323,6 +2477,8 @@ def main():
         generate_plots(args.db_path)
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
+    elif args.cmd == 'minimize_seeds':
+        minimize_seeds(args.seed_path, args.res_path, args.target)
     else:
         parser.print_help(sys.stderr)
 
