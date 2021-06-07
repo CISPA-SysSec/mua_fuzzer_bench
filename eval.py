@@ -48,6 +48,10 @@ RM_WORKDIR = os.getenv("MUT_RM_WORKDIR", "1") == "1"
 # Timeout for the fuzzers in seconds
 TIMEOUT = int(os.getenv("MUT_TIMEOUT", 30 * 60))  # default half hour
 
+# Maximum uptime for containers, they are not always stopped cleanly,
+# this sets an upper bound on containers alive at once.
+MAX_CONTAINER_TIME = 60*60 + TIMEOUT  # one hour plus fuzzing timeout should hopefully be enough
+
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 
@@ -829,7 +833,7 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile):
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_testing", # the image
-        ["sleep", "infinity"], # the arguments
+        ["sleep", str(MAX_CONTAINER_TIME)], # the arguments, give a max uptime for containers
         init=True,
         ipc_mode="host",
         auto_remove=True,
@@ -859,7 +863,7 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_mutator", # the image
-        ["sleep", "infinity"], # the arguments
+        ["sleep", str(MAX_CONTAINER_TIME)], # the arguments, give a max uptime for containers
         init=True,
         ipc_mode="host",
         auto_remove=True,
