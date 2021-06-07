@@ -1,3 +1,6 @@
+-- Rerun this script after adding new data, due to performance reasons tables are created to make queries faster.
+-- These tables need to be recreated when adding new data or the results will be stale.
+
 -- indeces to create:
 
 drop index if exists index_all_runs;
@@ -19,7 +22,7 @@ drop index if exists index_distinct_crashing_inputs;
 create index index_distinct_crashing_inputs on crashing_inputs (exec_id, prog, mutation_id, run_ctr, fuzzer) where orig_return_code != mut_return_code;
 
 
--- useful views:
+-- useful views / tables:
 
 -- size of the tables in the database
 DROP VIEW IF EXISTS table_sizes;
@@ -60,8 +63,8 @@ where orig_return_code != mut_return_code
 group by exec_id, prog, mutation_id, run_ctr, fuzzer;
 
 -- results for all runs
-DROP VIEW IF EXISTS all_run_results;
-CREATE VIEW all_run_results
+DROP TABLE IF EXISTS all_run_results;
+CREATE TABLE all_run_results
 as
 select
 	exec_id,
@@ -122,9 +125,16 @@ left join run_crashed using (exec_id, prog, mutation_id, run_ctr, fuzzer)
 inner join progs using (exec_id, prog)
 inner join mutations using (exec_id, prog, mutation_id);
 
+-- add indeces the newly created all_run_results table
+drop index if exists index_all_run_results;
+create unique index index_all_run_results on all_run_results (exec_id, prog, mut_id, run_ctr, fuzzer);
+
+drop index if exists index_all_run_results_stage;
+create index index_all_run_results_stage on all_run_results (stage, fuzzer, exec_id, prog, mut_id, run_ctr);
+
 -- get the prog and mut_id for all run_results that have been completed for all fuzzers
-DROP VIEW IF EXISTS completed_runs;
-CREATE VIEW completed_runs
+DROP TABLE IF EXISTS completed_runs;
+CREATE TABLE completed_runs
 as
 select a.exec_id, a.prog, a.mut_id, a.run_ctr, complete from (
 	select group_concat(fuzzer) as complete, length(group_concat(fuzzer)) as len, prog, mut_id, * from (
@@ -140,15 +150,18 @@ left join (
 ) m
 where a.len = m.max_len;
 
-DROP VIEW IF EXISTS run_results;
-CREATE VIEW run_results
+drop index if exists index_completed_runs;
+create index index_completed_runs on completed_runs (exec_id, prog, mut_id, run_ctr);
+
+DROP TABLE IF EXISTS run_results;
+CREATE TABLE run_results
 as
 select * from all_run_results
 inner join completed_runs using (exec_id, prog, mut_id, run_ctr);
 
--- results for all runs grouped by mut_type
-DROP VIEW IF EXISTS run_results_by_mut_type_and_fuzzer;
-CREATE VIEW run_results_by_mut_type_and_fuzzer
+-- results for all runs grouped by mut_type, create this as a table as many views depend on it
+DROP TABLE IF EXISTS run_results_by_mut_type_and_fuzzer;
+CREATE TABLE run_results_by_mut_type_and_fuzzer
 as
 select
 	runs_mut_type.mut_type,
@@ -185,6 +198,17 @@ left join (
 	group by mut_type, fuzzer, exec_id, prog
 ) res using (mut_type, prog, fuzzer)
 group by runs_mut_type.mut_type, runs_mut_type.prog, runs_mut_type.fuzzer;
+
+-- add indeces the newly created table
+drop index if exists index_run_results_by_mut_type_and_fuzzer_mut_type;
+create index index_run_results_by_mut_type_and_fuzzer_mut_type on run_results_by_mut_type_and_fuzzer (mut_type);
+
+drop index if exists index_run_results_by_mut_type_and_fuzzer_fuzzer;
+create index index_run_results_by_mut_type_and_fuzzer_fuzzer on run_results_by_mut_type_and_fuzzer (fuzzer);
+
+drop index if exists index_run_results_by_mut_type_and_fuzzer_prog;
+create index index_run_results_by_mut_type_and_fuzzer_prog on run_results_by_mut_type_and_fuzzer (prog);
+
 	
 -- results for all runs grouped by mut type
 DROP VIEW IF EXISTS run_results_by_mut_type;
