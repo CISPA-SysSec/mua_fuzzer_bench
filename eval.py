@@ -1096,10 +1096,18 @@ def get_aflpp_logs(workdir, all_logs):
             with open(plot_path[0]) as csvfile:
                 plot_data = list(csv.DictReader(csvfile))
                 # only get last row, to reduce memory usage
+                # The very last row sometimes has wrong data, try second to last first.
                 try:
                     return [plot_data[-2]]
                 except IndexError:
+                    pass
+                # Second to last row not found, there is probably only one row, get it.
+                try:
                     return [plot_data[-1]]
+                except IndexError:
+                    pass
+                # No data found, return nothing
+                return []
         else:
             # Did not find a plot
             return []
