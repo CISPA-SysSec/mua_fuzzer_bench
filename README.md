@@ -114,3 +114,32 @@ gradle clean
 
 sh clean_mutations_in_samples.sh
 ```
+
+# Running the Eval
+
+This sections describes how to start an eval run.
+The core eval functionality is implemented in `eval.py`, a convenience wrapper (`eval.sh`) for debian sets needed environment variables, prepares some directories and finally calls this python script.
+Additionally there is `minimize_seeds.sh`, a script to download the seed files for the subjects and minimizes them.
+
+## Pre-Requisites
+
+To run the python scripts, `python3` as well as the `docker` package for python is needed.
+
+For debian:
+```
+sudo apt install python3-pip
+pip3 install docker
+```
+
+## Starting an Eval Run
+
+TODO
+
+## Adding New Subjects
+
+TODO
+
+## Adding New Fuzzers
+
+TODO
+
