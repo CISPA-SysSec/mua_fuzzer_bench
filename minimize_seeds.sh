@@ -5,7 +5,7 @@ set -Eeuxo pipefail
 if [ ! -d tmp/seeds ]; then
     mkdir -p tmp/seeds
     # Get the zip file
-    curl https://ruhr-uni-bochum.sciebo.de/s/ek0f2UdJ6SsHGCD/download > tmp/seeds.zip
+    curl https://ruhr-uni-bochum.sciebo.de/s/gZKykTb8OYwFW1B/download > tmp/seeds.zip
 
     cd tmp/seeds
     unzip ../seeds.zip
@@ -28,4 +28,6 @@ python3 eval.py minimize_seeds $(pwd)/tmp/seeds/seeds_fuzzer_mutation_analysis/w
 python3 eval.py minimize_seeds $(pwd)/tmp/seeds/seeds_fuzzer_mutation_analysis/woff2_new $(pwd)/tmp/minimized_seeds/woff2_new woff2_new
 
 python3 eval.py minimize_seeds $(pwd)/tmp/seeds/seeds_fuzzer_mutation_analysis/re2 $(pwd)/tmp/minimized_seeds/re2 re2
+
+python3 eval.py minimize_seeds $(pwd)/tmp/seeds/seeds_fuzzer_mutation_analysis/vorbis $(pwd)/tmp/minimized_seeds/vorbis vorbis
 

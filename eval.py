@@ -280,7 +280,7 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/vorbis/out/decode_fuzzer.bc")),
         "name": "vorbis",
         "path": "samples/vorbis/",
-        "seeds": "tmp/samples/vorbis_harness/seeds/",
+        "seeds": "tmp/minimized_seeds/vorbis/",
         "dict": "tmp/samples/vorbis_harness/vorbis.dict",
         "args": "@@",
     },
