@@ -7,10 +7,10 @@ if [ ! -d tmp/seeds ]; then
     # Get the zip file
     curl https://ruhr-uni-bochum.sciebo.de/s/gZKykTb8OYwFW1B/download > tmp/seeds.zip
 
-    cd tmp/seeds
+    pushd tmp/seeds
     unzip ../seeds.zip
 
-    cd ..
+    popd
 fi
 
 mkdir -p $(pwd)/tmp/minimized_seeds
