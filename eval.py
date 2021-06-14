@@ -881,13 +881,13 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
     container.stop()
 
 
-def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
+def run_exec_in_container(container_name, raise_on_error, cmd, exec_args=None):
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
-    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container.name, *cmd]
+    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
     proc = subprocess.run(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
@@ -926,7 +926,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                         ).replace("___FILE___", str(path))
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", orig_bin] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container, False, orig_cmd)
+                proc = run_exec_in_container(testing_container.name, False, orig_cmd)
                 orig_res = proc.stdout
                 orig_returncode = proc.returncode
                 if orig_returncode != 0:
@@ -936,7 +936,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", mut_bin] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container, False, mut_cmd)
+                proc = run_exec_in_container(testing_container.name, False, mut_cmd)
                 mut_res = proc.stdout
 
                 num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
@@ -1220,11 +1220,11 @@ def instrument_prog(container, prog_info):
             "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], IN_DOCKER_WORKDIR),
             "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)]
 
-    run_exec_in_container(container, True, args)
+    run_exec_in_container(container.name, True, args)
 
 
 def build_detector_binary(container, prog_info, detector_path, workdir):
-    run_exec_in_container(container, True, [
+    run_exec_in_container(container.name, True, [
             "./run_mutation.py",
             str(prog_info['orig_bc']),
             *(['-cpp'] if prog_info['is_cpp'] else []),
@@ -1532,7 +1532,6 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     active_mutants[mut_data['prog_bc']]['ref_cnt'] += len(fuzzer_runs)
 
 
-
 def wait_for_task(stats, tasks, cores, prepared_runs, active_mutants):
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
@@ -1570,7 +1569,7 @@ def prepare_mutation(core_to_use, data):
     with start_mutation_container(core_to_use) as mutator, \
          start_testing_container(core_to_use, covered) as testing:
 
-        run_exec_in_container(mutator, True, [
+        run_exec_in_container(mutator.name, True, [
                 "./run_mutation.py",
                 "-bc",
                 *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
@@ -1580,7 +1579,7 @@ def prepare_mutation(core_to_use, data):
         ])
 
         # compile the compare version of the mutated binary
-        run_exec_in_container(testing, True, [
+        run_exec_in_container(testing.name, True, [
                 "/usr/bin/clang++-11",
                 "-v",
                 "-o", str(mut_base_dir/"mut_base"),
@@ -1726,6 +1725,10 @@ def run_eval(progs, fuzzers, num_repeats):
 
     # build the fuzzer docker images
     for name in ["system"] + fuzzers:
+        print(FUZZERS.keys())
+        if name != 'system' and name not in FUZZERS.keys():
+            print(f"Unknown fuzzer: {name}, known fuzzers are: {' '.join(list(FUZZERS.keys()))}")
+            sys.exit(1)
         tag = fuzzer_container_tag(name)
         print(f"Building docker image for {tag} ({name})")
         proc = subprocess.run([
@@ -2350,6 +2353,31 @@ def update_signal_list(signal_list, to_delete: Set[int]):
     return result
 
 
+def eval_seed(counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutation_container_name, mutator_home, prog_path):
+    seed_abs = mutator_tmp_path/seed
+    workdir = Path(f"/tmp/seed_abs/{counter}/")
+    signal_folder = workdir/SIGNAL_FOLDER_NAME
+
+    run_exec_in_container(mutation_container_name, True,
+        ['mkdir', '-p', str(signal_folder)])
+    args = prog_info['args'].replace("<WORK>/", str(mutator_home)).replace("@@", str(seed_abs))
+    args = " ".join(shlex.split(args))
+    run_exec_in_container(mutation_container_name, True,
+        ['bash', '-c', f"TRIGGERED_FOLDER={signal_folder} {prog_path} {args}"],
+        exec_args=["-w", str(workdir)])
+    found_mutations = run_exec_in_container(mutation_container_name, True,
+        ['find', str(workdir/signal_folder), '-printf', '%f\n'])
+    found_mutations = set((
+        int(mut_id)
+        for mut_id
+        in found_mutations.stdout.decode().strip().splitlines()
+        if mut_id.isdecimal()
+    ))
+    run_exec_in_container(mutation_container_name, True,
+        ['rm', '-r', workdir])
+    return seed, found_mutations
+
+
 def minimize_seeds(seed_path, res_path, target):
     global should_run
 
@@ -2365,6 +2393,8 @@ def minimize_seeds(seed_path, res_path, target):
     if prog_info is None:
         print(f"{target} not found available are: {list(PROGRAMS.keys())}")
     with start_mutation_container(None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}) as mutation_container:
+        mutation_container_name = mutation_container.name
+
         # Instrument program, so that covered mutations are detected.
         print(f"Instrumenting {target}")
         instrument_prog(mutation_container, prog_info)
@@ -2381,33 +2411,12 @@ def minimize_seeds(seed_path, res_path, target):
         # gives for each seed input the triggered signals
         signal_list: List[Tuple[Path, Set[int]]] = list()
 
-        def eval_seed(counter, seed):
-            seed_abs = mutator_tmp_path/seed
-            workdir = Path(f"/tmp/seed_abs/{counter}/")
-            signal_folder = workdir/SIGNAL_FOLDER_NAME
-
-            run_exec_in_container(mutation_container, True,
-                ['mkdir', '-p', str(signal_folder)])
-            args = prog_info['args'].replace("<WORK>/", str(mutator_home)).replace("@@", str(seed_abs))
-            args = " ".join(shlex.split(args))
-            run_exec_in_container(mutation_container, True,
-                ['bash', '-c', f"TRIGGERED_FOLDER={signal_folder} {prog_path} {args}"],
-                exec_args=["-w", str(workdir)])
-            found_mutations = run_exec_in_container(mutation_container, True,
-                ['find', str(workdir/signal_folder), '-printf', '%f\n'])
-            found_mutations = set((
-                int(mut_id)
-                for mut_id
-                in found_mutations.stdout.decode().strip().splitlines()
-                if mut_id.isdecimal()
-            ))
-            run_exec_in_container(mutation_container, True,
-                ['rm', '-r', workdir])
-            return seed, found_mutations
-
         print(f"Executing seeds with {psutil.cpu_count()} cores.")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=psutil.cpu_count()) as executor:
-            tasks = {executor.submit(eval_seed, counter + 1, seed) for counter, seed in enumerate(seeds)}
+        with concurrent.futures.ProcessPoolExecutor(max_workers=psutil.cpu_count()) as executor:
+            tasks = {executor.submit(
+                    eval_seed, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
+                    prog_info, mutation_container_name, mutator_home, prog_path
+                ) for counter, seed in enumerate(seeds)}
             done = 0
             while tasks:
                 completed_task = next(concurrent.futures.as_completed((tasks)))
