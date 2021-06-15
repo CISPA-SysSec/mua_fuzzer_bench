@@ -2,13 +2,15 @@
 
 set -Eeuo pipefail
 
-ls -la samples/file_harness/
+ls -la
+
+ls -la /home/mutator/
 
 IFS=$'\n'
 for args in $3; do
     OLDIFS=$IFS
     IFS=' ' read -ra args_array <<< "$args"
     IFS=$OLDIFS
-    echo "executing:" "$2" ${args_array[@]}
-    TRIGGERED_FOLDER="$1" "$2" ${args_array[@]}
+    echo "executing:" "$2" "${args_array[@]}"
+    TRIGGERED_FOLDER="$1" "$2" "${args_array[@]}"
 done

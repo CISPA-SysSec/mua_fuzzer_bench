@@ -1224,7 +1224,7 @@ def instrument_prog(container, prog_info):
 
 
 def build_detector_binary(container, prog_info, detector_path, workdir):
-    run_exec_in_container(container.name, True, [
+    print(run_exec_in_container(container.name, True, [
             "./run_mutation.py",
             str(prog_info['orig_bc']),
             *(['-cpp'] if prog_info['is_cpp'] else []),
@@ -1233,7 +1233,7 @@ def build_detector_binary(container, prog_info, detector_path, workdir):
             "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], workdir),
             "--out-dir", str(detector_path.parent)
             ]
-    )
+    ).stdout.decode())
 
 
 def get_all_mutations(stats, mutator, progs):
@@ -1260,6 +1260,28 @@ def get_all_mutations(stats, mutator, progs):
 
         instrument_prog(mutator, prog_info)
 
+
+        if FILTER_MUTATIONS and DETECT_MUTATIONS:
+            detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
+            print("Building detector binary...")
+            build_detector_binary(mutator, prog_info, detector_bin, ".")
+            print("Filtering mutations, running all seed files.")
+            # Prepare the folder where the number of the generated seeds is put.
+            shutil.rmtree(mutation_list_dir, ignore_errors=True)
+            mutation_list_dir.mkdir(parents=True)
+            # Run the seeds through the detector binary.
+            detector_args_lines = ""
+            for seed in list(seeds.glob("**/*")):
+                if not seed.is_file():
+                    continue
+                detector_args = prog_info['args']
+                detector_args = detector_args.replace("<WORK>/", "").replace("@@", str(seed))
+                detector_args_lines += detector_args
+                detector_args_lines += " "
+            iterate_args = ["./iterate_seeds.sh", mutation_list_dir, detector_bin, detector_args_lines]
+            print(run_exec_in_container(mutator.name, False, iterate_args).stdout.decode())
+
+
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
                                 .glob('**/*.ll.mutationlocations'))
@@ -1268,8 +1290,13 @@ def get_all_mutations(stats, mutator, progs):
         with open(mut_data_path, 'rt') as f:
             mutation_data = json.load(f)
 
-        # Get all mutations that are possible with that program
-        mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
+        # Get all mutations that are possible with that program, they are identified by the file names
+        # in the mutation_list_dir
+        if FILTER_MUTATIONS:
+            print("Filtering mutations, checking the found mutations.")
+            mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+        else:
+            mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
 
         print(f"Found {len(mutations)} mutations for {prog}")
 
@@ -1491,12 +1518,12 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         clean_up_mut_base_dir(mut_data)
         return
 
-    # Check if we just want to do fuzzer runs for mutations that are covered
-    if FILTER_MUTATIONS:
-        # If the covered file was not seen, do not start any fuzzer runs
-        if not task_result['covered_file_seen']:
-            clean_up_mut_base_dir(mut_data)
-            return
+    #  # Check if we just want to do fuzzer runs for mutations that are covered
+    #  if FILTER_MUTATIONS:
+    #      # If the covered file was not seen, do not start any fuzzer runs
+    #      if not task_result['covered_file_seen']:
+    #          clean_up_mut_base_dir(mut_data)
+    #          return
 
     # Otherwise add all possible runs to prepared runs.
     for fr in fuzzer_runs:
