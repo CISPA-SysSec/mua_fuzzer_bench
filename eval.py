@@ -2453,10 +2453,15 @@ def minimize_seeds(seed_path, res_path, target):
         # now we put the minimized seeds into a new folder
         shutil.rmtree(res_path, ignore_errors=True)
         res_path.mkdir(parents=True, exist_ok=True)
+        total_num_signals = 0
         for counter, min_seed in enumerate(minimized_seeds):
             min_seed_path = min_seed[0]
-            print(f"Taking seed with {len(min_seed[1])} additional signals found: {min_seed_path}")
+            num_signals = len(min_seed[1])
+            print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
             shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
+            total_num_signals += num_signals
+
+        print(f"Found a total of {total_num_signals} signals.")
 
 
 def main():
