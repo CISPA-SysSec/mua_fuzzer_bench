@@ -58,9 +58,6 @@ SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 # If true do filtering of mutations
 FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
 
-# If true redetect which mutations are used
-DETECT_MUTATIONS = True
-
 # Flag if the fuzzed seeds should be used
 USE_GATHERED_SEEDS = False
 
@@ -1260,27 +1257,25 @@ def get_all_mutations(stats, mutator, progs):
 
         instrument_prog(mutator, prog_info)
 
+        if FILTER_MUTATIONS:
+            mutation_container_name = mutator.name
+            SIGNAL_FOLDER_NAME = Path("trigger_signal")
+            mutator_home = Path("/home/mutator")
+            detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
+            mutator_tmp_path = mutator_home/"tmp"
+            prog_path = mutator_home/detector_bin
 
-        if FILTER_MUTATIONS and DETECT_MUTATIONS:
             detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
             print("Building detector binary...")
             build_detector_binary(mutator, prog_info, detector_bin, ".")
             print("Filtering mutations, running all seed files.")
-            # Prepare the folder where the number of the generated seeds is put.
-            shutil.rmtree(mutation_list_dir, ignore_errors=True)
-            mutation_list_dir.mkdir(parents=True)
-            # Run the seeds through the detector binary.
-            detector_args_lines = ""
-            for seed in list(seeds.glob("**/*")):
-                if not seed.is_file():
-                    continue
-                detector_args = prog_info['args']
-                detector_args = detector_args.replace("<WORK>/", "").replace("@@", str(seed))
-                detector_args_lines += detector_args
-                detector_args_lines += " "
-            iterate_args = ["./iterate_seeds.sh", mutation_list_dir, detector_bin, detector_args_lines]
-            print(run_exec_in_container(mutator.name, False, iterate_args).stdout.decode())
 
+            filtered_mutations = set()
+
+            for counter, seed in enumerate(list(seeds.glob("**/*"))):
+                _, found_mutations = eval_seed(counter, seed, mutator_home, SIGNAL_FOLDER_NAME, prog_info,
+                          mutation_container_name, mutator_home, prog_path)
+                filtered_mutations |= found_mutations
 
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
@@ -1294,7 +1289,7 @@ def get_all_mutations(stats, mutator, progs):
         # in the mutation_list_dir
         if FILTER_MUTATIONS:
             print("Filtering mutations, checking the found mutations.")
-            mutations = list((p.name, prog, prog_info, seeds, mutation_data) for p in mutation_list_dir.glob("*"))
+            mutations = list((str(mut_id), prog, prog_info, seeds, mutation_data) for mut_id in filtered_mutations)
         else:
             mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
 
