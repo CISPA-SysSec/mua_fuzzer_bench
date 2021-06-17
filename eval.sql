@@ -426,3 +426,17 @@ from (
 	where orig_return_code != 0
 );
 
+DROP VIEW IF EXISTS not_covered_but_found;
+CREATE VIEW not_covered_but_found
+as
+select (covered_file_seen or covered_by_seed) as covered, (time_found or found_by_seed) as found, * from all_run_results
+where covered is NULL and found is 1;
+
+
+DROP VIEW IF EXISTS covered_by_seed_but_not_fuzzer;
+CREATE VIEW covered_by_seed_but_not_fuzzer
+as
+select executed_seeds.covered_file_seen is not null as s_covered, executed_runs.covered_file_seen is not null as f_covered, *
+from executed_seeds
+join executed_runs using (exec_id, prog, mutation_id)
+where s_covered is 1 and f_covered is 0;

@@ -1881,8 +1881,9 @@ def header():
         vegaembed_version=alt.VEGAEMBED_VERSION,
     )
 
-def crash_stats(con):
+def error_stats(con):
     import pandas as pd
+
     crashes = pd.read_sql_query("""
         select *
         from crashed_runs_summary
@@ -1903,6 +1904,28 @@ def crash_stats(con):
         print("Base bin crashes:")
         print(crashes)
         res += "<h2>Base Bin Crashes</h2>"
+        res += crashes.to_html()
+
+    crashes = pd.read_sql_query("""
+        select *
+        from not_covered_but_found
+    """, con)
+    res = ""
+    if len(crashes) > 0:
+        print("Not Covered but Found:")
+        print(crashes)
+        res += "<h2>Not Covered but Found</h2>"
+        res += crashes.to_html()
+
+    crashes = pd.read_sql_query("""
+        select *
+        from covered_by_seed_but_not_fuzzer
+    """, con)
+    res = ""
+    if len(crashes) > 0:
+        print("Covered By Seed but Not Fuzzer:")
+        print(crashes)
+        res += "<h2>Covered By Seed but Not Fuzzer</h2>"
         res += crashes.to_html()
     return res
 
@@ -2250,7 +2273,7 @@ def generate_plots(db_path):
 
     res = header()
     print("crashes")
-    res += crash_stats(con)
+    res += error_stats(con)
     print("fuzzer stats")
     res += fuzzer_stats(con)
     print("mut stats")
