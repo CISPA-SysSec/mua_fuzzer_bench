@@ -1116,10 +1116,24 @@ def get_aflpp_logs(workdir, all_logs):
     except Exception as exc:
         raise ValueError(''.join(all_logs)) from exc
 
-def aflpp_eval(run_data):
+#  def aflpp_eval(run_data):
+#      run_data['crash_dir'] = "output/default/crashes"
+#      run_data['fuzzer_args'] = run_data['mut_data']['args']
+#      result = base_eval(run_data, fuzzer_container_tag("aflpp"), "/home/user/eval.sh")
+#      result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+#      return result
+
+def aflpp_rec_eval(run_data):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflpp"), "/home/user/eval.sh")
+    result = base_eval(run_data, fuzzer_container_tag("aflpp_rec"), "/home/user/eval.sh")
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def aflpp_det_eval(run_data):
+    run_data['crash_dir'] = "output/default/crashes"
+    run_data['fuzzer_args'] = run_data['mut_data']['args']
+    result = base_eval(run_data, fuzzer_container_tag("aflpp_det"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
@@ -1200,8 +1214,10 @@ def build_compile_args(args, workdir):
     # also store the crashing input and path to the corresponding
     # mutated binary
 FUZZERS = {
-    "aflpp": aflpp_eval,
+    #  "libfuzzer": libfuzzer_eval,
     "afl": afl_eval,
+    "aflpp_rec": aflpp_rec_eval,
+    "aflpp_det": aflpp_det_eval,
     "aflpp_fast_exploit": aflppfastexploit_eval,
     "aflpp_mopt": aflppmopt_eval,
     "fairfuzz": fairfuzz_eval,

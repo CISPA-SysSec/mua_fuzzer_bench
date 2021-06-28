@@ -1,0 +1,8 @@
+FROM mutation-testing-fuzzer-system
+
+USER user
+RUN wget https://github.com/AFLplusplus/AFLplusplus/archive/3.11c.tar.gz && tar xfv 3.11c.tar.gz && mv AFLplusplus* AFLplusplus
+RUN cd AFLplusplus && make -j
+ENV PATH="/home/user/AFLplusplus/:$PATH"
+COPY tmp/lib/ /home/user/lib/
+COPY eval/aflpp_rec/eval.sh /home/user/eval.sh
