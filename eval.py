@@ -20,6 +20,7 @@ import concurrent.futures
 import shlex
 import uuid
 import platform
+import tempfile
 from pathlib import Path
 
 import docker
@@ -1116,77 +1117,60 @@ def get_aflpp_logs(workdir, all_logs):
     except Exception as exc:
         raise ValueError(''.join(all_logs)) from exc
 
-#  def aflpp_eval(run_data):
-#      run_data['crash_dir'] = "output/default/crashes"
-#      run_data['fuzzer_args'] = run_data['mut_data']['args']
-#      result = base_eval(run_data, fuzzer_container_tag("aflpp"), "/home/user/eval.sh")
-#      result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
-#      return result
 
-def aflpp_rec_eval(run_data):
+def aflpp_rec_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflpp_rec"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_rec"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def aflpp_det_eval(run_data):
+def aflpp_det_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflpp_det"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_det"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def afl_eval(run_data):
+def afl_eval(run_data, run_func):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("afl"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("afl"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def aflppfastexploit_eval(run_data):
+def aflppfastexploit_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflpp_fast_exploit"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_fast_exploit"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def aflppmopt_eval(run_data):
+def aflppmopt_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("aflpp_mopt"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_mopt"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def fairfuzz_eval(run_data):
+def fairfuzz_eval(run_data, run_func):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = base_eval(run_data, fuzzer_container_tag("fairfuzz"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("fairfuzz"), "/home/user/eval.sh")
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
-def honggfuzz_eval(run_data):
+def honggfuzz_eval(run_data, run_func):
     run_data['crash_dir'] = "crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args'].replace("@@", "___FILE___")
-    result = base_eval(run_data, fuzzer_container_tag("honggfuzz"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("honggfuzz"), "/home/user/eval.sh")
     result['plot_data'] = []
     return result
 
-def libfuzzer_eval(run_data):
-    result = base_eval(run_data, fuzzer_container_tag("libfuzzer"), "/home/user/eval.sh")
+def libfuzzer_eval(run_data, run_func):
+    result = run_func(run_data, fuzzer_container_tag("libfuzzer"), "/home/user/eval.sh")
     return result
 
-# def aflppasan_eval(run_data):
-#     return aflpp_base_eval(
-#         run_data, "mutator_aflppasan", "/home/user/eval.sh")
-
-# def aflppubsan_eval(run_data):
-#     return aflpp_base_eval(
-#         run_data, "mutator_aflppubsan", "/home/user/eval.sh")
-
-# def aflppmsan_eval(run_data):
-#     return aflpp_base_eval(
-#         run_data, "mutator_aflppmsan", "/home/user/eval.sh")
 
 def resolve_compile_args(args, workdir):
     resolved = []
@@ -1707,29 +1691,7 @@ def build_subject_docker_images(progs):
             sys.exit(1)
 
 
-def run_eval(progs, fuzzers, num_repeats):
-    global should_run
-
-    execution_start_time = time.time()
-
-    # prepare environment
-    base_shm_dir = Path("/dev/shm/mutator")
-    base_shm_dir.mkdir(parents=True, exist_ok=True)
-
-    # Initialize the stats object
-    stats = Stats("/dev/shm/mutator/stats.db")
-
-    # Record current eval execution data
-    # Get the current git status
-    git_status = get_git_status()
-    stats.new_execution(EXEC_ID, platform.uname()[1], git_status, execution_start_time)
-
-    # Get a record of all mutation types.
-    with open("mutation_doc.json", "rt") as f:
-        mutation_types = json.load(f)
-        for mt in mutation_types:
-            stats.new_mutation_type(mt)
-
+def build_docker_images(fuzzers, progs):
     # build testing image
     proc = subprocess.run([
             "docker", "build",
@@ -1761,6 +1723,32 @@ def run_eval(progs, fuzzers, num_repeats):
             sys.exit(1)
 
     build_subject_docker_images(progs)
+
+
+def run_eval(progs, fuzzers, num_repeats):
+    global should_run
+
+    execution_start_time = time.time()
+
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/mutator")
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize the stats object
+    stats = Stats("/dev/shm/mutator/stats.db")
+
+    # Record current eval execution data
+    # Get the current git status
+    git_status = get_git_status()
+    stats.new_execution(EXEC_ID, platform.uname()[1], git_status, execution_start_time)
+
+    # Get a record of all mutation types.
+    with open("mutation_doc.json", "rt") as f:
+        mutation_types = json.load(f)
+        for mt in mutation_types:
+            stats.new_mutation_type(mt)
+
+    build_docker_images(fuzzers, progs)
 
     UNSOLVED_MUTANTS_DIR.mkdir(exist_ok=True, parents=True)
 
@@ -1802,7 +1790,7 @@ def run_eval(progs, fuzzers, num_repeats):
                     # update core, print message and submit task
                     run_data['used_core'] = core
                     print_run_start_msg(run_data)
-                    tasks[executor.submit(run_data['eval_func'], run_data)] = ("run", core, run_data)
+                    tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
                 else:
                     # No runs are ready, prepare a mutation and all corresponding runs.
                     try:
@@ -1833,6 +1821,241 @@ def run_eval(progs, fuzzers, num_repeats):
     stats.execution_done(EXEC_ID, time.time() - execution_start_time)
 
     print("eval done :)")
+
+
+def get_seed_gathering_runs(fuzzers, progs, num_repeats):
+    all_runs = []
+
+    for prog in progs:
+        try:
+            prog_info = PROGRAMS[prog]
+        except Exception as err:
+            print(err)
+            print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+            sys.exit(1)
+
+        fuzzer_runs = []
+        for fuzzer in fuzzers:
+            try:
+                eval_func = FUZZERS[fuzzer]
+            except Exception as err:
+                print(err)
+                print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
+                sys.exit(1)
+
+            # Gather all data to start a seed gathering run
+
+            # Compile arguments
+            compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+            # Arguments on how to execute the binary
+            args = prog_info['args']
+
+            mut_data = {
+                'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+                'compile_args': compile_args,
+                'is_cpp': prog_info['is_cpp'],
+                'args': args,
+                'prog': prog,
+                'seeds': Path(prog_info['seeds']),
+                'dict': prog_info['dict'],
+            }
+
+            for _ in range(num_repeats):
+
+                workdir = Path(tempfile.mkdtemp(prefix=f"{prog}__{fuzzer}__", dir="/dev/shm/mutator_seed_gathering/"))
+
+                run_data = {
+                    'fuzzer': fuzzer,
+                    'eval_func': eval_func,
+                    'workdir': workdir,
+                    'mut_data': mut_data,
+                }
+
+                # Add this new run
+                all_runs.append(run_data)
+
+    return all_runs
+
+
+def wait_for_seed_run(tasks, cores):
+    "Wait for a task to complete and process the result."
+    assert len(tasks) > 0, "Trying to wait for a task but there are none."
+
+    # wait for a task to complete
+    completed_task = next(concurrent.futures.as_completed(tasks))
+    # get the data associated with the task and remove the task from the list
+    (task_type, core, data) = tasks[completed_task]
+    del tasks[completed_task]
+
+    # handle the task result
+    if task_type == "seed":
+        handle_seed_run_result(completed_task, data)
+    else:
+        raise ValueError("Unknown task type.")
+
+    # free the core for future use
+    cores.release_core(core)
+
+
+def print_seed_run_start_msg(run_data):
+    prog = run_data['mut_data']['prog']
+    fuzzer = run_data['fuzzer']
+    print(f"> run:          {prog}:{fuzzer}")
+
+
+def handle_seed_run_result(run_future, data):
+    workdir = data['workdir']
+    try:
+        # if there was no exception get the data
+        run_result = run_future.result()
+    except Exception:
+        # if there was an exception record it
+        trace = traceback.format_exc()
+        print(trace)
+        print(f"= run ###:      Gathering seeds failed for {workdir}")
+    else:
+        print(f"= run    :      Gathering seeds is done for {workdir}")
+
+
+def seed_gathering_run(run_data, docker_image, executable):
+    global should_run
+    # extract used values
+    mut_data = run_data['mut_data']
+    workdir = run_data['workdir']
+    orig_bc = mut_data['orig_bc']
+    compile_args = mut_data['compile_args']
+    args = run_data['fuzzer_args']
+    seeds = mut_data['seeds']
+    dictionary = mut_data['dict']
+    core_to_use = run_data['used_core']
+
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+    # Start and run the container
+    container = docker_client.containers.run(
+        docker_image, # the image
+        [
+            executable,
+            str(compile_args),
+            str(orig_bc),
+            str(IN_DOCKER_WORKDIR/seeds),
+            str(args)
+        ], # the arguments
+        environment={
+            **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
+        },
+        init=True,
+        cpuset_cpus=str(core_to_use),
+        auto_remove=True,
+        volumes={
+            str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+        },
+        working_dir=str(workdir),
+        mem_limit="1g",
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+
+    logs_queue = queue.Queue()
+    DockerLogStreamer(logs_queue, container).start()
+
+    fuzz_time = time.time()
+    while time.time() < fuzz_time + TIMEOUT and should_run:
+        # check if the process stopped, this should only happen in an
+        # error case
+        try:
+            container.reload()
+        except docker.errors.NotFound:
+            # container is dead stop waiting
+            break
+        if container.status not in ["running", "created"]:
+            break
+
+        # Sleep so we only check sometimes and do not busy loop
+        time.sleep(CHECK_INTERVAL)
+
+    # Check if container is still running
+    try:
+        container.reload()
+        if container.status in ["running", "created"]:
+
+            # Send sigint to the process
+            container.kill(2)
+
+            # Wait up to 10 seconds then send sigkill
+            container.stop()
+    except docker.errors.NotFound:
+        # container is dead just continue maybe it worked
+        pass
+
+    all_logs = []
+    while True:
+        line = logs_queue.get()
+        if line == None:
+            break
+        all_logs.append(line)
+
+    return {
+        'all_logs': all_logs,
+    }
+
+
+def gather_seeds(progs, fuzzers, num_repeats):
+    global should_run
+
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    build_docker_images(fuzzers, progs)
+
+    # Keep a list of which cores can be used
+    cores = CpuCores(NUM_CPUS)
+
+    # for each mutation and for each fuzzer do a run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
+        # keep a list of all tasks
+        tasks = {}
+        # Get each seed gathering runs
+        all_runs = get_seed_gathering_runs(fuzzers, progs, num_repeats)
+
+        while True:
+            # If there are no more runs to start, then we stop.
+            if len(all_runs) <= 0:
+                break
+
+            # If we should stop, do so now to not create any new run.
+            if not should_run:
+                break
+
+            # Check if a core is free
+            core = cores.try_reserve_core()
+
+            if core is not None:
+                # A core is free and there are still runs to do, start a new task.
+
+                run_data = all_runs.pop()
+                run_data['used_core'] = core
+
+                print_seed_run_start_msg(run_data)
+
+                tasks[executor.submit(run_data['eval_func'], run_data, seed_gathering_run)] = ("seed", core, run_data)
+
+            else:
+                # No core is free wait for a task to complete.
+                wait_for_seed_run(tasks, cores)
+
+        # Wait for remaining tasks to complete
+        print(f"Waiting for remaining tasks to complete, {len(tasks)} to go..")
+        while len(tasks) > 0:
+            print(f"{len(tasks)}")
+            wait_for_seed_run(tasks, cores)
+
+    print("seed gathering done :)")
 
 
 def parse_afl_paths(paths):
@@ -2509,6 +2732,7 @@ def main():
     subparsers = parser.add_subparsers(dest='cmd', help="These are the possible actions for the eval, "
             "see their individual descriptions.")
 
+    # CMD: eval 
     parser_eval = subparsers.add_parser('eval', help="Run the evaluation executing the requested fuzzers (--fuzzers) on "
             "the requested programs (--progs) and gather the resulting data.")
     parser_eval.add_argument("--fuzzers", nargs='+', required=True,
@@ -2517,9 +2741,21 @@ def main():
             help='The programs to evaluate on, will fail if the name is not known.')
     parser_eval.add_argument("--num-repeats", type=int, default=1, help="How often to repeat each mutation for each fuzzer.")
 
+    # CMD: gather_seeds 
+    parser_gather_seeds = subparsers.add_parser('gather_seeds', help="Run the fuzzers on the unmutated binary to find inputs. "
+            "Check the resulting fuzzing working directories for their individual results, this is not done by the framework.")
+    parser_gather_seeds.add_argument("--fuzzers", nargs='+', required=True,
+            help='The fuzzers to run, will fail if the name is not known.')
+    parser_gather_seeds.add_argument("--progs", nargs='+', required=True,
+            help='The programs to fuzz, will fail if the name is not known.')
+    parser_gather_seeds.add_argument("--num-repeats", type=int, default=1,
+            help="How often to repeat each seed collection for each fuzzer.")
+
+    # CMD: plot 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
     parser_seed.add_argument("db_path", help="The sqlite database to plot.")
 
+    # CMD: merge 
     parser_eval = subparsers.add_parser('merge', help="Merge result databases.")
     parser_eval.add_argument("out_db_path",
         help='The path where the database that contains all other databases will be stored. '
@@ -2527,6 +2763,7 @@ def main():
     parser_eval.add_argument("in_db_paths", nargs='+',
         help='Paths of the databases that will be merged, these dbs will not be modified.')
 
+    # CMD: minimize_seeds 
     parser_eval = subparsers.add_parser('minimize_seeds',
             help="Minimize the seeds by finding the minimum set (greedily) "
             "that covers all mutations reached by the full set of seeds.")
@@ -2541,6 +2778,8 @@ def main():
 
     if args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers, args.num_repeats)
+    elif args.cmd == 'gather_seeds':
+        gather_seeds(args.progs, args.fuzzers, args.num_repeats)
     elif args.cmd == 'plot':
         generate_plots(args.db_path)
     elif args.cmd == 'merge':
