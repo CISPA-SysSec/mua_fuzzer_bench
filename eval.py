@@ -21,6 +21,7 @@ import shlex
 import uuid
 import platform
 import tempfile
+import hashlib
 from pathlib import Path
 
 import docker
@@ -71,15 +72,14 @@ HOST_TMP_PATH = Path(".").resolve()/"tmp/"
 # Directy where unsolved mutants are collected
 UNSOLVED_MUTANTS_DIR = HOST_TMP_PATH/"unsolved_mutants"
 
-# The path where all seed files are collected
-SEED_BASE_DIR = Path("/dev/shm/seeds/")
-
 # The location where the eval data is mapped to inside the docker container
 IN_DOCKER_WORKDIR = "/workdir/"
 
 TRIGGERED_STR = b"Triggered!\r\n"
 
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
+
+SEED_BASE_DIR = Path(os.getenv("MUT_SEED_DIR", "tmp/active_seeds/"))
 
 # The programs that can be evaluated
 PROGRAMS = {
@@ -101,7 +101,6 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/re2-code/re2_fuzzer.bc")),
         "name": "re2",
         "path": "samples/re2-code",
-        "seeds": "tmp/minimized_seeds/re2",
         "dict": "tmp/samples/re2_harness/re2.dict",
         "args": "@@",
     },
@@ -121,7 +120,6 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
         "name": "cares",
         "path": "samples/c-ares",
-        "seeds": "tmp/minimized_seeds/c-ares-parse-reply",
         "dict": None,
         "args": "@@",
     },
@@ -141,24 +139,22 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
         "name": "cares",
         "path": "samples/c-ares",
-        "seeds": "tmp/minimized_seeds/c-ares-query",
         "dict": None,
         "args": "@@",
     },
-    "freetype": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
-        "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
-        "name": "freetype",
-        "path": "samples/ftfuzzer",
-        "seeds": "tmp/samples/freetype_harness/seeds",
-        "dict": None,
-        "args": "@@",
-    },
+    #  "freetype": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #      ],
+    #      "is_cpp": True,
+    #      "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
+    #      "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
+    #      "name": "freetype",
+    #      "path": "samples/ftfuzzer",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
     "woff2_base": {
         "bc_compile_args": [
         ],
@@ -170,7 +166,6 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer.bc")),
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer",
-        "seeds": "tmp/minimized_seeds/woff2_base",
         "dict": None,
         "args": "@@",
     },
@@ -185,7 +180,6 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry.bc")),
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
-        "seeds": "tmp/minimized_seeds/woff2_new",
         "dict": None,
         "args": "@@",
     },
@@ -201,44 +195,41 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/aspell/out/aspell_fuzzer.bc")),
         "name": "aspell",
         "path": "samples/aspell/",
-        "seeds": "tmp/minimized_seeds/aspell",
         "dict": None,
         "args": "@@",
     },
-    "bloaty": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/bloaty/out/fuzz_target")),
-        "orig_bc": str(Path("tmp/samples/bloaty/out/fuzz_target.bc")),
-        "name": "bloaty",
-        "path": "samples/bloaty/",
-        "seeds": "tmp/samples/bloaty_harness/seeds",
-        "dict": None,
-        "args": "@@",
-    },
-    "curl": {
-        "bc_compile_args": [
-            {'val': "-L", 'action': None},
-            {'val': "tmp/samples/curl/out/lib", 'action': 'prefix_workdir'},
-            {'val': "-lpthread", 'action': None},
-            {'val': "-lidn2", 'action': None},
-            {'val': "-lz", 'action': None},
-            {'val': "-lnghttp2", 'action': None},
-        ],
-        "bin_compile_args": [
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
-        "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
-        "name": "curl",
-        "path": "samples/curl/",
-        "seeds": "tmp/samples/curl_harness/seeds",
-        "dict": None,
-        "args": "@@",
-    },
+    #  "bloaty": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #      ],
+    #      "is_cpp": True,
+    #      "orig_bin": str(Path("tmp/samples/bloaty/out/fuzz_target")),
+    #      "orig_bc": str(Path("tmp/samples/bloaty/out/fuzz_target.bc")),
+    #      "name": "bloaty",
+    #      "path": "samples/bloaty/",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
+    #  "curl": {
+    #      "bc_compile_args": [
+    #          {'val': "-L", 'action': None},
+    #          {'val': "tmp/samples/curl/out/lib", 'action': 'prefix_workdir'},
+    #          {'val': "-lpthread", 'action': None},
+    #          {'val': "-lidn2", 'action': None},
+    #          {'val': "-lz", 'action': None},
+    #          {'val': "-lnghttp2", 'action': None},
+    #      ],
+    #      "bin_compile_args": [
+    #      ],
+    #      "is_cpp": True,
+    #      "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
+    #      "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
+    #      "name": "curl",
+    #      "path": "samples/curl/",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
     "guetzli": {
         "bc_compile_args": [
         ],
@@ -249,25 +240,23 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
         "name": "guetzli",
         "path": "samples/guetzli/",
-        "seeds": "tmp/minimized_seeds/guetzli",
         "dict": "tmp/samples/guetzli_harness/guetzli.dict",
         "args": "@@",
     },
-    "mjs": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-            {'val': "-ldl", 'action': None},
-        ],
-        "is_cpp": False,
-        "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
-        "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
-        "name": "mjs",
-        "path": "samples/mjs/",
-        "seeds": "tmp/samples/mjs_harness/seeds/",
-        "dict": None,
-        "args": "@@",
-    },
+    #  "mjs": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #          {'val': "-ldl", 'action': None},
+    #      ],
+    #      "is_cpp": False,
+    #      "orig_bin": str(Path("tmp/samples/mjs/mjs/mjs")),
+    #      "orig_bc": str(Path("tmp/samples/mjs/mjs/mjs.bc")),
+    #      "name": "mjs",
+    #      "path": "samples/mjs/",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
     "vorbis": {
         "bc_compile_args": [
         ],
@@ -278,39 +267,36 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/vorbis/out/decode_fuzzer.bc")),
         "name": "vorbis",
         "path": "samples/vorbis/",
-        "seeds": "tmp/minimized_seeds/vorbis/",
         "dict": "tmp/samples/vorbis_harness/vorbis.dict",
         "args": "@@",
     },
-    "harfbuzz": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-        ],
-        "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer")),
-        "orig_bc": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer.bc")),
-        "name": "harfbuzz",
-        "path": "samples/harfbuzz/",
-        "seeds": "tmp/samples/harfbuzz/test/fuzzing/fonts/",
-        "dict": None,
-        "args": "@@",
-    },
-    "file": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-            {'val': "-lz", 'action': None},
-        ],
-        "is_cpp": False,
-        "orig_bin": str(Path("tmp/samples/file/magic_fuzzer")),
-        "orig_bc": str(Path("tmp/samples/file/magic_fuzzer.bc")),
-        "name": "file",
-        "path": "samples/file/",
-        "seeds": "tmp/samples/file_harness/seeds/",
-        "dict": None,
-        "args": "<WORK>/samples/file_harness/magic.mgc @@",
-    },
+    #  "harfbuzz": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #      ],
+    #      "is_cpp": True,
+    #      "orig_bin": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer")),
+    #      "orig_bc": str(Path("tmp/samples/harfbuzz/hb-subset-fuzzer.bc")),
+    #      "name": "harfbuzz",
+    #      "path": "samples/harfbuzz/",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
+    #  "file": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #          {'val': "-lz", 'action': None},
+    #      ],
+    #      "is_cpp": False,
+    #      "orig_bin": str(Path("tmp/samples/file/magic_fuzzer")),
+    #      "orig_bc": str(Path("tmp/samples/file/magic_fuzzer.bc")),
+    #      "name": "file",
+    #      "path": "samples/file/",
+    #      "dict": None,
+    #      "args": "<WORK>/samples/file_harness/magic.mgc @@",
+    #  },
     "libjpeg": {
         "bc_compile_args": [
         ],
@@ -321,26 +307,24 @@ PROGRAMS = {
         "orig_bc": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc")),
         "name": "libjpeg",
         "path": "samples/libjpeg-turbo/",
-        "seeds": "tmp/minimized_seeds/libjpeg",
         "dict": "tmp/samples/libjpeg-turbo_harness/libjpeg.dict",
         "args": "@@",
     },
-    "sqlite3": {
-        "bc_compile_args": [
-        ],
-        "bin_compile_args": [
-            {'val': "-lpthread", 'action': None},
-            {'val': "-ldl", 'action': None},
-        ],
-        "is_cpp": False,
-        "orig_bin": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz")),
-        "orig_bc": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz.bc")),
-        "name": "sqlite",
-        "path": "samples/sqlite3/",
-        "seeds": "tmp/samples/sqlite3_harness/seeds/",
-        "dict": None,
-        "args": "@@",
-    },
+    #  "sqlite3": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #          {'val': "-lpthread", 'action': None},
+    #          {'val': "-ldl", 'action': None},
+    #      ],
+    #      "is_cpp": False,
+    #      "orig_bin": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz")),
+    #      "orig_bc": str(Path("tmp/samples/sqlite3/sqlite3_ossfuzz.bc")),
+    #      "name": "sqlite",
+    #      "path": "samples/sqlite3/",
+    #      "dict": None,
+    #      "args": "@@",
+    #  },
 }
 
 def fuzzer_container_tag(name):
@@ -454,7 +438,6 @@ class Stats():
             bc_compile_args,
             bin_compile_args,
             args,
-            seeds,
             dict,
             orig_bin
         )''')
@@ -632,14 +615,13 @@ class Stats():
     @connection
     def new_prog(self, c, exec_id, prog, data):
         print(data)
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
                 json.dumps(data['bc_compile_args']),
                 json.dumps(data['bin_compile_args']),
                 data['args'],
-                str(data['seeds']),
                 str(data['dict']),
                 str(data['orig_bin']),
             )
@@ -981,7 +963,7 @@ def base_eval(run_data, docker_image, executable):
     prog_bc = mut_data['prog_bc']
     compile_args = mut_data['compile_args']
     args = run_data['fuzzer_args']
-    seeds = mut_data['seeds']
+    seeds = SEED_BASE_DIR + mut_data['prog']
     dictionary = mut_data['dict']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     core_to_use = run_data['used_core']
@@ -1249,11 +1231,7 @@ def get_all_mutations(stats, mutator, progs):
 
         # Run the seeds through the mutation detector
         mutation_list_dir = Path("/dev/shm/mutation_detection")/prog
-        # Get the right seeds
-        if USE_GATHERED_SEEDS:
-            seeds = SEED_BASE_DIR.joinpath(prog).joinpath('seeds')
-        else:
-            seeds = Path(prog_info['seeds'])
+        seeds = Path(SEED_BASE_DIR/prog)
 
         instrument_prog(mutator, prog_info)
 
@@ -1289,9 +1267,9 @@ def get_all_mutations(stats, mutator, progs):
         # in the mutation_list_dir
         if FILTER_MUTATIONS:
             print("Filtering mutations, checking the found mutations.")
-            mutations = list((str(mut_id), prog, prog_info, seeds, mutation_data) for mut_id in filtered_mutations)
+            mutations = list((str(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
         else:
-            mutations = list((str(p['UID']), prog, prog_info, seeds, mutation_data) for p in mutation_data)
+            mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
 
         print(f"Found {len(mutations)} mutations for {prog}")
 
@@ -1344,7 +1322,7 @@ def get_all_runs(stats, fuzzers, progs, num_repeats):
         all_runs = []
 
         # Go through the mutations
-        for (mutation_id, prog, prog_info, seeds, mutation_data) in all_mutations:
+        for (mutation_id, prog, prog_info, mutation_data) in all_mutations:
             # Gather all data for a mutation
             # Get the path to the file that should be included during compilation
             compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
@@ -1360,7 +1338,6 @@ def get_all_runs(stats, fuzzers, progs, num_repeats):
                 'is_cpp': prog_info['is_cpp'],
                 'args': args,
                 'prog': prog,
-                'seeds': seeds,
                 'dict': prog_info['dict'],
                 'orig_bin': orig_bin,
                 'mutation_id': mutation_id,
@@ -1584,7 +1561,7 @@ def prepare_mutation(core_to_use, data):
                 str(prog_bc)
         ] )
 
-        seeds = data['seeds']
+        seeds = SEED_BASE_DIR/data['prog']
         orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(data['orig_bin']).relative_to(HOST_TMP_PATH)
         args = data['args']
         docker_mut_bin = get_mut_base_bin(data)
@@ -1856,7 +1833,6 @@ def get_seed_gathering_runs(fuzzers, progs, num_repeats):
                 'is_cpp': prog_info['is_cpp'],
                 'args': args,
                 'prog': prog,
-                'seeds': Path(prog_info['seeds']),
                 'dict': prog_info['dict'],
             }
 
@@ -1925,7 +1901,7 @@ def seed_gathering_run(run_data, docker_image, executable):
     orig_bc = mut_data['orig_bc']
     compile_args = mut_data['compile_args']
     args = run_data['fuzzer_args']
-    seeds = mut_data['seeds']
+    seeds = SEED_BASE_DIR/mut_data['prog']
     dictionary = mut_data['dict']
     core_to_use = run_data['used_core']
 
@@ -2004,8 +1980,43 @@ def seed_gathering_run(run_data, docker_image, executable):
     }
 
 
-def gather_seeds(progs, fuzzers, num_repeats):
+BLOCK_SIZE = 1024*4
+
+# Based on: https://stackoverflow.com/a/44873382
+def hash_file(file_path):
+    h = hashlib.sha512()
+    b  = bytearray(BLOCK_SIZE)
+    mv = memoryview(b)
+    with open(file_path, 'rb', buffering=0) as f:
+        for n in iter(lambda : f.readinto(mv), 0):
+            h.update(mv[:n])
+    return h.hexdigest()
+
+
+def collect_honggfuzz(path):
+    found = path.glob("output/*")
+    return list(found)
+
+
+def collect_afl(path):
+    found = [pp for pp in path.glob("**/queue/*") if pp.name != '.state']
+    return list(found)
+
+
+SEED_HANDLERS = {
+        'honggfuzz': collect_honggfuzz,
+        'fairfuzz': collect_afl,
+        'aflpp_rec': collect_afl,
+        'aflpp_det': collect_afl,
+        'afl': collect_afl,
+}
+
+
+def gather_seeds(progs, fuzzers, num_repeats, destination_dir):
     global should_run
+
+    destination_dir = Path(destination_dir)
+    destination_dir.mkdir(parents=True, exist_ok=True)
 
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
@@ -2055,7 +2066,60 @@ def gather_seeds(progs, fuzzers, num_repeats):
             print(f"{len(tasks)}")
             wait_for_seed_run(tasks, cores)
 
+    print("Copying seeds to target dir...")
+    for seed_source in base_shm_dir.glob("*"):
+        if not seed_source.is_dir():
+            continue
+
+        seed_base_dir_parts = str(seed_source.name).split('__')
+        prog = seed_base_dir_parts[0]
+        fuzzer = seed_base_dir_parts[1]
+        prog_dir = destination_dir/prog
+        prog_dir.mkdir(parents=True, exist_ok=True)
+
+        collector = SEED_HANDLERS[fuzzer]
+
+        found_seeds = collector(seed_source)
+        print(prog, fuzzer, len(found_seeds))
+        for fs in found_seeds:
+            file_hash = hash_file(fs)
+            dest_path = prog_dir/file_hash
+            shutil.copyfile(fs, dest_path)
+
     print("seed gathering done :)")
+
+
+def import_seeds(source_dir):
+    source_dir = Path(source_dir)
+    for seed_source in source_dir.glob("*"):
+        print()
+        if not seed_source.is_dir():
+            print(f"Warning: Expected only directories but this path is not a directory: {seed_source}")
+            continue
+
+        if seed_source.name not in PROGRAMS:
+            print(f"Warning: Directory does not match any program name, files in this directory will not be imported: {seed_source}")
+            continue
+
+        seed_files = [sf for sf in seed_source.glob("**/*") if sf.is_file()]
+        dest_dir = SEED_BASE_DIR/seed_source.name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"Copying seed files from {seed_source} to {dest_dir} ...")
+
+        num_already_exist = 0
+        num_copied = 0
+
+        for sf in seed_files:
+            file_hash = hash_file(sf)
+            dest_path = dest_dir/file_hash
+            if dest_path.is_file():
+                num_already_exist += 1
+                continue
+            shutil.copyfile(sf, dest_path)
+            num_copied += 1
+
+        print(f"Copied {num_copied} and ignored {num_already_exist} (as they have the same hash).")
 
 
 def parse_afl_paths(paths):
@@ -2750,6 +2814,13 @@ def main():
             help='The programs to fuzz, will fail if the name is not known.')
     parser_gather_seeds.add_argument("--num-repeats", type=int, default=1,
             help="How often to repeat each seed collection for each fuzzer.")
+    parser_gather_seeds.add_argument("--dest-dir",
+            help="The directory where to put the found seeds.")
+
+    # CMD: import_seeds 
+    parser_seed = subparsers.add_parser('import_seeds', help="Copy the seed files from the directory into the used seed directory. "
+            "Note that the used seed directory can be specified using the MUT_SEED_DIR environment variable.")
+    parser_seed.add_argument("source_seed_dir", help="The source seed directory.")
 
     # CMD: plot 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
@@ -2779,7 +2850,9 @@ def main():
     if args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers, args.num_repeats)
     elif args.cmd == 'gather_seeds':
-        gather_seeds(args.progs, args.fuzzers, args.num_repeats)
+        gather_seeds(args.progs, args.fuzzers, args.num_repeats, args.dest_dir)
+    elif args.cmd == 'import_seeds':
+        import_seeds(args.source_seed_dir)
     elif args.cmd == 'plot':
         generate_plots(args.db_path)
     elif args.cmd == 'merge':
