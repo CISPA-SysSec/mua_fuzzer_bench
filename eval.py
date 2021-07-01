@@ -1895,6 +1895,7 @@ def handle_seed_run_result(run_future, data):
 
 def seed_gathering_run(run_data, docker_image, executable):
     global should_run
+    start_time = time.time()
     # extract used values
     mut_data = run_data['mut_data']
     workdir = run_data['workdir']
@@ -1974,6 +1975,10 @@ def seed_gathering_run(run_data, docker_image, executable):
         if line == None:
             break
         all_logs.append(line)
+
+    if time.time() - TIMEOUT < start_time:
+        # The runtime is less than the timeout, something went wrong.
+        print('\n'.join(all_logs))
 
     return {
         'all_logs': all_logs,
