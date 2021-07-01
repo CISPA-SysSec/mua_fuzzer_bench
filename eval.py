@@ -1976,7 +1976,7 @@ def seed_gathering_run(run_data, docker_image, executable):
             break
         all_logs.append(line)
 
-    if time.time() - TIMEOUT < start_time:
+    if should_run and time.time() - TIMEOUT < start_time:
         # The runtime is less than the timeout, something went wrong.
         print('\n'.join(all_logs))
 
