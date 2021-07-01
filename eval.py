@@ -2114,6 +2114,7 @@ def import_seeds(source_dir):
 
         num_already_exist = 0
         num_copied = 0
+        num_too_big = 0
 
         for sf in seed_files:
             file_hash = hash_file(sf)
@@ -2121,10 +2122,13 @@ def import_seeds(source_dir):
             if dest_path.is_file():
                 num_already_exist += 1
                 continue
+            if sf.stat().st_size >= 1_000_000:
+                num_too_big += 1
+                continue
             shutil.copyfile(sf, dest_path)
             num_copied += 1
 
-        print(f"Copied {num_copied} and ignored {num_already_exist} (as they have the same hash).")
+        print(f"Copied {num_copied} and ignored: {num_already_exist} (same hash) + {num_too_big} (size too large).")
 
 
 def parse_afl_paths(paths):
