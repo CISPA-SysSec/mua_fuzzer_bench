@@ -827,6 +827,7 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile):
         working_dir=str(IN_DOCKER_WORKDIR),
         cpuset_cpus=str(core_to_use),
         mem_limit="1g",
+        mem_swappiness=0,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
         detach=True
@@ -851,6 +852,7 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
         volumes={str(HOST_TMP_PATH): {'bind': "/home/mutator/tmp/",
                                       'mode': 'rw'}},
         mem_limit="10g",
+        mem_swappiness=0,
         cpuset_cpus=str(core_to_use) if core_to_use is not None else None,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
@@ -1005,7 +1007,8 @@ def base_eval(run_data, docker_image, executable):
                 "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
             },
             working_dir=str(workdir),
-            mem_limit="1g",
+            mem_limit="10g",
+            mem_swappiness=0,
             log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
                 config={'max-size': '10m'}),
             detach=True
@@ -1931,7 +1934,8 @@ def seed_gathering_run(run_data, docker_image, executable):
             "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
         },
         working_dir=str(workdir),
-        mem_limit="1g",
+        mem_limit="10g",
+        mem_swappiness=0,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
         detach=True
