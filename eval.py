@@ -1659,7 +1659,7 @@ def build_subject_docker_images(progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
             "-f", f"subjects/Dockerfile.{name}",
-            "."])
+            "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
             sys.exit(1)
@@ -1668,7 +1668,7 @@ def build_subject_docker_images(progs):
             docker rm dummy || true
             docker create -ti --name dummy {tag} bash
             docker cp dummy:/home/mutator/samples tmp/
-            docker rm -f dummy""", shell=True)
+            docker rm -f dummy""", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not extract {tag} image sample files.", proc)
             sys.exit(1)
@@ -1682,14 +1682,13 @@ def build_docker_images(fuzzers, progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "-f", "eval/Dockerfile.testing",
             "."
-        ])
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
         sys.exit(1)
 
     # build the fuzzer docker images
     for name in ["system"] + fuzzers:
-        print(FUZZERS.keys())
         if name != 'system' and name not in FUZZERS.keys():
             print(f"Unknown fuzzer: {name}, known fuzzers are: {' '.join(list(FUZZERS.keys()))}")
             sys.exit(1)
@@ -1700,7 +1699,7 @@ def build_docker_images(fuzzers, progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
             "-f", f"eval/{name}/Dockerfile",
-            "."])
+            "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
             sys.exit(1)
@@ -1897,9 +1896,9 @@ def handle_seed_run_result(run_future, run_data, all_runs):
         print(f"= run ###: Failed for {workdir}")
     else:
         errored_file = run_result.get('file_error')
-        seed_dir = run_data['seed_dir']
         should_restart = run_result.get('restart')
         if errored_file:
+            seed_dir = run_data['seed_dir']
             errored_file = seed_dir/errored_file
             print(f"Removing errored file: {errored_file}")
             try:
@@ -2301,7 +2300,7 @@ def gather_seeds(progs, fuzzers, num_repeats, destination_dir):
 
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
-    base_shm_dir.unlink(missing_ok=True)
+    shutil.rmtree(base_shm_dir, ignore_errors=True)
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     build_docker_images(fuzzers, progs)
