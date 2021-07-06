@@ -171,3 +171,4 @@ samples/use_of_incorrect_operator/use_of_incorrect_operator
 test_plot.html
 eval/build_test_suite.py.old
 eval/build.sh.old
+seed_gathering.log

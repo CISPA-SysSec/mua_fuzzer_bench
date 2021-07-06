@@ -13,6 +13,7 @@ import queue
 import json
 import shutil
 import random
+import re
 from typing import Union, List, Tuple, Set
 import psutil
 import contextlib
@@ -22,6 +23,7 @@ import uuid
 import platform
 import tempfile
 import hashlib
+import multiprocessing
 from pathlib import Path
 
 import docker
@@ -79,6 +81,7 @@ TRIGGERED_STR = b"Triggered!\r\n"
 
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
 
+# The directory used for seed files for all fuzzers
 SEED_BASE_DIR = Path(os.getenv("MUT_SEED_DIR", "tmp/active_seeds/"))
 
 # The programs that can be evaluated
@@ -1656,7 +1659,7 @@ def build_subject_docker_images(progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
             "-f", f"subjects/Dockerfile.{name}",
-            "."])
+            "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
             sys.exit(1)
@@ -1665,7 +1668,7 @@ def build_subject_docker_images(progs):
             docker rm dummy || true
             docker create -ti --name dummy {tag} bash
             docker cp dummy:/home/mutator/samples tmp/
-            docker rm -f dummy""", shell=True)
+            docker rm -f dummy""", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not extract {tag} image sample files.", proc)
             sys.exit(1)
@@ -1679,14 +1682,13 @@ def build_docker_images(fuzzers, progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "-f", "eval/Dockerfile.testing",
             "."
-        ])
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0:
         print("Could not build testing image.", proc)
         sys.exit(1)
 
     # build the fuzzer docker images
     for name in ["system"] + fuzzers:
-        print(FUZZERS.keys())
         if name != 'system' and name not in FUZZERS.keys():
             print(f"Unknown fuzzer: {name}, known fuzzers are: {' '.join(list(FUZZERS.keys()))}")
             sys.exit(1)
@@ -1697,7 +1699,7 @@ def build_docker_images(fuzzers, progs):
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
             "-f", f"eval/{name}/Dockerfile",
-            "."])
+            "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             print(f"Could not build {tag} image.", proc)
             sys.exit(1)
@@ -1856,19 +1858,19 @@ def get_seed_gathering_runs(fuzzers, progs, num_repeats):
     return all_runs
 
 
-def wait_for_seed_run(tasks, cores):
+def wait_for_seed_run(tasks, cores, all_runs):
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
 
     # wait for a task to complete
     completed_task = next(concurrent.futures.as_completed(tasks))
     # get the data associated with the task and remove the task from the list
-    (task_type, core, data) = tasks[completed_task]
+    (task_type, core, run_data) = tasks[completed_task]
     del tasks[completed_task]
 
     # handle the task result
     if task_type == "seed":
-        handle_seed_run_result(completed_task, data)
+        handle_seed_run_result(completed_task, run_data, all_runs)
     else:
         raise ValueError("Unknown task type.")
 
@@ -1879,11 +1881,11 @@ def wait_for_seed_run(tasks, cores):
 def print_seed_run_start_msg(run_data):
     prog = run_data['mut_data']['prog']
     fuzzer = run_data['fuzzer']
-    print(f"> run:          {prog}:{fuzzer}")
+    print(f"> run:     {prog}:{fuzzer}")
 
 
-def handle_seed_run_result(run_future, data):
-    workdir = data['workdir']
+def handle_seed_run_result(run_future, run_data, all_runs):
+    workdir = run_data['workdir']
     try:
         # if there was no exception get the data
         run_result = run_future.result()
@@ -1891,9 +1893,25 @@ def handle_seed_run_result(run_future, data):
         # if there was an exception record it
         trace = traceback.format_exc()
         print(trace)
-        print(f"= run ###:      Gathering seeds failed for {workdir}")
+        print(f"= run ###: Failed for {workdir}")
     else:
-        print(f"= run    :      Gathering seeds is done for {workdir}")
+        errored_file = run_result.get('file_error')
+        should_restart = run_result.get('restart')
+        if errored_file:
+            seed_dir = run_data['seed_dir']
+            errored_file = seed_dir/errored_file
+            print(f"Removing errored file: {errored_file}")
+            try:
+                errored_file.unlink()
+            except FileNotFoundError:
+                print("Already deleted!")
+            should_restart = True
+        if should_restart:
+            print(f"Restarting run")
+            shutil.rmtree(workdir)
+            all_runs.append(run_data)
+
+        print(f"= run    : {workdir}")
 
 
 def seed_gathering_run(run_data, docker_image, executable):
@@ -1982,11 +2000,264 @@ def seed_gathering_run(run_data, docker_image, executable):
 
     if should_run and time.time() - TIMEOUT < start_time:
         # The runtime is less than the timeout, something went wrong.
-        print('\n'.join(all_logs))
+        raise RuntimeError(''.join(all_logs))
 
     return {
         'all_logs': all_logs,
     }
+
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
+def split_seed_dir(prog, num_splits, base_dir):
+    split_size = 256*4
+    seed_dir = SEED_BASE_DIR/prog
+    assert seed_dir.is_dir(), f"Seed dir does not exist {seed_dir}"
+    seed_files = [sf for sf in seed_dir.glob('**/*') if sf.is_file()]
+    split_base_dir = base_dir/prog
+    shutil.rmtree(split_base_dir, ignore_errors=True)
+
+    split_dirs = []
+    for ii, chunk_files in enumerate(chunks(seed_files, split_size)):
+        target_dir = split_base_dir/str(ii)
+        target_dir.mkdir(parents=True)
+        for ff in chunk_files:
+            shutil.copy2(ff, target_dir)
+        split_dirs.append(target_dir)
+    print(f"Seed files have been split into {len(split_dirs)} dirs, each with ~{split_size} seeds.")
+
+    return split_dirs
+
+
+def get_seed_checking_runs(fuzzers, progs, num_splits, base_dir):
+    print(fuzzers, progs)
+    all_split_dirs = []
+    all_runs = []
+
+    for prog in progs:
+        try:
+            prog_info = PROGRAMS[prog]
+        except Exception as err:
+            print(err)
+            print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+            sys.exit(1)
+
+        split_dirs = split_seed_dir(prog, num_splits, base_dir)
+        print(f"num split_dirs {len(split_dirs)}")
+
+        for fuzzer in fuzzers:
+            try:
+                eval_func = FUZZERS[fuzzer]
+            except Exception as err:
+                print(err)
+                print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
+                sys.exit(1)
+
+            # Gather all data to start a seed checking run
+
+            # Compile arguments
+            compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+            # Arguments on how to execute the binary
+            args = prog_info['args']
+
+            mut_data = {
+                'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+                'compile_args': compile_args,
+                'is_cpp': prog_info['is_cpp'],
+                'args': args,
+                'prog': prog,
+                'dict': prog_info['dict'],
+            }
+
+            for split_dir in split_dirs:
+
+                workdir = Path(tempfile.mkdtemp(prefix=f"{prog}__{fuzzer}__", dir=base_dir))
+
+                run_data = {
+                    'fuzzer': fuzzer,
+                    'eval_func': eval_func,
+                    'workdir': workdir,
+                    'seed_dir': split_dir,
+                    'mut_data': mut_data,
+                }
+
+                # Add this new run
+                all_runs.append(run_data)
+
+        all_split_dirs.append((prog, split_dirs))
+
+    return all_runs, all_split_dirs
+
+
+def seed_checking_run(run_data, docker_image, executable):
+    global should_run
+    start_time = time.time()
+    # extract used values
+    mut_data = run_data['mut_data']
+    workdir = run_data['workdir']
+    orig_bc = mut_data['orig_bc']
+    compile_args = mut_data['compile_args']
+    args = run_data['fuzzer_args']
+    seeds = run_data['seed_dir']
+    dictionary = mut_data['dict']
+    core_to_use = run_data['used_core']
+
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+    # Start and run the container
+    container = docker_client.containers.run(
+        docker_image, # the image
+        [
+            executable,
+            str(compile_args),
+            str(orig_bc),
+            str(IN_DOCKER_WORKDIR/seeds),
+            str(args)
+        ], # the arguments
+        environment={
+            **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
+        },
+        init=True,
+        cpuset_cpus=str(core_to_use),
+        auto_remove=True,
+        volumes={
+            str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+        },
+        working_dir=str(workdir),
+        mem_limit="10g",
+        mem_swappiness=0,
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+
+    logs_queue = queue.Queue()
+    DockerLogStreamer(logs_queue, container).start()
+
+    fuzz_time = time.time()
+    while time.time() < fuzz_time + TIMEOUT and should_run:
+        # check if the process stopped, this should only happen in an
+        # error case
+        try:
+            container.reload()
+        except docker.errors.NotFound:
+            # container is dead stop waiting
+            break
+        if container.status not in ["running", "created"]:
+            break
+
+        # Sleep so we only check sometimes and do not busy loop
+        time.sleep(CHECK_INTERVAL)
+
+    # Check if container is still running
+    try:
+        container.reload()
+        if container.status in ["running", "created"]:
+
+            # Send sigint to the process
+            container.kill(2)
+
+            # Wait up to 10 seconds then send sigkill
+            container.stop()
+    except docker.errors.NotFound:
+        # container is dead just continue maybe it worked
+        pass
+
+    all_logs = []
+    while True:
+        line = logs_queue.get()
+        if line == None:
+            break
+        all_logs.append(line)
+
+    if should_run and time.time() - TIMEOUT < start_time:
+        # The runtime is less than the timeout, something went wrong.
+        for line in all_logs:
+            if "PROGRAM ABORT" in line:
+                matched = re.search("orig:(.*?)[,']", line)
+                if matched:
+                    errored_file = matched.group(1)
+                    return {
+                        'all_logs': all_logs,
+                        'file_error': errored_file
+                    }
+        raise RuntimeError(''.join(all_logs))
+
+    return {
+        'all_logs': all_logs,
+    }
+
+
+def check_seeds(progs, fuzzers):
+    global should_run
+
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/mutator_check_seeds")
+    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    build_docker_images(fuzzers, progs)
+
+    # Keep a list of which cores can be used
+    cores = CpuCores(NUM_CPUS)
+
+    # for each mutation and for each fuzzer do a run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
+        # keep a list of all tasks
+        tasks = {}
+        # Get each seed checking run
+        all_runs, all_split_dirs = get_seed_checking_runs(fuzzers, progs, NUM_CPUS, base_shm_dir)
+
+        while True:
+            # Check if a core is free
+            core = cores.try_reserve_core()
+
+            if should_run and core is not None and len(all_runs) > 0:
+                # A core is free and there are still runs to do and we want to continue running, start a new task.
+
+                run_data = all_runs.pop()
+                run_data['used_core'] = core
+
+                print_seed_run_start_msg(run_data)
+
+                tasks[executor.submit(run_data['eval_func'], run_data, seed_checking_run)] = ("seed", core, run_data)
+
+            else:
+                # Wait for a task to complete.
+                if len(tasks) == 0:
+                    # all tasks done exit loop
+                    break
+                print(f"Waiting for one of {len(tasks)} tasks.")
+                wait_for_seed_run(tasks, cores, all_runs)
+
+        assert len(all_runs) == 0 or should_run is False
+
+    print("Moving seeds back to where they belong...")
+    for prog, split_dirs in all_split_dirs:
+        seed_dir = SEED_BASE_DIR/prog
+        # backup currently active seeds as they will be replaces
+        seed_backup_dir = Path('tmp/seed_backup')/prog
+        print(f"Backing up seed files for prog: {prog} from {seed_dir} to {seed_backup_dir}.")
+        shutil.rmtree(seed_backup_dir, ignore_errors=True)
+        seed_backup_dir.parent.mkdir(exist_ok=True, parents=True)
+        seed_dir.rename(seed_backup_dir)
+
+        # copy the checked seeds into active seeds
+        seed_dir.mkdir(parents=True)
+        for sd in split_dirs:
+            for ff in sd.glob("*"):
+                if ff.is_dir():
+                    print("Did not expect any directories in the seed dirs, something is wrong.")
+                shutil.copy2(ff, seed_dir)
+
+    print("seed checking done :)")
 
 
 BLOCK_SIZE = 1024*4
@@ -2029,6 +2300,7 @@ def gather_seeds(progs, fuzzers, num_repeats, destination_dir):
 
     # prepare environment
     base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
+    shutil.rmtree(base_shm_dir, ignore_errors=True)
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     build_docker_images(fuzzers, progs)
@@ -2044,19 +2316,11 @@ def gather_seeds(progs, fuzzers, num_repeats, destination_dir):
         all_runs = get_seed_gathering_runs(fuzzers, progs, num_repeats)
 
         while True:
-            # If there are no more runs to start, then we stop.
-            if len(all_runs) <= 0:
-                break
-
-            # If we should stop, do so now to not create any new run.
-            if not should_run:
-                break
-
             # Check if a core is free
             core = cores.try_reserve_core()
 
-            if core is not None:
-                # A core is free and there are still runs to do, start a new task.
+            if should_run and core is not None and len(all_runs) > 0:
+                # A core is free and there are still runs to do and we want to continue running, start a new task.
 
                 run_data = all_runs.pop()
                 run_data['used_core'] = core
@@ -2066,14 +2330,14 @@ def gather_seeds(progs, fuzzers, num_repeats, destination_dir):
                 tasks[executor.submit(run_data['eval_func'], run_data, seed_gathering_run)] = ("seed", core, run_data)
 
             else:
-                # No core is free wait for a task to complete.
-                wait_for_seed_run(tasks, cores)
+                # Wait for a task to complete.
+                if len(tasks) == 0:
+                    # all tasks done exit loop
+                    break
+                print(f"Waiting for one of {len(tasks)} tasks.")
+                wait_for_seed_run(tasks, cores, all_runs)
 
-        # Wait for remaining tasks to complete
-        print(f"Waiting for remaining tasks to complete, {len(tasks)} to go..")
-        while len(tasks) > 0:
-            print(f"{len(tasks)}")
-            wait_for_seed_run(tasks, cores)
+        assert len(all_runs) == 0 or should_run is False
 
     print("Copying seeds to target dir...")
     for seed_source in base_shm_dir.glob("*"):
@@ -2695,7 +2959,16 @@ def update_signal_list(signal_list, to_delete: Set[int]):
     return result
 
 
-def eval_seed(counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutation_container_name, mutator_home, prog_path):
+def eval_seed(active_containers, counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutator_home, prog_path):
+    global worker_container
+    if worker_container is None:
+        worker_container = start_mutation_container(
+                None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}).__enter__()
+        worker_id = id(multiprocessing.current_process())
+        active_containers[worker_id] = worker_container.name
+
+    mutation_container_name = worker_container.name
+
     seed_abs = mutator_tmp_path/seed
     workdir = Path(f"/tmp/seed_abs/{counter}/")
     signal_folder = workdir/SIGNAL_FOLDER_NAME
@@ -2722,6 +2995,10 @@ def eval_seed(counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mu
 
 def minimize_seeds(seed_path, res_path, target):
     global should_run
+    global worker_container
+    worker_container = None
+
+    start_time = time.time()
 
     build_subject_docker_images([target])
 
@@ -2734,8 +3011,9 @@ def minimize_seeds(seed_path, res_path, target):
     prog_info = PROGRAMS.get(target)
     if prog_info is None:
         print(f"{target} not found available are: {list(PROGRAMS.keys())}")
+        sys.exit(1)
+
     with start_mutation_container(None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}) as mutation_container:
-        mutation_container_name = mutation_container.name
 
         # Instrument program, so that covered mutations are detected.
         print(f"Instrumenting {target}")
@@ -2744,20 +3022,26 @@ def minimize_seeds(seed_path, res_path, target):
         detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
         build_detector_binary(mutation_container, prog_info, detector_bin, mutator_home)
 
-        prog_path = mutator_home/detector_bin
-        print(f"Instrumented prog path: {prog_path}")
-        
-        # Get a list of all seed paths
-        seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
+    prog_path = mutator_home/detector_bin
+    print(f"Instrumented prog path: {prog_path}")
+    
+    # Get a list of all seed paths
+    seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
 
-        # gives for each seed input the triggered signals
-        signal_list: List[Tuple[Path, Set[int]]] = list()
+    # gives for each seed input the triggered signals
+    signal_list: List[Tuple[Path, Set[int]]] = list()
 
-        print(f"Executing seeds with {psutil.cpu_count()} cores.")
-        with concurrent.futures.ProcessPoolExecutor(max_workers=psutil.cpu_count()) as executor:
+    num_workers = psutil.cpu_count(logical=True)
+
+    print(f"Executing seeds with {num_workers} workers.")
+    manager = multiprocessing.Manager()
+    active_containers = manager.dict()
+
+    try:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             tasks = {executor.submit(
-                    eval_seed, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
-                    prog_info, mutation_container_name, mutator_home, prog_path
+                    eval_seed, active_containers, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
+                    prog_info, mutator_home, prog_path
                 ) for counter, seed in enumerate(seeds)}
             done = 0
             while tasks:
@@ -2772,30 +3056,41 @@ def minimize_seeds(seed_path, res_path, target):
                     seed, found_mutations = task_result
                     signal_list.append((seed, found_mutations))
                     done += 1
-                    print(f"Ran {done}/{len(seeds) - 1}: {seed} found: {len(found_mutations)}")
+                    print(f"Ran {done}/{len(seeds)}: {seed} found: {len(found_mutations)}")
+    finally:
+        print("Stopping containers ...")
+        stop_jobs = [
+                subprocess.Popen(["docker", "stop", container_name], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                for container_name in active_containers.values()]
+        for ii, sj in enumerate(stop_jobs):
+            print(f"{ii+1}/{len(stop_jobs)} stopped \r", end='', flush=True)
+            if sj.wait() != 0:
+                print(f"Failed to execute {sj}.")
+        print("")
 
-        # all signals are collected, now we can see which seeds to take for minimalization
-        minimized_seeds = list()
-        while signal_list:
-            max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
-            minimized_seeds.append(max_val)
-            signal_list.remove(max_val)
-            signal_list = update_signal_list(signal_list, max_val[1])
+    # all signals are collected, now we can see which seeds to take for minimalization
+    minimized_seeds = list()
+    while signal_list:
+        max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
+        minimized_seeds.append(max_val)
+        signal_list.remove(max_val)
+        signal_list = update_signal_list(signal_list, max_val[1])
 
-        print("="*50)
+    print("="*50)
 
-        # now we put the minimized seeds into a new folder
-        shutil.rmtree(res_path, ignore_errors=True)
-        res_path.mkdir(parents=True, exist_ok=True)
-        total_num_signals = 0
-        for counter, min_seed in enumerate(minimized_seeds):
-            min_seed_path = min_seed[0]
-            num_signals = len(min_seed[1])
-            print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
-            shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
-            total_num_signals += num_signals
+    # now we put the minimized seeds into a new folder
+    shutil.rmtree(res_path, ignore_errors=True)
+    res_path.mkdir(parents=True, exist_ok=True)
+    total_num_signals = 0
+    for counter, min_seed in enumerate(minimized_seeds):
+        min_seed_path = min_seed[0]
+        num_signals = len(min_seed[1])
+        print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
+        shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
+        total_num_signals += num_signals
 
-        print(f"Found a total of {total_num_signals} signals.")
+    print(f"Found a total of {total_num_signals} signals.")
+    print(f"Seed minimization took: {(time.time() - start_time) / 60:.2f} minutes.")
 
 
 def main():
@@ -2817,6 +3112,14 @@ def main():
     parser_eval.add_argument("--progs", nargs='+', required=True,
             help='The programs to evaluate on, will fail if the name is not known.')
     parser_eval.add_argument("--num-repeats", type=int, default=1, help="How often to repeat each mutation for each fuzzer.")
+
+    # CMD: check_seeds 
+    parser_eval = subparsers.add_parser('check_seeds', help="Execute the seeds once with every fuzzer to check that they do not "
+            " cause any errors, if they cause an error the seed files are deleted.")
+    parser_eval.add_argument("--fuzzers", nargs='+', required=True,
+            help='The fuzzers to use check with.')
+    parser_eval.add_argument("--progs", nargs='+', required=True,
+            help='The programs to check for.')
 
     # CMD: gather_seeds 
     parser_gather_seeds = subparsers.add_parser('gather_seeds', help="Run the fuzzers on the unmutated binary to find inputs. "
@@ -2862,6 +3165,8 @@ def main():
 
     if args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers, args.num_repeats)
+    elif args.cmd == 'check_seeds':
+        check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
         gather_seeds(args.progs, args.fuzzers, args.num_repeats, args.dest_dir)
     elif args.cmd == 'import_seeds':
