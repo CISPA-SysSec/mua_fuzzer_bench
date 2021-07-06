@@ -131,6 +131,10 @@ sudo apt install python3-pip
 pip3 install docker
 ```
 
+## Environment variables
+See beginning of `eval.py` for env variables that have influence on the eval.
+TODO describe them here.
+
 ## Starting an Eval Run
 
 TODO
@@ -142,4 +146,32 @@ TODO
 ## Adding New Fuzzers
 
 TODO
+
+## Managing Seeds
+
+### Using existing seeds to reproduce results
+If you just want to reproduce our results download the seeds from: TODO
+Then extract the zip archive to tmp/active_seeds, the folder names inside active_seeds need to correspond to the subject names.
+Example:
+```
+- <project>
+  - eval.py
+  - tmp
+    - active_seeds
+      - libjpeg
+      - re2
+      - others ...
+```
+
+### Adding new seeds for a subject
+- Manually gather initial seeds.
+- Organize seeds into seed_base_dir/<subject name>/<seed files>
+- Import the seeds using `eval.py import_seeds`
+- Run `eval.py check_seeds`. This will delete all inputs that cause a crash.
+- (Optional) Let fuzzers find new seeds.
+    - Run fuzzer seed gathering via `eval.py gather_seeds` and import seeds again from output folder again (choose different output dir than the active dir!).
+    - Run `eval.py check_seeds`, same as above, however some fuzzers are likely to find inputs other fuzzer can not use (too big, timeouts).
+- (Optional) Minimize the seeds, see: minimize_seeds.sh. Results need to replace the content of the active seeds dir.
+
+
 
