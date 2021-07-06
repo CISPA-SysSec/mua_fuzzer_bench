@@ -23,6 +23,7 @@ import uuid
 import platform
 import tempfile
 import hashlib
+import multiprocessing
 from pathlib import Path
 
 import docker
@@ -2959,7 +2960,16 @@ def update_signal_list(signal_list, to_delete: Set[int]):
     return result
 
 
-def eval_seed(counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutation_container_name, mutator_home, prog_path):
+def eval_seed(active_containers, counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutator_home, prog_path):
+    global worker_container
+    if worker_container is None:
+        worker_container = start_mutation_container(
+                None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}).__enter__()
+        worker_id = id(multiprocessing.current_process())
+        active_containers[worker_id] = worker_container.name
+
+    mutation_container_name = worker_container.name
+
     seed_abs = mutator_tmp_path/seed
     workdir = Path(f"/tmp/seed_abs/{counter}/")
     signal_folder = workdir/SIGNAL_FOLDER_NAME
@@ -2986,6 +2996,10 @@ def eval_seed(counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mu
 
 def minimize_seeds(seed_path, res_path, target):
     global should_run
+    global worker_container
+    worker_container = None
+
+    start_time = time.time()
 
     build_subject_docker_images([target])
 
@@ -2998,8 +3012,9 @@ def minimize_seeds(seed_path, res_path, target):
     prog_info = PROGRAMS.get(target)
     if prog_info is None:
         print(f"{target} not found available are: {list(PROGRAMS.keys())}")
+        sys.exit(1)
+
     with start_mutation_container(None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}) as mutation_container:
-        mutation_container_name = mutation_container.name
 
         # Instrument program, so that covered mutations are detected.
         print(f"Instrumenting {target}")
@@ -3008,20 +3023,26 @@ def minimize_seeds(seed_path, res_path, target):
         detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
         build_detector_binary(mutation_container, prog_info, detector_bin, mutator_home)
 
-        prog_path = mutator_home/detector_bin
-        print(f"Instrumented prog path: {prog_path}")
-        
-        # Get a list of all seed paths
-        seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
+    prog_path = mutator_home/detector_bin
+    print(f"Instrumented prog path: {prog_path}")
+    
+    # Get a list of all seed paths
+    seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
 
-        # gives for each seed input the triggered signals
-        signal_list: List[Tuple[Path, Set[int]]] = list()
+    # gives for each seed input the triggered signals
+    signal_list: List[Tuple[Path, Set[int]]] = list()
 
-        print(f"Executing seeds with {psutil.cpu_count()} cores.")
-        with concurrent.futures.ProcessPoolExecutor(max_workers=psutil.cpu_count()) as executor:
+    num_workers = psutil.cpu_count(logical=True)
+
+    print(f"Executing seeds with {num_workers} workers.")
+    manager = multiprocessing.Manager()
+    active_containers = manager.dict()
+
+    try:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             tasks = {executor.submit(
-                    eval_seed, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
-                    prog_info, mutation_container_name, mutator_home, prog_path
+                    eval_seed, active_containers, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
+                    prog_info, mutator_home, prog_path
                 ) for counter, seed in enumerate(seeds)}
             done = 0
             while tasks:
@@ -3036,30 +3057,41 @@ def minimize_seeds(seed_path, res_path, target):
                     seed, found_mutations = task_result
                     signal_list.append((seed, found_mutations))
                     done += 1
-                    print(f"Ran {done}/{len(seeds) - 1}: {seed} found: {len(found_mutations)}")
+                    print(f"Ran {done}/{len(seeds)}: {seed} found: {len(found_mutations)}")
+    finally:
+        print("Stopping containers ...")
+        stop_jobs = [
+                subprocess.Popen(["docker", "stop", container_name], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                for container_name in active_containers.values()]
+        for ii, sj in enumerate(stop_jobs):
+            print(f"{ii+1}/{len(stop_jobs)} stopped \r", end='', flush=True)
+            if sj.wait() != 0:
+                print(f"Failed to execute {sj}.")
+        print("")
 
-        # all signals are collected, now we can see which seeds to take for minimalization
-        minimized_seeds = list()
-        while signal_list:
-            max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
-            minimized_seeds.append(max_val)
-            signal_list.remove(max_val)
-            signal_list = update_signal_list(signal_list, max_val[1])
+    # all signals are collected, now we can see which seeds to take for minimalization
+    minimized_seeds = list()
+    while signal_list:
+        max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
+        minimized_seeds.append(max_val)
+        signal_list.remove(max_val)
+        signal_list = update_signal_list(signal_list, max_val[1])
 
-        print("="*50)
+    print("="*50)
 
-        # now we put the minimized seeds into a new folder
-        shutil.rmtree(res_path, ignore_errors=True)
-        res_path.mkdir(parents=True, exist_ok=True)
-        total_num_signals = 0
-        for counter, min_seed in enumerate(minimized_seeds):
-            min_seed_path = min_seed[0]
-            num_signals = len(min_seed[1])
-            print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
-            shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
-            total_num_signals += num_signals
+    # now we put the minimized seeds into a new folder
+    shutil.rmtree(res_path, ignore_errors=True)
+    res_path.mkdir(parents=True, exist_ok=True)
+    total_num_signals = 0
+    for counter, min_seed in enumerate(minimized_seeds):
+        min_seed_path = min_seed[0]
+        num_signals = len(min_seed[1])
+        print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
+        shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
+        total_num_signals += num_signals
 
-        print(f"Found a total of {total_num_signals} signals.")
+    print(f"Found a total of {total_num_signals} signals.")
+    print(f"Seed minimization took: {(time.time() - start_time) / 60:.2f} minutes.")
 
 
 def main():
