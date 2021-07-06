@@ -2,7 +2,11 @@
 
 set -Euxo pipefail
 
-echo "gathering seeds for following progs: $@"
+TIMEOUT=$1
+echo $TIMEOUT
+shift
+
+echo gathering seeds for following progs: $@
 
 echo "gathering seeds for following progs: $@" >> seed_gathering.log
 date '+%Y-%m-%d::%H-%M-%S' >> seed_gathering.log
@@ -12,7 +16,7 @@ echo "" >> seed_gathering.log
 rm -r tmp/fuzzed_seeds/
 
 # fuzz for new seeds
-MUT_TIMEOUT=$((60*2)) ./eval.py gather_seeds --fuzzers afl aflpp_det aflpp_rec fairfuzz honggfuzz --progs $@ --num-repeats=3 --dest-dir tmp/fuzzed_seeds/
+MUT_TIMEOUT=$TIMEOUT ./eval.py gather_seeds --fuzzers afl aflpp_det aflpp_rec fairfuzz honggfuzz --progs $@ --num-repeats=3 --dest-dir tmp/fuzzed_seeds/
 
 # import new seeds
 ./eval.py import_seeds tmp/fuzzed_seeds/ >> seed_gathering.log
