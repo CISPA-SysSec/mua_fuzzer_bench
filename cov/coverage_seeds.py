@@ -12,26 +12,24 @@ run = {
     "guetzli": ["/home/mutator/samples/guetzli/fuzz_target"],
     "libjpeg": ["/home/mutator/samples/libjpeg-turbo/libjpeg_turbo_fuzzer"],
     "aspell": ["/home/mutator/samples/aspell/aspell-fuzz/aspell_fuzzer"],
-    "caresparse": ["/home/mutator/samples/c-ares/out/ares_parse_reply_fuzzer"],
-    "caresquery": ["/home/mutator/samples/c-ares/out/ares_create_query_fuzzer"],
-    "carestest": ["/home/mutator/samples/c-ares/out/test"],
+    "cares_parse_reply": ["/home/mutator/samples/c-ares/out/ares_parse_reply_fuzzer"],
+    "cares_name": ["/home/mutator/samples/c-ares/out/ares_create_query_fuzzer"],
     "vorbis": ["/home/mutator/samples/vorbis/out/decode_fuzzer"],
-    "woff2base": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer"],
-    "woff2new": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry"],
+    "woff2_base": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer/convert_woff2ttf_fuzzer"],
+    "woff2_new": ["/home/mutator/samples/woff2/out/convert_woff2ttf_fuzzer_new_entry/convert_woff2ttf_fuzzer_new_entry"],
     "re2": ["/home/mutator/samples/re2-code/re2_fuzzer"],
 }
 
 seeds = {
-    "guetzli": ["/home/mutator/samples/guetzli_harness/seeds"],
+    "guetzli": ["/cov/fuzzed-seeds/fuzzed_seeds/guetzli"],
     "libjpeg": ["/cov/fuzzed-seeds/fuzzed_seeds/libjpeg"],
-    "aspell": ["/home/mutator/samples/aspell_harness/seeds"],
-    "caresparse": ["/home/mutator/samples/c-ares_harness/seeds"],
-    "caresquery": ["/home/mutator/samples/c-ares_harness/seeds"],
-    "carestest": ["/home/mutator/samples/c-ares_harness/seeds"],
-    "vorbis": ["/home/mutator/samples/vorbis_harness/seeds"],
-    "woff2base": ["/home/mutator/samples/woff2_harness/seeds"],
-    "woff2new": ["/home/mutator/samples/woff2_harness/seeds"],
-    "re2": ["/home/mutator/samples/re2_harness/seeds"],
+    "aspell": ["/cov/fuzzed-seeds/fuzzed_seeds/aspell"],
+    "cares_parse_reply": ["/cov/fuzzed-seeds/fuzzed_seeds/cares_parse_reply"],
+    "cares_name": ["/cov/fuzzed-seeds/fuzzed_seeds/cares_name"],
+    "vorbis": ["/cov/fuzzed-seeds/fuzzed_seeds/vorbis"],
+    "woff2_base": ["/cov/fuzzed-seeds/fuzzed_seeds/woff2_base"],
+    "woff2_new": ["/cov/fuzzed-seeds/fuzzed_seeds/woff2_new"],
+    "re2": ["/cov/fuzzed-seeds/fuzzed_seeds/re2"],
 }
 
 
