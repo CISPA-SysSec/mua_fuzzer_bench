@@ -6,6 +6,7 @@ import subprocess
 import shutil
 from typing import List, Tuple, Set
 import xml.etree.ElementTree as ET
+from multiprocessing import Process
 
 run = {
     "guetzli": ["/home/mutator/samples/guetzli/fuzz_target"],
@@ -22,7 +23,7 @@ run = {
 
 seeds = {
     "guetzli": ["/home/mutator/samples/guetzli_harness/seeds"],
-    "libjpeg": ["/home/mutator/samples/libjpeg-turbo_harness/seeds"],
+    "libjpeg": ["/cov/fuzzed-seeds/fuzzed_seeds/libjpeg"],
     "aspell": ["/home/mutator/samples/aspell_harness/seeds"],
     "caresparse": ["/home/mutator/samples/c-ares_harness/seeds"],
     "caresquery": ["/home/mutator/samples/c-ares_harness/seeds"],
@@ -32,6 +33,18 @@ seeds = {
     "woff2new": ["/home/mutator/samples/woff2_harness/seeds"],
     "re2": ["/home/mutator/samples/re2_harness/seeds"],
 }
+
+
+def run_under_kcov(counter: int, target: str, abs_seed: str):
+    """
+    Takes all necessary information for running the subject and then runs it.
+    Can be used to run several seeds on the same subject in parallel.
+    :param counter:
+    :param target:
+    :param abs_seed:
+    :return:
+    """
+    subprocess.run(["kcov", f"{target}_tmp_{counter}"] + run[target] + [abs_seed])
 
 
 def main():
@@ -59,16 +72,47 @@ def main():
         # run the collected seeds
         subprocess.run(["rm", "-rf"] + [f for f in os.listdir("/cov") if f.startswith(f"{target}")])
         seed_store = list()
-        counter = 1
-        for abs_seed in collected_seeds:
-            print(f"Running {counter} of {len(collected_seeds)} {' '.join(run[target] + [abs_seed])}.")
-            subprocess.run(["kcov", f"{target}_tmp_{counter}"] + run[target] + [abs_seed])
-            cov_folder = [el for el in os.listdir(f'{target}_tmp_{counter}/')
-                          if not el.startswith(f'data') and
-                          not el.startswith(f'kcov') and
-                          os.path.isdir(f'{target}_tmp_{counter}/{el}')][0]
-            seed_store.append((abs_seed, lines_covered(f"{target}_tmp_{counter}/{cov_folder}/cov.xml")))
-            counter += 1
+        counter = 0
+        os.mkdir(target)
+        cores = os.cpu_count() - 1  # keep one cpu open for to keep some computing power free
+        while counter <= len(collected_seeds):
+            to_join: List[Process] = list()
+            # collect all processes to run in parallel and start them
+            to_run = min(cores, len(collected_seeds) - counter)
+            for process_id in range(to_run):
+                abs_seed = collected_seeds[counter + process_id]
+                print(f"Running {counter + 1} of {len(collected_seeds)} {' '.join(run[target] + [abs_seed])}.")
+                proc = Process(target=run_under_kcov, args=(counter + process_id, target, abs_seed))
+                to_join.append(proc)
+                proc.start()
+
+            # join the started processes
+            for proc in to_join:
+                proc.join()
+
+            # collect information and prepare for next run
+            for process_id in range(to_run):
+                abs_seed = collected_seeds[counter + process_id]
+                cov_folder = [el for el in os.listdir(f'{target}_tmp_{counter + process_id}/')
+                              if not el.startswith(f'data') and
+                              not el.startswith(f'kcov') and
+                              os.path.isdir(f'{target}_tmp_{counter + process_id}/{el}')][0]
+                seed_store.append((abs_seed, lines_covered(f"{target}_tmp_{counter + process_id}/{cov_folder}/cov.xml")))
+
+            # merge into target folder and delete old folder to avoid immense amounts of disk and inode usage
+            print(f"Merging coverage results into {target} and deleting temporary coverage folders. "
+                  f"May take some time ...")
+            os.rename(os.path.join("/cov", target), os.path.join("/cov", f"{target}_tmp"))
+            subprocess.run(["kcov", "--merge", target] +
+                           [f"{target}_tmp"] +
+                           [f"{target}_tmp_{counter + process_id}" for process_id in range(to_run)]
+                           )
+            subprocess.run(["rm", "-rf"] +
+                           [f"{target}_tmp"] +
+                           [f"{target}_tmp_{counter + process_id}" for process_id in range(to_run)]
+                           )
+
+            counter += to_run
 
         # all coverages are collected, now we can see which seeds to take for minimalization
         minimized_seeds = list()
@@ -92,13 +136,8 @@ def main():
             counter += 1
         print(f"Total number of lines is: {sum_lines}")
 
-        print(f"Merging coverage results into {target} and deleting temporary coverage folders. May take some time ...")
-        os.mkdir(target)
-        subprocess.run(["kcov", "--merge", target] + [f for f in os.listdir("/cov") if f.startswith(f"{target}_tmp_")])
-        subprocess.run(["rm", "-rf"] + [f for f in os.listdir("/cov") if f.startswith(f"{target}_tmp_")])
 
-
-def update_coverage_list(coverage_list, to_delete: Set[str]):
+def update_coverage_list(coverage_list, to_delete: Tuple[str, str]):
     """
     Takes a list of signal tuples and updates the set s.t. all
     :param coverage_list:
@@ -116,6 +155,11 @@ def update_coverage_list(coverage_list, to_delete: Set[str]):
 
 
 def lines_covered(xml_file: str) -> Set[Tuple[str, str]]:
+    """
+    Extracts from the given xml coverage file the covered lines.
+    :param xml_file:
+    :return:
+    """
     tree = ET.parse(xml_file)
     summary = set()
     for package in tree.getroot().find("packages").findall("package"):
@@ -127,6 +171,7 @@ def lines_covered(xml_file: str) -> Set[Tuple[str, str]]:
     print(f"Covered lines: {len(summary)}")
     return summary
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Script to find and mutate patterns. \
             Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.")
@@ -135,5 +180,3 @@ if __name__ == "__main__":
 
     args = parser.parse_args(sys.argv[1:])
     main()
-
-
