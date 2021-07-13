@@ -92,7 +92,7 @@ def main():
             counter += 1
         print(f"Total number of lines is: {sum_lines}")
 
-        print("Merging coverage results and deleting temporary coverage folders. May take some time ...")
+        print(f"Merging coverage results into {target} and deleting temporary coverage folders. May take some time ...")
         os.mkdir(target)
         subprocess.run(["kcov", "--merge", target] + [f for f in os.listdir("/cov") if f.startswith(f"{target}_tmp_")])
         subprocess.run(["rm", "-rf"] + [f for f in os.listdir("/cov") if f.startswith(f"{target}_tmp_")])
