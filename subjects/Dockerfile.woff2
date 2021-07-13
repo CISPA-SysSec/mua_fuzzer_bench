@@ -13,7 +13,7 @@ RUN git submodule update --init --recursive
 
 # build
 COPY samples/woff2_harness /home/mutator/samples/woff2_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CC=gclang CXX=gclang++ CFLAGS="-g" CXXFLAGS="-g" \
     SRC="/home/mutator/samples/woff2" \
     WORK="/home/mutator/samples/woff2/work" \
     OUT="/home/mutator/samples/woff2/out" \

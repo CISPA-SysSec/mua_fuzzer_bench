@@ -2,7 +2,7 @@
 
 # running the subjects, some have a different name for the container and the actual execution, hence the tuples
 # first element of tuple is container name, second is name for execution
-for NAME in "libjpeg libjpeg" "woff2 woff2_base" "woff2 woff2_new" "guetzli guetzli" "aspell aspell" "cares cares_name" "cares cares_parse_reply" "re2 re2" "vorbis vorbis"
+for NAME in "woff2 woff2_base" "woff2 woff2_new" "libjpeg libjpeg" "guetzli guetzli" "aspell aspell" "cares cares_name" "cares cares_parse_reply" "re2 re2" "vorbis vorbis"
 do
   set -- $NAME
   echo "${1} ${2}"
