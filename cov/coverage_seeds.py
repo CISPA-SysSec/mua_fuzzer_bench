@@ -71,17 +71,18 @@ def main():
 
         # run the collected seeds
         subprocess.run(["rm", "-rf"] + [f for f in os.listdir("/cov") if f.startswith(f"{target}")])
+        subprocess.run(["rm", "-rf", f"/cov/minimized_seeds_cov_{target}"])
         seed_store = list()
         counter = 0
         os.mkdir(target)
         cores = os.cpu_count() - 1  # keep one cpu open for to keep some computing power free
-        while counter <= len(collected_seeds):
+        while counter < len(collected_seeds):
             to_join: List[Process] = list()
             # collect all processes to run in parallel and start them
             to_run = min(cores, len(collected_seeds) - counter)
             for process_id in range(to_run):
                 abs_seed = collected_seeds[counter + process_id]
-                print(f"Running {counter + 1} of {len(collected_seeds)} {' '.join(run[target] + [abs_seed])}.")
+                print(f"Running {counter + 1 + process_id} of {len(collected_seeds)} {' '.join(run[target] + [abs_seed])}.")
                 proc = Process(target=run_under_kcov, args=(counter + process_id, target, abs_seed))
                 to_join.append(proc)
                 proc.start()
@@ -97,6 +98,7 @@ def main():
                               if not el.startswith(f'data') and
                               not el.startswith(f'kcov') and
                               os.path.isdir(f'{target}_tmp_{counter + process_id}/{el}')][0]
+                print(f"Covered lines for {abs_seed}:")
                 seed_store.append((abs_seed, lines_covered(f"{target}_tmp_{counter + process_id}/{cov_folder}/cov.xml")))
 
             # merge into target folder and delete old folder to avoid immense amounts of disk and inode usage
@@ -168,7 +170,7 @@ def lines_covered(xml_file: str) -> Set[Tuple[str, str]]:
                 if int(line.get("hits")) > 0:
                     summary.add((cl.get("filename"), line.get("number")))
 
-    print(f"Covered lines: {len(summary)}")
+    print(f"\t{len(summary)}")
     return summary
 
 
@@ -180,3 +182,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args(sys.argv[1:])
     main()
+
+
