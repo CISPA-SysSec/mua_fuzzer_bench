@@ -7,3 +7,4 @@ ENV PATH="/home/user/AFLplusplus/:$PATH"
 COPY tmp/lib/ /home/user/lib/
 COPY eval/aflpp/aflpp_driver.c /home/user/AFLplusplus/utils/aflpp_driver/
 COPY eval/aflpp/eval.sh /home/user/eval.sh
+COPY eval/aflpp_minimize.sh /home/user/minimize.sh

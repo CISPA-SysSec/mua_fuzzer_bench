@@ -11,3 +11,4 @@ RUN cd afl-rb && echo user | sudo -S make install
 ENV AFL_PATH="/home/user/afl-rb/"
 COPY tmp/lib/ /home/user/lib/
 COPY eval/fairfuzz/eval.sh /home/user/eval.sh
+COPY eval/afl_minimize.sh /home/user/minimize.sh

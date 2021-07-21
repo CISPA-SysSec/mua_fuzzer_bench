@@ -24,6 +24,7 @@ import platform
 import tempfile
 import hashlib
 import multiprocessing
+from itertools import product
 from pathlib import Path
 
 import docker
@@ -956,7 +957,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
 # Eval function for the afl plus plus fuzzer, compiles the mutated program
 # and fuzzes it. Finally various eval data is returned
-def base_eval(run_data, docker_image, executable):
+def base_eval(run_data, docker_image):
     # get start time for the eval
     start_time = time.time()
 
@@ -991,7 +992,7 @@ def base_eval(run_data, docker_image, executable):
         container = docker_client.containers.run(
             docker_image, # the image
             [
-                executable,
+                "/home/user/eval.sh",
                 str(compile_args),
                 str(prog_bc),
                 str(IN_DOCKER_WORKDIR/seeds),
@@ -1109,54 +1110,54 @@ def get_aflpp_logs(workdir, all_logs):
 def aflpp_rec_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("aflpp_rec"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_rec"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflpp_det_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("aflpp_det"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_det"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def afl_eval(run_data, run_func):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("afl"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("afl"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppfastexploit_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("aflpp_fast_exploit"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_fast_exploit"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def aflppmopt_eval(run_data, run_func):
     run_data['crash_dir'] = "output/default/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("aflpp_mopt"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("aflpp_mopt"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def fairfuzz_eval(run_data, run_func):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
-    result = run_func(run_data, fuzzer_container_tag("fairfuzz"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("fairfuzz"))
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
 def honggfuzz_eval(run_data, run_func):
     run_data['crash_dir'] = "crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args'].replace("@@", "___FILE___")
-    result = run_func(run_data, fuzzer_container_tag("honggfuzz"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("honggfuzz"))
     result['plot_data'] = []
     return result
 
 def libfuzzer_eval(run_data, run_func):
-    result = run_func(run_data, fuzzer_container_tag("libfuzzer"), "/home/user/eval.sh")
+    result = run_func(run_data, fuzzer_container_tag("libfuzzer"))
     return result
 
 
@@ -1914,7 +1915,7 @@ def handle_seed_run_result(run_future, run_data, all_runs):
         print(f"= run    : {workdir}")
 
 
-def seed_gathering_run(run_data, docker_image, executable):
+def seed_gathering_run(run_data, docker_image):
     global should_run
     start_time = time.time()
     # extract used values
@@ -1935,7 +1936,7 @@ def seed_gathering_run(run_data, docker_image, executable):
     container = docker_client.containers.run(
         docker_image, # the image
         [
-            executable,
+            "/home/user/eval.sh",
             str(compile_args),
             str(orig_bc),
             str(IN_DOCKER_WORKDIR/seeds),
@@ -2093,7 +2094,7 @@ def get_seed_checking_runs(fuzzers, progs, num_splits, base_dir):
     return all_runs, all_split_dirs
 
 
-def seed_checking_run(run_data, docker_image, executable):
+def seed_checking_run(run_data, docker_image):
     global should_run
     start_time = time.time()
     # extract used values
@@ -2114,7 +2115,7 @@ def seed_checking_run(run_data, docker_image, executable):
     container = docker_client.containers.run(
         docker_image, # the image
         [
-            executable,
+            "/home/user/eval.sh",
             str(compile_args),
             str(orig_bc),
             str(IN_DOCKER_WORKDIR/seeds),
@@ -2993,104 +2994,188 @@ def eval_seed(active_containers, counter, seed, mutator_tmp_path, SIGNAL_FOLDER_
     return seed, found_mutations
 
 
-def minimize_seeds(seed_path, res_path, target):
+def seed_minimization_run(run_data, docker_image):
     global should_run
-    global worker_container
-    worker_container = None
-
     start_time = time.time()
+    # extract used values
+    mut_data = run_data['mut_data']
+    workdir = run_data['workdir']
+    orig_bc = mut_data['orig_bc']
+    compile_args = mut_data['compile_args']
+    args = run_data['fuzzer_args']
+    seeds_in = run_data['seed_in_dir']
+    seeds_out = run_data['seed_out_dir']
+    dictionary = mut_data['dict']
 
-    build_subject_docker_images([target])
+    workdir.mkdir(parents=True, exist_ok=True)
 
-    SIGNAL_FOLDER_NAME = Path("trigger_signal")
-    mutator_home = Path("/home/mutator")
-    mutator_tmp_path = mutator_home/"tmp"
-    seed_path = Path(seed_path).relative_to(HOST_TMP_PATH)
-    res_path = HOST_TMP_PATH/Path(res_path).relative_to(HOST_TMP_PATH)
-    print(f'Minimizing seed files for {target} coming from {seed_path}, writing result to {res_path}.')
-    prog_info = PROGRAMS.get(target)
-    if prog_info is None:
-        print(f"{target} not found available are: {list(PROGRAMS.keys())}")
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+    # Start and run the container
+    container = docker_client.containers.run(
+        docker_image, # the image
+        [
+            "/home/user/minimize.sh",
+            str(compile_args),
+            str(orig_bc),
+            str(seeds_in),
+            str(seeds_out),
+            str(args)
+        ], # the arguments
+        environment={
+            **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
+        },
+        init=True,
+        auto_remove=True,
+        volumes={
+            str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+        },
+        working_dir=str(workdir),
+        mem_swappiness=0,
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+
+    logs_queue = queue.Queue()
+    DockerLogStreamer(logs_queue, container).start()
+
+    while should_run:
+        # check if the process stopped, this should only happen in an
+        # error case
+        try:
+            container.reload()
+        except docker.errors.NotFound:
+            # container is dead stop waiting
+            break
+        if container.status not in ["running", "created"]:
+            break
+
+        # Sleep so we only check sometimes and do not busy loop
+        time.sleep(CHECK_INTERVAL)
+
+    # Check if container is still running
+    try:
+        container.reload()
+        if container.status in ["running", "created"]:
+
+            # Send sigint to the process
+            container.kill(2)
+
+            # Wait up to 10 seconds then send sigkill
+            container.stop()
+    except docker.errors.NotFound:
+        # container is dead just continue maybe it worked
+        pass
+
+    all_logs = []
+    while True:
+        line = logs_queue.get()
+        if line == None:
+            break
+        all_logs.append(line)
+
+    return {
+        'all_logs': all_logs,
+    }
+
+
+def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs):
+    global should_run
+    seed_path_base = Path(seed_path_base)
+    res_path_base = Path(res_path_base)
+
+    if res_path_base.exists():
+        print(f"Result path already exists, to avoid data loss, it is required that this path does not exist: {res_path_base}")
         sys.exit(1)
 
-    with start_mutation_container(None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}) as mutation_container:
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/minimize_seeds")
+    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
 
-        # Instrument program, so that covered mutations are detected.
-        print(f"Instrumenting {target}")
-        instrument_prog(mutation_container, prog_info)
+    build_docker_images(fuzzers, progs)
 
-        detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
-        build_detector_binary(mutation_container, prog_info, detector_bin, mutator_home)
+    for prog, fuzzer in product(progs, fuzzers):
+        if not should_run:
+            break
 
-    prog_path = mutator_home/detector_bin
-    print(f"Instrumented prog path: {prog_path}")
-    
-    # Get a list of all seed paths
-    seeds = list(p.relative_to(HOST_TMP_PATH) for p in (HOST_TMP_PATH/seed_path).glob("**/*") if p.is_file())
+        # Gather all data to start a seed minimization run
+        try:
+            prog_info = PROGRAMS[prog]
+        except Exception as err:
+            print(err)
+            print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+            sys.exit(1)
+        try:
+            eval_func = FUZZERS[fuzzer]
+        except Exception as err:
+            print(err)
+            print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
+            sys.exit(1)
 
-    # gives for each seed input the triggered signals
-    signal_list: List[Tuple[Path, Set[int]]] = list()
+        prog_seed_path = seed_path_base/prog
+        if not prog_seed_path.is_dir():
+            print(f"There is no seed directory for prog: {prog}, seed files need to be here: {prog_seed_path}")
+            sys.exit(1)
+        prog_fuzzer_res_path = res_path_base/prog/fuzzer
+        prog_fuzzer_res_path.mkdir(parents=True)
 
-    num_workers = psutil.cpu_count(logical=True)
+        active_dir = base_shm_dir/f"{prog}__{fuzzer}"
+        active_dir.mkdir()
 
-    print(f"Executing seeds with {num_workers} workers.")
-    manager = multiprocessing.Manager()
-    active_containers = manager.dict()
+        # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
+        seed_in_tmp_dir = active_dir/"seeds_in"
+        seed_in_tmp_dir.mkdir()
+        seed_out_tmp_dir = active_dir/"seeds_out"
+        seed_out_tmp_dir.mkdir()
+        for ff in prog_seed_path.glob("*"):
+            if ff.is_dir():
+                print("Did not expect any directories in the seed path, something is wrong.")
+            shutil.copy2(ff, seed_in_tmp_dir)
 
-    try:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-            tasks = {executor.submit(
-                    eval_seed, active_containers, counter + 1, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME,
-                    prog_info, mutator_home, prog_path
-                ) for counter, seed in enumerate(seeds)}
-            done = 0
-            while tasks:
-                completed_task = next(concurrent.futures.as_completed((tasks)))
-                tasks.remove(completed_task)
-                try:
-                    task_result = completed_task.result()
-                except Exception:
-                    trace = traceback.format_exc()
-                    print(f"seed eval crashed: {trace}")
-                else:
-                    seed, found_mutations = task_result
-                    signal_list.append((seed, found_mutations))
-                    done += 1
-                    print(f"Ran {done}/{len(seeds)}: {seed} found: {len(found_mutations)}")
-    finally:
-        print("Stopping containers ...")
-        stop_jobs = [
-                subprocess.Popen(["docker", "stop", container_name], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                for container_name in active_containers.values()]
-        for ii, sj in enumerate(stop_jobs):
-            print(f"{ii+1}/{len(stop_jobs)} stopped \r", end='', flush=True)
-            if sj.wait() != 0:
-                print(f"Failed to execute {sj}.")
-        print("")
+        # Compile arguments
+        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+        # Arguments on how to execute the binary
+        args = prog_info['args']
 
-    # all signals are collected, now we can see which seeds to take for minimalization
-    minimized_seeds = list()
-    while signal_list:
-        max_val = max(signal_list, key=lambda x: (len(x[1]), x[0]))
-        minimized_seeds.append(max_val)
-        signal_list.remove(max_val)
-        signal_list = update_signal_list(signal_list, max_val[1])
+        mut_data = {
+            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+            'compile_args': compile_args,
+            'is_cpp': prog_info['is_cpp'],
+            'args': args,
+            'prog': prog,
+            'dict': prog_info['dict'],
+        }
 
-    print("="*50)
+        workdir = active_dir/"workdir"
+        workdir.mkdir()
 
-    # now we put the minimized seeds into a new folder
-    shutil.rmtree(res_path, ignore_errors=True)
-    res_path.mkdir(parents=True, exist_ok=True)
-    total_num_signals = 0
-    for counter, min_seed in enumerate(minimized_seeds):
-        min_seed_path = min_seed[0]
-        num_signals = len(min_seed[1])
-        print(f"Taking seed with {num_signals} additional signals found: {min_seed_path}")
-        shutil.copyfile(HOST_TMP_PATH/min_seed_path, os.path.join(res_path, str(counter)))
-        total_num_signals += num_signals
+        run_data = {
+            'fuzzer': fuzzer,
+            'eval_func': eval_func,
+            'workdir': workdir,
+            'seed_in_dir': seed_in_tmp_dir,
+            'seed_out_dir': seed_out_tmp_dir,
+            'mut_data': mut_data,
+        }
 
-    print(f"Found a total of {total_num_signals} signals.")
-    print(f"Seed minimization took: {(time.time() - start_time) / 60:.2f} minutes.")
+        # start the fuzzer in seed minimization mode on the prog
+        eval_func(run_data, seed_minimization_run)
+
+        print(f"copying results to: {seed_out_tmp_dir}")
+
+        # move minimized seeds to result path
+        for ff in seed_out_tmp_dir.glob("*"):
+            if ff.is_dir():
+                print("Did not expect any directories in the seed path, something is wrong.")
+            shutil.copy2(ff, prog_fuzzer_res_path)
+
+        # clean up tmp dirs (everything should have happened inside the active dir)
+        # shutil.rmtree(active_dir)
+
+    print("seed minimization done :)")
 
 
 def main():
@@ -3154,12 +3239,14 @@ def main():
     parser_eval = subparsers.add_parser('minimize_seeds',
             help="Minimize the seeds by finding the minimum set (greedily) "
             "that covers all mutations reached by the full set of seeds.")
-    parser_eval.add_argument("seed_path",
+    parser_eval.add_argument("--seed_path", required=True,
             help=f'The base dir for the seed files. Needs to be inside: {HOST_TMP_PATH}')
-    parser_eval.add_argument("res_path",
+    parser_eval.add_argument("--res_path", required=True,
             help=f'The path where the minimized seeds will be written to. Needs to be inside: {HOST_TMP_PATH}')
-    parser_eval.add_argument("target",
-        help='The target on which to apply the seed files.')
+    parser_eval.add_argument("--progs", nargs='+', required=True,
+        help='The program on which to minimize the seeds.')
+    parser_eval.add_argument("--fuzzers", nargs='+', required=True,
+        help='The fuzzer on which is used to minimize the seeds.')
 
     args = parser.parse_args()
 
@@ -3176,7 +3263,7 @@ def main():
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
-        minimize_seeds(args.seed_path, args.res_path, args.target)
+        minimize_seeds(args.seed_path, args.res_path, args.fuzzers, args.progs)
     else:
         parser.print_help(sys.stderr)
 

@@ -6,3 +6,4 @@ RUN cd AFLplusplus && make -j
 ENV PATH="/home/user/AFLplusplus/:$PATH"
 COPY tmp/lib/ /home/user/lib/
 COPY eval/aflpp_rec/eval.sh /home/user/eval.sh
+COPY eval/aflpp_minimize.sh /home/user/minimize.sh
