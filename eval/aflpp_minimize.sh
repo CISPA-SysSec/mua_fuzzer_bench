@@ -13,7 +13,7 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-afl-c++ -o put -v /home/user/lib/libdynamiclibrary.so $1 $2
+afl-lto++ -o put -v /home/user/lib/libdynamiclibrary.so $1 $2
 
 shift
 shift
