@@ -949,7 +949,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                         ).replace("___FILE___", str(path))
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container, False, orig_cmd)
+                proc = run_exec_in_container(testing_container.name, False, orig_cmd)
                 orig_res = proc['out']
                 orig_returncode = proc['returncode']
                 if orig_returncode != 0:
@@ -959,7 +959,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container, False, mut_cmd)
+                proc = run_exec_in_container(testing_container.name, False, mut_cmd)
                 mut_res = proc['out']
 
                 num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
