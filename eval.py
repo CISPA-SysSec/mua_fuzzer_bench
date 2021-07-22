@@ -963,7 +963,7 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                 mut_res = proc['out']
 
                 num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
-                mut_res = mut_res.replace(TRIGGERED_STR, b"")
+                mut_res = mut_res.replace(TRIGGERED_STR, "")
                 mut_res = mut_res
                 mut_returncode = proc['returncode']
 
