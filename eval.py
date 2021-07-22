@@ -78,7 +78,7 @@ UNSOLVED_MUTANTS_DIR = HOST_TMP_PATH/"unsolved_mutants"
 # The location where the eval data is mapped to inside the docker container
 IN_DOCKER_WORKDIR = "/workdir/"
 
-TRIGGERED_STR = b"Triggered!\r\n"
+TRIGGERED_STR = "Triggered!\r\n"
 
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
 
