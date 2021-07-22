@@ -12,7 +12,7 @@ set -Eeuxo pipefail
 # set the number of allowed files, this is needed for larger numbers of
 # concurrent runs
 ulimit -n 50000
-# also set number of available shared memory
+# also set number of available shared memory pages
 echo 134217728 | sudo tee /proc/sys/kernel/shmmni
 # also set core pattern
 echo core | sudo tee /proc/sys/kernel/core_pattern

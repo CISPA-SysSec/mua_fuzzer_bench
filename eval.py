@@ -867,24 +867,37 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
     container.stop()
 
 
-def run_exec_in_container(container_name, raise_on_error, cmd, exec_args=None):
+def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
-    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
-    proc = subprocess.run(sub_cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
-            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-    if raise_on_error and proc.returncode != 0:
-        print("process error: =======================",
-                proc.args,
-                proc.stdout.decode(),
-                sep="\n")
-        raise ValueError(proc)
-    return proc
+    if isinstance(container, str):
+        sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container, *cmd]
+        proc = subprocess.run(sub_cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
+                close_fds=True,
+                preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+        if raise_on_error and proc.returncode != 0:
+            print("process error: =======================",
+                    proc.args,
+                    proc.stdout.decode(),
+                    sep="\n")
+            raise ValueError(proc)
+        return {'returncode': proc.returncode, 'out': proc.stdout.decode()}
+    else:
+        if exec_args is not None:
+            raise ValueError("Exec args not supported for container exec_run.")
+        proc = container.exec_run(cmd)
+        if raise_on_error and proc[0] != 0:
+            print("process error: =======================",
+                    cmd,
+                    proc[1],
+                    sep="\n")
+            raise ValueError(proc)
+        return {'returncode': proc[0], 'out': proc[1]}
 
 
 def get_mut_base_dir(mut_data: dict) -> Path:
@@ -897,6 +910,29 @@ def get_mut_base_bin(mut_data: dict) -> Path:
     return get_mut_base_dir(mut_data)/"mut_base"
 
 
+def get_seed_dir(prog, fuzzer):
+    """
+    Gets the seed dir inside of SEED_BASE_DIR based on the program name.
+    Further if there is a directory inside with the name of the fuzzer, that dir is used as the seed dir.
+    Example:
+    As a sanity check if SEED_BASE_DIR/<prog> contains files and directories then an error is thrown.
+    SEED_BASE_DIR/<prog>/<fuzzer> exists then this dir is taken as the seed dir.
+    SEED_BASE_DIR/<prog> contains only files, then this dir is the seed dir.
+    """
+    prog_seed_dir = SEED_BASE_DIR/prog
+    seed_paths = list(prog_seed_dir.glob("*"))
+    if any(sp.is_file() for sp in seed_paths) and any(sp.is_file() for sp in seed_paths):
+        print(f"There are files and directories in {prog_seed_dir}, either the dir only contains files, "
+              f"in which case all files are used as seeds for every fuzzer, or it contains only directories. "
+              f"In the second case the content of each fuzzer directory is used as the seeds for the respective fuzzer.")
+    # If the fuzzer specific seed dir exists, return it.
+    prog_fuzzer_seed_dir = prog_seed_dir/fuzzer
+    if prog_fuzzer_seed_dir.is_dir():
+        return prog_fuzzer_seed_dir
+    # Else just return the prog seed dir.
+    return prog_seed_dir
+
+
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
@@ -904,31 +940,32 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
     if not crash_dir.is_dir():
         return False
 
-    for path in crash_dir.iterdir():
+    for path in list(str(pp) for pp in crash_dir.glob("**/*")):
+        path = Path(path)
         if path.is_file() and path.name != "README.txt":
             if str(path) not in crashing_inputs:
                 input_args = args.replace("<WORK>/", IN_DOCKER_WORKDIR
                         ).replace("@@", str(path)
                         ).replace("___FILE___", str(path))
                 # Run input on original binary
-                orig_cmd = ["/run_bin.sh", orig_bin] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, orig_cmd)
-                orig_res = proc.stdout
-                orig_returncode = proc.returncode
+                orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
+                proc = run_exec_in_container(testing_container, False, orig_cmd)
+                orig_res = proc['out']
+                orig_returncode = proc['returncode']
                 if orig_returncode != 0:
                     print("orig bin returncode != 0, crashing base bin:")
                     print("args:", orig_cmd, "returncode:", orig_returncode)
                     print(orig_res)
 
                 # Run input on mutated binary
-                mut_cmd = ["/run_bin.sh", mut_bin] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, mut_cmd)
-                mut_res = proc.stdout
+                mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
+                proc = run_exec_in_container(testing_container, False, mut_cmd)
+                mut_res = proc['out']
 
                 num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
                 mut_res = mut_res.replace(TRIGGERED_STR, b"")
                 mut_res = mut_res
-                mut_returncode = proc.returncode
+                mut_returncode = proc['returncode']
 
                 covered.check()
 
@@ -969,7 +1006,7 @@ def base_eval(run_data, docker_image):
     prog_bc = mut_data['prog_bc']
     compile_args = mut_data['compile_args']
     args = run_data['fuzzer_args']
-    seeds = SEED_BASE_DIR + mut_data['prog']
+    seeds = get_seed_dir(mut_data['prog'], run_data['fuzzer'])
     dictionary = mut_data['dict']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     core_to_use = run_data['used_core']
@@ -1219,7 +1256,7 @@ def build_detector_binary(container, prog_info, detector_path, workdir):
             "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], workdir),
             "--out-dir", str(detector_path.parent)
             ]
-    ).stdout.decode())
+    )['out'])
 
 
 def get_all_mutations(stats, mutator, progs):
@@ -1284,7 +1321,7 @@ def get_all_mutations(stats, mutator, progs):
             stats.new_mutation(EXEC_ID, {
                 'prog': mut[1],
                 'mutation_id': mut[0],
-                'mutation_data': mut[4][int(mut[0])],
+                'mutation_data': mut[3][int(mut[0])],
             })
 
         all_mutations.extend(mutations)
@@ -1302,7 +1339,7 @@ def sequence_mutations(all_mutations):
     for mut in all_mutations:
         prog = mut[1]
         mutation_id = mut[0]
-        mutation_type = mut[4][int(mutation_id)]['type']
+        mutation_type = mut[3][int(mutation_id)]['type']
         grouped_mutations[(prog, mutation_type)].append(mut)
 
     sequenced_mutations = []
@@ -1497,13 +1534,6 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         clean_up_mut_base_dir(mut_data)
         return
 
-    #  # Check if we just want to do fuzzer runs for mutations that are covered
-    #  if FILTER_MUTATIONS:
-    #      # If the covered file was not seen, do not start any fuzzer runs
-    #      if not task_result['covered_file_seen']:
-    #          clean_up_mut_base_dir(mut_data)
-    #          return
-
     # Otherwise add all possible runs to prepared runs.
     for fr in fuzzer_runs:
         prepared_runs.put_nowait(fr)
@@ -1559,7 +1589,7 @@ def prepare_mutation(core_to_use, data):
         ])
 
         # compile the compare version of the mutated binary
-        run_exec_in_container(testing.name, True, [
+        run_exec_in_container(testing, True, [
                 "/usr/bin/clang++-11",
                 "-v",
                 "-o", str(mut_base_dir/"mut_base"),
@@ -1924,7 +1954,7 @@ def seed_gathering_run(run_data, docker_image):
     orig_bc = mut_data['orig_bc']
     compile_args = mut_data['compile_args']
     args = run_data['fuzzer_args']
-    seeds = SEED_BASE_DIR/mut_data['prog']
+    seeds = get_seed_dir(mut_data['prog'], run_data['fuzzer'])
     dictionary = mut_data['dict']
     core_to_use = run_data['used_core']
 
@@ -2986,7 +3016,7 @@ def eval_seed(active_containers, counter, seed, mutator_tmp_path, SIGNAL_FOLDER_
     found_mutations = set((
         int(mut_id)
         for mut_id
-        in found_mutations.stdout.decode().strip().splitlines()
+        in found_mutations['out'].strip().splitlines()
         if mut_id.isdecimal()
     ))
     run_exec_in_container(mutation_container_name, True,
