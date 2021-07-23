@@ -1564,6 +1564,27 @@ def wait_for_task(stats, tasks, cores, prepared_runs, active_mutants):
     cores.release_core(core)
 
 
+def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, covered):
+    if not seed_dir.is_dir():
+        raise ValueError(f"Given seed dir path is not a directory: {seed_dir}")
+
+    proc = run_exec_in_container(testing_container.name, False,
+            ['/iterate_seeds.py',
+                '--seeds', seed_dir,
+                '--args', args,
+                '--orig', orig_bin,
+                '--mut', mut_bin,
+                '--workdir', IN_DOCKER_WORKDIR],
+            ['--env', f"TRIGGERED_FOLDER={covered.path}"])
+    returncode = proc['returncode']
+    if returncode == 0:
+        return (False, "")
+    elif returncode == 1:
+        return (True, proc['out'])
+    else:
+        raise ValueError(f"Failed to execute seed files: {proc}")
+
+
 def prepare_mutation(core_to_use, data):
     start_time = time.time()
 
@@ -1607,15 +1628,30 @@ def prepare_mutation(core_to_use, data):
         checked_seeds = {}
 
         # do an initial check to see if the seed files are already crashing
-        found_by_seeds = check_crashing_inputs(testing, checked_seeds, seeds,
-                orig_bin, docker_mut_bin, args, start_time,
-                covered, "initial")
+        (found_by_seeds, seeds_out) = check_seeds_crashing(testing, seeds,
+                orig_bin, docker_mut_bin, args, covered)
+        if found_by_seeds:
+            checked_seeds['bulk'] = {
+                    'time_found': 0,
+                    'stage': 'initial',
+                    'data': None,
+                    'orig_returncode': 0,
+                    'mut_returncode': 1,
+                    'orig_cmd': [],
+                    'mut_cmd': [],
+                    'orig_res': None,
+                    'mut_res': seeds_out,
+                    'num_triggered': None,
+            }
+
+        covered.check()
+
         return {
             'total_time': time.time() - start_time,
             'covered_file_seen': covered.found,
             'crashing_inputs': checked_seeds,
             'found_by_seeds': found_by_seeds,
-            'all_logs': ["found crashing seed input"]
+            'all_logs': [seeds_out]
         }
 
 
