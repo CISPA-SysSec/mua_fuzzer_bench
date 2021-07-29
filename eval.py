@@ -836,8 +836,12 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile):
             config={'max-size': '10m'}),
         detach=True
     )
-    yield container
-    container.stop()
+    try:
+        yield container
+    except Exception as exc:
+        raise exc
+    finally: # This will stop the container if there is an exception or not.
+        container.stop()
 
 
 @contextlib.contextmanager
@@ -863,8 +867,12 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
         detach=True,
         **(docker_run_kwargs if docker_run_kwargs is not None else {})
     )
-    yield container
-    container.stop()
+    try:
+        yield container
+    except Exception as exc:
+        raise exc
+    finally: # This will stop the container if there is an exception or not.
+        container.stop()
 
 
 def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
@@ -1501,6 +1509,7 @@ def handle_run_result(stats, active_mutants, run_future, data):
 
 
 def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, data):
+    os.system("docker ps | wc -l")
     _, mut_data, fuzzer_runs = data
     prog = mut_data['prog']
     mutation_id = mut_data['mutation_id']
