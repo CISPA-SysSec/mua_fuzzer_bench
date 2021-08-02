@@ -1619,7 +1619,7 @@ def prepare_mutation(core_to_use, data):
         ])
 
         # compile the compare version of the mutated binary
-        run_exec_in_container(testing, True, [
+        run_exec_in_container(testing.name, True, [
                 "/usr/bin/clang++-11",
                 "-v",
                 "-o", str(mut_base_dir/"mut_base"),
