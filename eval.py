@@ -1609,24 +1609,29 @@ def prepare_mutation(core_to_use, data):
     with start_mutation_container(core_to_use) as mutator, \
          start_testing_container(core_to_use, covered) as testing:
 
-        run_exec_in_container(mutator.name, True, [
-                "./run_mutation.py",
-                "-bc",
-                *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
-                "-m", data['mutation_id'],
-                "--out-dir", str(mut_base_dir),
-                data['orig_bc']
-        ])
+        run_mut_res = None
+        clang_res = None
+        try:
+            run_mut_res = run_exec_in_container(mutator.name, True, [
+                    "./run_mutation.py",
+                    "-bc",
+                    *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
+                    "-m", data['mutation_id'],
+                    "--out-dir", str(mut_base_dir),
+                    data['orig_bc']
+            ])
 
-        # compile the compare version of the mutated binary
-        run_exec_in_container(testing.name, True, [
-                "/usr/bin/clang++-11",
-                "-v",
-                "-o", str(mut_base_dir/"mut_base"),
-                *shlex.split(compile_args),
-                "/workdir/tmp/lib/libdynamiclibrary.so",
-                str(prog_bc)
-        ] )
+            # compile the compare version of the mutated binary
+            clang_res = run_exec_in_container(testing, True, [
+                    "/usr/bin/clang++-11",
+                    "-v",
+                    "-o", str(mut_base_dir/"mut_base"),
+                    *shlex.split(compile_args),
+                    "/workdir/tmp/lib/libdynamiclibrary.so",
+                    str(prog_bc)
+            ] )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to compile mutation:\nrun_mutation output:\n{run_mut_res}\nclang output:\n{clang_res}\n") from exc
 
         seeds = SEED_BASE_DIR/data['prog']
         orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(data['orig_bin']).relative_to(HOST_TMP_PATH)
