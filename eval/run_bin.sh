@@ -2,5 +2,5 @@
 
 set -Euo pipefail
 
-( ulimit -Sd $[74 << 10] -t 10; "$@" )
+( ulimit -Sd $[74 << 10]; "$@" )
 
