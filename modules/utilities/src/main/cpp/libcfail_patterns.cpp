@@ -107,7 +107,7 @@ bool PrintfPattern::mutate(
                 cfn_args.push_back(callInstr->getArgOperand(i));
             }
             auto signalFunction = M.getFunction("mutate_printf_string");
-            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->replaceAllUsesWith(builder->CreateCall(signalFunction, cfn_args));
             callInstr->removeFromParent();
             builderMutex.unlock();
             return true;
@@ -141,7 +141,7 @@ bool SPrintfPattern::mutate(
                 cfn_args.push_back(callInstr->getArgOperand(i));
             }
             auto signalFunction = M.getFunction("mutate_sprintf_string");
-            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->replaceAllUsesWith(builder->CreateCall(signalFunction, cfn_args));
             callInstr->removeFromParent();
             builderMutex.unlock();
             return true;
@@ -176,7 +176,7 @@ bool SNPrintfPattern::mutate(
                 cfn_args.push_back(callInstr->getArgOperand(i));
             }
             auto signalFunction = M.getFunction("mutate_snprintf_string");
-            builder->CreateCall(signalFunction, cfn_args);
+            callInstr->replaceAllUsesWith(builder->CreateCall(signalFunction, cfn_args));
             callInstr->removeFromParent();
             builderMutex.unlock();
             return true;
