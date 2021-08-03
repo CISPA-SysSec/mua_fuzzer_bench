@@ -3,20 +3,30 @@ Dirty script to get the most even split of programs based on number of mutations
 """
 
 progs = [
-    ('aspell', 2756),
-    ('cares_name', 94),
-    ('cares_parse_reply', 791),
-    ('guetzli', 1282),
-    ('libjpeg', 908),
-    ('re2', 300),
-    ('vorbis', 3534),
-    ('woff2_base', 6419),
-    ('woff2_new', 6418),
+    #  ('aspell', 2756),
+    #  ('cares_name', 94),
+    #  ('cares_parse_reply', 791),
+    #  ('guetzli', 1282),
+    #  ('libjpeg', 908),
+    #  ('re2', 300),
+    #  ('vorbis', 3534),
+    #  ('woff2_base', 6419),
+    # ('woff2_new', 6418),
+
+    ('aspell', 217775),
+    ('cares_name', 26595),
+    ('cares_parse_reply', 26595),
+    ('guetzli', 89960),
+    ('libjpeg', 174275),
+    ('re2', 85940),
+    ('vorbis', 80035),
+    ('woff2_base', 206410),
+    ('woff2_new', 206420),
 ]
 
 import itertools
 
-buckets = [54, 54, 54, 48]
+buckets = [52, 52, 52, 52, 52]
 NUM_BUCKETS = len(buckets)
 
 combinations = []
