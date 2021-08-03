@@ -881,31 +881,39 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
+    container_name = None
     if isinstance(container, str):
-        sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container, *cmd]
-        proc = subprocess.run(sub_cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
-                close_fds=True,
-                preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-        if raise_on_error and proc.returncode != 0:
-            print("process error: =======================",
-                    proc.args,
-                    proc.stdout.decode(),
-                    sep="\n")
-            raise ValueError(proc)
-        return {'returncode': proc.returncode, 'out': proc.stdout.decode()}
+        container_name = container
     else:
-        if exec_args is not None:
-            raise ValueError("Exec args not supported for container exec_run.")
-        proc = container.exec_run(cmd)
-        if raise_on_error and proc[0] != 0:
-            print("process error: =======================",
-                    cmd,
-                    proc[1],
-                    sep="\n")
-            raise ValueError(proc)
-        return {'returncode': proc[0], 'out': proc[1]}
+        container_name = container.name
+
+    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
+    proc = subprocess.run(sub_cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
+            close_fds=True,
+            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    if raise_on_error and proc.returncode != 0:
+        print("process error: =======================",
+                proc.args,
+                proc.stdout.decode(),
+                sep="\n")
+        raise ValueError(proc)
+    return {'returncode': proc.returncode, 'out': proc.stdout.decode()}
+        ##################
+        # alternative version using docker lib, this errors with lots of docker containers
+        # https://github.com/docker/docker-py/issues/2278
+        # 
+        #  if exec_args is not None:
+        #      raise ValueError("Exec args not supported for container exec_run.")
+        #  proc = container.exec_run(cmd)
+        #  if raise_on_error and proc[0] != 0:
+        #      print("process error: =======================",
+        #              cmd,
+        #              proc[1],
+        #              sep="\n")
+        #      raise ValueError(proc)
+        #  return {'returncode': proc[0], 'out': proc[1]}
 
 
 def get_mut_base_dir(mut_data: dict) -> Path:
