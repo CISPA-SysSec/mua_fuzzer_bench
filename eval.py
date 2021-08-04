@@ -463,6 +463,7 @@ class Stats():
             prog,
             mutation_id INTEGER,
             covered_file_seen,
+            timed_out,
             total_time
         )''')
 
@@ -682,13 +683,14 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_seeds_executed(self, c, exec_id, prog, mutation_id, cf_seen, total_time):
-        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?)',
+    def new_seeds_executed(self, c, exec_id, prog, mutation_id, cf_seen, timed_out, total_time):
+        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
                 mutation_id,
                 cf_seen,
+                timed_out,
                 total_time,
             )
         )
@@ -1555,7 +1557,13 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         return
 
     stats.new_seeds_executed(EXEC_ID, prog, mutation_id,
-            task_result['covered_file_seen'], task_result['total_time'])
+            task_result['covered_file_seen'], task_result['timed_out'], task_result['total_time'])
+
+    # Record if seeds timed out, if so, do not add to prepared runs.
+    if task_result['timed_out']:
+        print(f"= mutation [+]: (timeout) {prog}:{mutation_id}")
+        clean_up_mut_base_dir(mut_data)
+        return
 
     # Record if seeds found the mutant, if so, do not add to prepared runs.
     if task_result['found_by_seeds']:
@@ -1670,8 +1678,18 @@ def prepare_mutation(core_to_use, data):
         checked_seeds = {}
 
         # do an initial check to see if the seed files are already crashing
-        (found_by_seeds, seeds_out) = check_seeds_crashing(testing, seeds,
-                orig_bin, docker_mut_bin, args, covered)
+        try:
+            (found_by_seeds, seeds_out) = check_seeds_crashing(testing, seeds,
+                    orig_bin, docker_mut_bin, args, covered)
+        except subprocess.TimeoutExpired:
+            return {
+                'total_time': time.time() - start_time,
+                'covered_file_seen': None,
+                'crashing_inputs': checked_seeds,
+                'found_by_seeds': None,
+                'timed_out': True,
+                'all_logs': []
+            }
         if found_by_seeds:
             checked_seeds['bulk'] = {
                     'time_found': 0,
@@ -1693,6 +1711,7 @@ def prepare_mutation(core_to_use, data):
             'covered_file_seen': covered.found,
             'crashing_inputs': checked_seeds,
             'found_by_seeds': found_by_seeds,
+            'timed_out': False,
             'all_logs': [seeds_out]
         }
 
