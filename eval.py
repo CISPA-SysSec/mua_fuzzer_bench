@@ -80,7 +80,7 @@ IN_DOCKER_WORKDIR = "/workdir/"
 
 TRIGGERED_STR = "Triggered!\r\n"
 
-MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
+MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 
 # The directory used for seed files for all fuzzers
 SEED_BASE_DIR = Path(os.getenv("MUT_SEED_DIR", "tmp/active_seeds/"))
@@ -522,6 +522,8 @@ class Stats():
             mut_cmd,
             orig_output,
             mut_output,
+            orig_timeout,
+            mut_timeout,
             num_triggered
         )''')
 
@@ -696,7 +698,7 @@ class Stats():
     def new_crashing_inputs(self, c, crashing_inputs, exec_id, prog, mutation_id, run_ctr, fuzzer):
         for path, data in crashing_inputs.items():
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
-                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
                         prog,
@@ -713,6 +715,8 @@ class Stats():
                         ' '.join((str(v) for v in data['mut_cmd'])),
                         data['orig_res'],
                         data['mut_res'],
+                        data['orig_timeout'],
+                        data['mut_timeout'],
                         data['num_triggered']
                     )
                 )
@@ -875,7 +879,7 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
         container.stop()
 
 
-def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
+def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None):
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
@@ -890,7 +894,7 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
     sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
     proc = subprocess.run(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
+            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout,
             close_fds=True,
             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
     if raise_on_error and proc.returncode != 0:
@@ -965,23 +969,37 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                         ).replace("___FILE___", str(path))
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, orig_cmd)
-                orig_res = proc['out']
-                orig_returncode = proc['returncode']
-                if orig_returncode != 0:
-                    print("orig bin returncode != 0, crashing base bin:")
-                    print("args:", orig_cmd, "returncode:", orig_returncode)
-                    print(orig_res)
+                try:
+                    proc = run_exec_in_container(testing_container.name, False, orig_cmd, timeout=10)
+                except subprocess.TimeoutExpired:
+                    orig_timed_out = True
+                    orig_res = 0
+                    orig_returncode = 0
+                else:
+                    orig_timed_out = False
+                    orig_res = proc['out']
+                    orig_returncode = proc['returncode']
+                    if orig_returncode != 0:
+                        print("orig bin returncode != 0, crashing base bin:")
+                        print("args:", orig_cmd, "returncode:", orig_returncode)
+                        print(orig_res)
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, mut_cmd)
-                mut_res = proc['out']
-
-                num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
-                mut_res = mut_res.replace(TRIGGERED_STR, "")
-                mut_res = mut_res
-                mut_returncode = proc['returncode']
+                try:
+                    proc = run_exec_in_container(testing_container.name, False, mut_cmd, timeout=10)
+                except subprocess.TimeoutExpired:
+                    mut_timed_out = True
+                    num_triggered = 0
+                    mut_res = 0
+                    mut_returncode = 0
+                else:
+                    mut_timed_out = False
+                    mut_res = proc['out']
+                    num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
+                    mut_res = mut_res.replace(TRIGGERED_STR, "")
+                    mut_res = mut_res
+                    mut_returncode = proc['returncode']
 
                 covered.check()
 
@@ -1001,6 +1019,8 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                     'orig_res': orig_res,
                     'mut_res': mut_res,
                     'num_triggered': num_triggered,
+                    'orig_timeout': orig_timed_out,
+                    'mut_timeout': mut_timed_out,
                 }
 
                 if (orig_returncode != mut_returncode):  # or orig_res != mut_res):
@@ -1592,7 +1612,7 @@ def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, c
                 '--orig', orig_bin,
                 '--mut', mut_bin,
                 '--workdir', IN_DOCKER_WORKDIR],
-            ['--env', f"TRIGGERED_FOLDER={covered.path}"])
+            ['--env', f"TRIGGERED_FOLDER={covered.path}"], timeout=60*5)
     returncode = proc['returncode']
     if returncode == 0:
         return (False, "")
