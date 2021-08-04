@@ -92,6 +92,7 @@ protected:
     llvm::CmpInst::Predicate predicate;
     // auto predicate = icmpinst->getPredicate();
     void getpredicate(const Instruction *instr);
+    bool isMutateable(const CmpInst::Predicate pred, const Instruction* instr);
 };
 
 // Abstract base classes for Threading types of instruction patterns
