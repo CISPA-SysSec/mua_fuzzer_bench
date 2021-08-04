@@ -49,7 +49,7 @@ bool MallocPattern::mutate(
             builderMutex.lock();
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
-            auto newVal = builder->CreateAdd(lhs, builder->getInt64(-16));
+            auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(), -16));
             builderMutex.unlock();
             callinst->setOperand(0, newVal);
             return true;
@@ -91,8 +91,8 @@ bool FGetsPattern::mutate(
             builderMutex.lock();
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
-            auto newVal = builder->CreateAdd(lhs, builder->getInt64(1));
-            newVal = builder->CreateMul(newVal, builder->getInt64(5));
+            auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(), 1));
+            newVal = builder->CreateMul(newVal, builder->getIntN(lhs->getType()->getIntegerBitWidth(), 5));
             builderMutex.unlock();
             callinst->setOperand(1, newVal);
             return true;
@@ -184,7 +184,7 @@ bool CallocPattern::mutate(
             builderMutex.lock();
             auto segref = *seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
-            auto newVal = builder->CreateAdd(lhs, builder->getInt64(-16));
+            auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(),-16));
             builderMutex.unlock();
             callinst->setOperand(1, newVal);
             return true;
