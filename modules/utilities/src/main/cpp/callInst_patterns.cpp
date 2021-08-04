@@ -22,7 +22,7 @@ std::vector<std::string>
 MallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
-    if (funNameString.find("malloc") != std::string::npos) {
+    if (funNameString.str() == "malloc" || funNameString.str() == "\01_malloc") {
         results.push_back(getIdentifierString(instr, builder, builderMutex, M, MALLOC));
     }
     return results;
@@ -41,7 +41,7 @@ bool MallocPattern::mutate(
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
-    if (funNameString.find("malloc") != std::string::npos) {
+    if (funNameString.str() == "malloc" || funNameString.str() == "\01_malloc") {
         if (isMutationLocation(instr, seglist, MALLOC)) {
             // substract 1 and give the new value to malloc
             Value* lhs;
@@ -62,7 +62,7 @@ std::vector<std::string>
 FGetsPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
-    if (funNameString.find("fgets") != std::string::npos) {
+    if (funNameString.str() == "fgets" || funNameString.str() == "\01_fgets") {
         results.push_back(getIdentifierString(instr, builder, builderMutex, M, FGETS_MATCH_BUFFER_SIZE));
     }
     return results;
@@ -82,7 +82,7 @@ bool FGetsPattern::mutate(
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
-    if (funNameString.find("fgets") != std::string::npos) {
+    if (funNameString.str() == "fgets" || funNameString.str() == "\01_fgets") {
         if (isMutationLocation(instr, seglist, FGETS_MATCH_BUFFER_SIZE)) {
             // add 1 to original value, multiply this new value by 5 and then
             // give the value to fgets
@@ -107,8 +107,8 @@ PThreadPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex 
     getfunNameString(instr);
     const std::string &funNameStdString = instr->getFunction()->getName().str();
     if (pthreadFoundFunctions.find(funNameStdString) == pthreadFoundFunctions.end() // function was not used before
-        && (funNameString.find("pthread_mutex_lock") != std::string::npos
-        || funNameString.find("pthread_mutex_unlock") != std::string::npos)
+        && (funNameString.str() == "pthread_mutex_lock" || funNameString.str() == "\01_pthread_mutex_lock"
+        || funNameString.str() == "pthread_mutex_unlock" || funNameString.str() == "\01_pthread_mutex_unlock")
     ) {
         pthreadFoundFunctions.insert(funNameStdString);
         json j;
@@ -137,8 +137,8 @@ bool PThreadPattern::mutate(
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == PTHREAD_MUTEX
         && surroundingFunction == segref["additionalInfo"]["funname"]
-        && (funNameString.find("pthread_mutex_lock") != std::string::npos
-            || funNameString.find("pthread_mutex_unlock") != std::string::npos)
+        && (funNameString.str() == "pthread_mutex_lock" || funNameString.str() == "\01_pthread_mutex_lock"
+        || funNameString.str() == "pthread_mutex_unlock" || funNameString.str() == "\01_pthread_mutex_unlock")
             ){
         builderMutex.lock();
         addMutationFoundSignal(builder, M, segref["UID"]);
@@ -157,7 +157,7 @@ std::vector<std::string>
 CallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
-    if (funNameString.find("calloc") != std::string::npos) {
+    if (funNameString.str() == "calloc" || funNameString.str() == "\01_calloc") {
         results.push_back(getIdentifierString(instr, builder, builderMutex, M, CALLOC));
     }
     return results;
@@ -176,7 +176,7 @@ bool CallocPattern::mutate(
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
-    if (funNameString.find("calloc") != std::string::npos) {
+    if (funNameString.str() == "calloc" || funNameString.str() == "\01_calloc") {
         if (isMutationLocation(instr, seglist, CALLOC)) {
             // substract 1 and give the new value to malloc
             Value* lhs;
