@@ -30,11 +30,15 @@ bool Pattern::isMutationLocation(Instruction* instr, json *seglist, const std::v
 bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
+        auto surroundingFunction = instr->getFunction()->getName().str();
+        if (segref["funname"] != surroundingFunction) {
+            // shortcut for faster failing if the function is not the one we are looking for
+            return false;
+        }
         std::string directory = debugInfo->getDirectory().str();
         std::string filePath = debugInfo->getFilename().str();
         uint64_t line = debugInfo->getLine();
         uint64_t column = debugInfo->getColumn();
-        auto surroundingFunction = instr->getFunction()->getName().str();
 
         std::string instructionString;
         llvm::raw_string_ostream os(instructionString);
@@ -43,16 +47,18 @@ bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
                && segref["filePath"] == filePath
                && segref["line"] == line
                && segref["column"] == column
-               && segref["funname"] == surroundingFunction
                && segref["instr"] == os.str();
     } else {
         // as a fallback try to just use funname and instr
         auto surroundingFunction = instr->getFunction()->getName().str();
-
+        if (segref["funname"] != surroundingFunction) {
+            // shortcut for faster failing if the function is not the one we are looking for
+            return false;
+        }
         std::string instructionString;
         llvm::raw_string_ostream os(instructionString);
         instr->print(os);
-        return (segref["funname"] == surroundingFunction && segref["instr"] == os.str());
+        return segref["instr"] == os.str();
     }
 }
 
