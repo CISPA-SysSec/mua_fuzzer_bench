@@ -427,6 +427,7 @@ class Stats():
             exec_id,
             prog,
             mutation_id INTEGER,
+            mutation_data_full,
             mut_additional_info,
             mut_column,
             mut_directory,
@@ -604,11 +605,12 @@ class Stats():
 
     @connection
     def new_mutation(self, c, exec_id, data):
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 data['prog'],
                 data['mutation_id'],
+                json.dumps(data['mutation_data']),
                 json.dumps(data['mutation_data']['additionalInfo']),
                 data['mutation_data']['column'],
                 data['mutation_data']['directory'],
