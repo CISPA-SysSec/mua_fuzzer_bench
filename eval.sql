@@ -97,12 +97,14 @@ select
 	as time_found,
 	
 	case when dsci.time_found is not NULL
-	then 1 else NULL end
+	then 1 else 0 end
 	as found_by_seed,
 	
 	(ifnull(executed_seeds.total_time, 0) + ifnull(executed_runs.total_time, 0)) / 60 as total_time,
 	
 	case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed,
+	
+	executed_seeds.timed_out as seed_timeout,
 	
 	case when ifnull(crashing_mutation_preparation.crash_trace, run_crashed.crash_trace) is not NULL then 1 else NULL end as crashed,
 	
@@ -174,6 +176,8 @@ select
 	found,
 	f_by_seed,
 	found - f_by_seed as f_by_f,
+	c_by_seed - f_by_seed as interesting,
+	seed_timeout,
 	crashed,
 	round(avg(total_time) / done, 2) as avg_run_min,
 	round(sum(total_time) / 60 / 24, 2) as cpu_days
@@ -190,9 +194,10 @@ left join (
 		   count(*) as done,
 		   count(covered_file_seen) as covered,
 		   count(crashed) as crashed,
-		   count(case when covered_by_seed = 1 then 1 else null end) as c_by_seed,
+		   count(case when covered_by_seed is 1 then 1 else null end) as c_by_seed,
 		   count(time_found) as found,
 		   count(case when stage = "seed_found" and confirmed then 1 else null end) as f_by_seed,
+		   sum(seed_timeout) as seed_timeout,
 		   sum(total_time) as total_time
     from run_results
 	group by mut_type, fuzzer, exec_id, prog
@@ -225,6 +230,8 @@ select
 	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
+	sum(interesting) as interesting,
+	sum(seed_timeout) as seed_timeout,
 	sum(crashed) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
 	round(sum(cpu_days), 2) as cpu_days
@@ -245,6 +252,8 @@ select fuzzer,
 	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
+	sum(interesting) as interesting,
+	sum(seed_timeout) as seed_timeout,
 	sum(crashed) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
 	round(sum(cpu_days), 2) as cpu_days
@@ -264,6 +273,8 @@ select prog,
 	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
+	sum(interesting) as interesting,
+	sum(seed_timeout) as seed_timeout,
 	sum(crashed) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
 	round(sum(cpu_days), 2) as cpu_days
@@ -430,7 +441,7 @@ DROP VIEW IF EXISTS not_covered_but_found;
 CREATE VIEW not_covered_but_found
 as
 select (covered_file_seen or covered_by_seed) as covered, (time_found or found_by_seed) as found, * from all_run_results
-where covered is NULL and found is 1;
+where covered is 0 and found is 1;
 
 
 DROP VIEW IF EXISTS covered_by_seed_but_not_fuzzer;
@@ -440,3 +451,21 @@ select executed_seeds.covered_file_seen is not null as s_covered, executed_runs.
 from executed_seeds
 join executed_runs using (exec_id, prog, mutation_id)
 where s_covered is 1 and f_covered is 0;
+
+DROP VIEW IF EXISTS percentage_found_over_time;
+CREATE VIEW percentage_found_over_time
+as
+select total_until, total_until*1.0 / total_num as percentage, time_found / 60.0 as found, fuzzer, * from (
+	select count(*) over (
+		order by time_found
+		rows BETWEEN
+			unbounded preceding
+			and current row
+		) as total_until,
+		time_found,
+		*
+	from all_run_results
+	where found_by_seed is 0 and confirmed is 1
+	order by time_found
+) join (select count(*) as total_num from all_run_results where found_by_seed is 0 and confirmed is 1);
+
