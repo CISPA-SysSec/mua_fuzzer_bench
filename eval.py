@@ -427,13 +427,14 @@ class Stats():
             exec_id,
             prog,
             mutation_id INTEGER,
-            mutation_data_full,
             mut_additional_info,
+            mut_instr,
             mut_column,
             mut_directory,
             mut_file_path,
             mut_line,
-            mut_type
+            mut_type,
+            mutation_data_rest
         )''')
 
         c.execute('''
@@ -605,18 +606,20 @@ class Stats():
 
     @connection
     def new_mutation(self, c, exec_id, data):
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        import copy
+        mut_data = copy.deepcopy(data['mutation_data'])
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 data['prog'],
                 data['mutation_id'],
-                json.dumps(data['mutation_data']),
-                json.dumps(data['mutation_data']['additionalInfo']),
-                data['mutation_data']['column'],
-                data['mutation_data']['directory'],
-                data['mutation_data']['filePath'],
-                data['mutation_data']['line'],
-                data['mutation_data']['type'],
+                json.dumps(mut_data.pop('additionalInfo', None)),
+                mut_data.pop('column', None),
+                mut_data.pop('directory', None),
+                mut_data.pop('filePath', None),
+                mut_data.pop('line', None),
+                mut_data.pop('type', None),
+                json.dumps(mut_data),
             )
         )
         self.conn.commit()
