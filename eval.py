@@ -619,6 +619,7 @@ class Stats():
                 mut_data.pop('filePath', None),
                 mut_data.pop('line', None),
                 mut_data.pop('type', None),
+                mut_data.pop('instr', None),
                 json.dumps(mut_data),
             )
         )
