@@ -427,14 +427,15 @@ class Stats():
             exec_id,
             prog,
             mutation_id INTEGER,
-            mut_additional_info,
-            mut_instr,
-            mut_column,
-            mut_directory,
-            mut_file_path,
-            mut_line,
             mut_type,
-            mutation_data_rest
+            directory,
+            file_path,
+            line,
+            column,
+            instr,
+            funname,
+            additional_info,
+            rest
         )''')
 
         c.execute('''
@@ -608,19 +609,31 @@ class Stats():
     def new_mutation(self, c, exec_id, data):
         import copy
         mut_data = copy.deepcopy(data['mutation_data'])
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        mut_id = mut_data.pop('UID')
+        assert int(data['mutation_id']) == int(mut_id), f"{data['mutation_id']} != {mut_id}"
+
+        mut_additional = mut_data.pop('additionalInfo', None)
+        if mut_additional is not None:
+            # Remove redundant fields
+            mut_additional.pop('funname', None)
+            mut_additional.pop('instr', None)
+            # None if no data is left else json of the data
+            mut_additional = None if len(mut_additional) == 0 else json.dumps(mut_additional) 
+
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 data['prog'],
                 data['mutation_id'],
-                json.dumps(mut_data.pop('additionalInfo', None)),
-                mut_data.pop('column', None),
+                mut_data.pop('type', None),
                 mut_data.pop('directory', None),
                 mut_data.pop('filePath', None),
                 mut_data.pop('line', None),
-                mut_data.pop('type', None),
+                mut_data.pop('column', None),
                 mut_data.pop('instr', None),
-                json.dumps(mut_data),
+                mut_data.pop('funname', None),
+                mut_additional,
+                json.dumps(mut_data) if len(mut_data) > 0 else None,
             )
         )
         self.conn.commit()
