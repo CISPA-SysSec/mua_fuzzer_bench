@@ -39,7 +39,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
                 print("orig bin returncode != 0, crashing base bin:")
                 print("args:", orig_cmd, "returncode:", orig_returncode)
                 print(orig_res)
-                sys.exit(1)
+                sys.exit(2)
 
             # Run input on mutated binary
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)

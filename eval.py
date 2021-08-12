@@ -1641,10 +1641,15 @@ def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, c
                 '--workdir', IN_DOCKER_WORKDIR],
             ['--env', f"TRIGGERED_FOLDER={covered.path}"], timeout=60*5)
     returncode = proc['returncode']
+    # Ran through without problems
     if returncode == 0:
-        return (False, "")
+        return ("ok", "")
+    # Seeds found mutation 
     elif returncode == 1:
-        return (True, proc['out'])
+        return ("found", proc['out'])
+    # base binary crashed
+    elif returncode == 2:
+        return ("basecrsh", proc['out'])
     else:
         raise ValueError(f"Failed to execute seed files: {proc}")
 
@@ -1698,7 +1703,7 @@ def prepare_mutation(core_to_use, data):
 
         # do an initial check to see if the seed files are already crashing
         try:
-            (found_by_seeds, seeds_out) = check_seeds_crashing(testing, seeds,
+            (seed_result, seeds_out) = check_seeds_crashing(testing, seeds,
                     orig_bin, docker_mut_bin, args, covered)
         except subprocess.TimeoutExpired:
             return {
@@ -1709,7 +1714,10 @@ def prepare_mutation(core_to_use, data):
                 'timed_out': True,
                 'all_logs': []
             }
-        if found_by_seeds:
+        found_by_seeds = False
+        if seed_result == "ok":
+            pass
+        elif seed_result == "found":
             checked_seeds['bulk'] = {
                     'time_found': 0,
                     'stage': 'initial',
@@ -1722,6 +1730,23 @@ def prepare_mutation(core_to_use, data):
                     'mut_res': seeds_out,
                     'num_triggered': None,
             }
+            found_by_seeds = True
+        elif seed_result == "basecrsh":
+            checked_seeds['bulk'] = {
+                    'time_found': 0,
+                    'stage': 'initial',
+                    'data': None,
+                    'orig_returncode': 1,
+                    'mut_returncode': 0,
+                    'orig_cmd': [],
+                    'mut_cmd': [],
+                    'orig_res': None,
+                    'mut_res': seeds_out,
+                    'num_triggered': None,
+            }
+            found_by_seeds = True
+        else:
+            raise ValueError("Unknown seed check result")
 
         covered.check()
 
