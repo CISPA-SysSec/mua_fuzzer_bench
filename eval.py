@@ -1392,25 +1392,27 @@ def sequence_mutations(all_mutations):
     Diverse as in the mutations are from different progs and different types.
     """
     random.shuffle(all_mutations)
-    grouped_mutations = defaultdict(list)
-    for mut in all_mutations:
-        prog = mut[1]
-        mutation_id = mut[0]
-        mutation_type = mut[3][int(mutation_id)]['type']
-        grouped_mutations[(prog, mutation_type)].append(mut)
 
-    sequenced_mutations = []
-
-    while len(grouped_mutations) > 0:
-        empty_lists = []
-        for key, mut_list in grouped_mutations.items():
-            sequenced_mutations.append(mut_list.pop())
-            if len(mut_list) == 0:
-                empty_lists.append(key)
-        for empty in empty_lists:
-            del grouped_mutations[empty]
-
-    return sequenced_mutations
+    #  grouped_mutations = defaultdict(list)
+    #  for mut in all_mutations:
+    #      prog = mut[1]
+    #      mutation_id = mut[0]
+    #      mutation_type = mut[3][int(mutation_id)]['type']
+    #      grouped_mutations[(prog, mutation_type)].append(mut)
+    #
+    #  sequenced_mutations = []
+    #
+    #  while len(grouped_mutations) > 0:
+    #      empty_lists = []
+    #      for key, mut_list in grouped_mutations.items():
+    #          sequenced_mutations.append(mut_list.pop())
+    #          if len(mut_list) == 0:
+    #              empty_lists.append(key)
+    #      for empty in empty_lists:
+    #          del grouped_mutations[empty]
+    # 
+    # return sequenced_mutations
+    return all_mutations
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
