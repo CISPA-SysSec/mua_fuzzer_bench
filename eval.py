@@ -34,6 +34,9 @@ EXEC_ID = str(uuid.uuid4())
 # If no fuzzing should happen and only the seed files should be run once.
 JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
 
+# If only covered mutation should also be fuzzed
+ONLY_IF_COVERED = os.getenv("MUT_ONLY_IF_COVERED", "0") == "1"
+
 if JUST_CHECK_SEED_CRASHES:
     # no fuzzing is done use all resources available
     logical_cores = True
@@ -1590,6 +1593,12 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     if task_result['found_by_seeds']:
         print(f"= mutation [+]: (seed found) {prog}:{mutation_id}")
         stats.new_seed_crashing_inputs(EXEC_ID, prog, mutation_id, task_result['crashing_inputs'])
+        clean_up_mut_base_dir(mut_data)
+        return
+
+    # If fuzzing should only be done if the mutation is covered by seeds, check that covered and if not do not add runs.
+    if ONLY_IF_COVERED and task_result['covered_file_seen'] is None:
+        print(f"= mutation [+]: (not covered) {prog}:{mutation_id}")
         clean_up_mut_base_dir(mut_data)
         return
 
