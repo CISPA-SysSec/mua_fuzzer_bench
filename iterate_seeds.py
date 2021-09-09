@@ -8,7 +8,7 @@ import argparse
 from pathlib import Path
 
 
-TRIGGERED_STR = "Triggered!\r\n"
+TRIGGERED_STR = b"Triggered!\r\n"
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 30
 
 
@@ -33,20 +33,20 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
             # Run input on original binary
             orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
             proc = run_cmd(orig_cmd)
-            orig_res = proc.stdout.decode()
+            orig_res = proc.stdout
             orig_returncode = proc.returncode
             if orig_returncode != 0:
                 print("orig bin returncode != 0, crashing base bin:")
                 print("args:", orig_cmd, "returncode:", orig_returncode)
                 print(orig_res)
-                sys.exit(1)
+                sys.exit(2)
 
             # Run input on mutated binary
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
             proc = run_cmd(mut_cmd)
-            mut_res = proc.stdout.decode()
+            mut_res = proc.stdout
 
-            mut_res = mut_res.replace(TRIGGERED_STR, "")
+            mut_res = mut_res.replace(TRIGGERED_STR, b"")
             mut_res = mut_res
             mut_returncode = proc.returncode
 

@@ -34,6 +34,9 @@ EXEC_ID = str(uuid.uuid4())
 # If no fuzzing should happen and only the seed files should be run once.
 JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
 
+# If only covered mutation should also be fuzzed
+ONLY_IF_COVERED = os.getenv("MUT_ONLY_IF_COVERED", "0") == "1"
+
 if JUST_CHECK_SEED_CRASHES:
     # no fuzzing is done use all resources available
     logical_cores = True
@@ -80,7 +83,7 @@ IN_DOCKER_WORKDIR = "/workdir/"
 
 TRIGGERED_STR = "Triggered!\r\n"
 
-MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15  # 15 Minutes
+MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 
 # The directory used for seed files for all fuzzers
 SEED_BASE_DIR = Path(os.getenv("MUT_SEED_DIR", "tmp/active_seeds/"))
@@ -427,12 +430,15 @@ class Stats():
             exec_id,
             prog,
             mutation_id INTEGER,
-            mut_additional_info,
-            mut_column,
-            mut_directory,
-            mut_file_path,
-            mut_line,
-            mut_type
+            mut_type,
+            directory,
+            file_path,
+            line,
+            column,
+            instr,
+            funname,
+            additional_info,
+            rest
         )''')
 
         c.execute('''
@@ -463,6 +469,7 @@ class Stats():
             prog,
             mutation_id INTEGER,
             covered_file_seen,
+            timed_out,
             total_time
         )''')
 
@@ -522,6 +529,8 @@ class Stats():
             mut_cmd,
             orig_output,
             mut_output,
+            orig_timeout,
+            mut_timeout,
             num_triggered
         )''')
 
@@ -601,17 +610,33 @@ class Stats():
 
     @connection
     def new_mutation(self, c, exec_id, data):
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        import copy
+        mut_data = copy.deepcopy(data['mutation_data'])
+        mut_id = mut_data.pop('UID')
+        assert int(data['mutation_id']) == int(mut_id), f"{data['mutation_id']} != {mut_id}"
+
+        mut_additional = mut_data.pop('additionalInfo', None)
+        if mut_additional is not None:
+            # Remove redundant fields
+            mut_additional.pop('funname', None)
+            mut_additional.pop('instr', None)
+            # None if no data is left else json of the data
+            mut_additional = None if len(mut_additional) == 0 else json.dumps(mut_additional) 
+
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 data['prog'],
                 data['mutation_id'],
-                json.dumps(data['mutation_data']['additionalInfo']),
-                data['mutation_data']['column'],
-                data['mutation_data']['directory'],
-                data['mutation_data']['filePath'],
-                data['mutation_data']['line'],
-                data['mutation_data']['type'],
+                mut_data.pop('type', None),
+                mut_data.pop('directory', None),
+                mut_data.pop('filePath', None),
+                mut_data.pop('line', None),
+                mut_data.pop('column', None),
+                mut_data.pop('instr', None),
+                mut_data.pop('funname', None),
+                mut_additional,
+                json.dumps(mut_data) if len(mut_data) > 0 else None,
             )
         )
         self.conn.commit()
@@ -680,13 +705,14 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_seeds_executed(self, c, exec_id, prog, mutation_id, cf_seen, total_time):
-        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?)',
+    def new_seeds_executed(self, c, exec_id, prog, mutation_id, cf_seen, timed_out, total_time):
+        c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
                 mutation_id,
                 cf_seen,
+                timed_out,
                 total_time,
             )
         )
@@ -696,7 +722,7 @@ class Stats():
     def new_crashing_inputs(self, c, crashing_inputs, exec_id, prog, mutation_id, run_ctr, fuzzer):
         for path, data in crashing_inputs.items():
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
-                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
                         prog,
@@ -713,6 +739,8 @@ class Stats():
                         ' '.join((str(v) for v in data['mut_cmd'])),
                         data['orig_res'],
                         data['mut_res'],
+                        data['orig_timeout'],
+                        data['mut_timeout'],
                         data['num_triggered']
                     )
                 )
@@ -836,8 +864,12 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile):
             config={'max-size': '10m'}),
         detach=True
     )
-    yield container
-    container.stop()
+    try:
+        yield container
+    except Exception as exc:
+        raise exc
+    finally: # This will stop the container if there is an exception or not.
+        container.stop()
 
 
 @contextlib.contextmanager
@@ -863,41 +895,53 @@ def start_mutation_container(core_to_use, docker_run_kwargs=None):
         detach=True,
         **(docker_run_kwargs if docker_run_kwargs is not None else {})
     )
-    yield container
-    container.stop()
+    try:
+        yield container
+    except Exception as exc:
+        raise exc
+    finally: # This will stop the container if there is an exception or not.
+        container.stop()
 
 
-def run_exec_in_container(container, raise_on_error, cmd, exec_args=None):
+def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None):
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
+    container_name = None
     if isinstance(container, str):
-        sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container, *cmd]
-        proc = subprocess.run(sub_cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
-                close_fds=True,
-                preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-        if raise_on_error and proc.returncode != 0:
-            print("process error: =======================",
-                    proc.args,
-                    proc.stdout.decode(),
-                    sep="\n")
-            raise ValueError(proc)
-        return {'returncode': proc.returncode, 'out': proc.stdout.decode()}
+        container_name = container
     else:
-        if exec_args is not None:
-            raise ValueError("Exec args not supported for container exec_run.")
-        proc = container.exec_run(cmd)
-        if raise_on_error and proc[0] != 0:
-            print("process error: =======================",
-                    cmd,
-                    proc[1],
-                    sep="\n")
-            raise ValueError(proc)
-        return {'returncode': proc[0], 'out': proc[1]}
+        container_name = container.name
+
+    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
+    proc = subprocess.run(sub_cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout,
+            close_fds=True,
+            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    if raise_on_error and proc.returncode != 0:
+        print("process error: =======================",
+                proc.args,
+                proc.stdout.decode(),
+                sep="\n")
+        raise ValueError(proc)
+    return {'returncode': proc.returncode, 'out': proc.stdout.decode()}
+        ##################
+        # alternative version using docker lib, this errors with lots of docker containers
+        # https://github.com/docker/docker-py/issues/2278
+        # 
+        #  if exec_args is not None:
+        #      raise ValueError("Exec args not supported for container exec_run.")
+        #  proc = container.exec_run(cmd)
+        #  if raise_on_error and proc[0] != 0:
+        #      print("process error: =======================",
+        #              cmd,
+        #              proc[1],
+        #              sep="\n")
+        #      raise ValueError(proc)
+        #  return {'returncode': proc[0], 'out': proc[1]}
 
 
 def get_mut_base_dir(mut_data: dict) -> Path:
@@ -949,23 +993,37 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                         ).replace("___FILE___", str(path))
                 # Run input on original binary
                 orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, orig_cmd)
-                orig_res = proc['out']
-                orig_returncode = proc['returncode']
-                if orig_returncode != 0:
-                    print("orig bin returncode != 0, crashing base bin:")
-                    print("args:", orig_cmd, "returncode:", orig_returncode)
-                    print(orig_res)
+                try:
+                    proc = run_exec_in_container(testing_container.name, False, orig_cmd, timeout=10)
+                except subprocess.TimeoutExpired:
+                    orig_timed_out = True
+                    orig_res = 0
+                    orig_returncode = 0
+                else:
+                    orig_timed_out = False
+                    orig_res = proc['out']
+                    orig_returncode = proc['returncode']
+                    if orig_returncode != 0:
+                        print("orig bin returncode != 0, crashing base bin:")
+                        print("args:", orig_cmd, "returncode:", orig_returncode)
+                        print(orig_res)
 
                 # Run input on mutated binary
                 mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
-                proc = run_exec_in_container(testing_container.name, False, mut_cmd)
-                mut_res = proc['out']
-
-                num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
-                mut_res = mut_res.replace(TRIGGERED_STR, "")
-                mut_res = mut_res
-                mut_returncode = proc['returncode']
+                try:
+                    proc = run_exec_in_container(testing_container.name, False, mut_cmd, timeout=10)
+                except subprocess.TimeoutExpired:
+                    mut_timed_out = True
+                    num_triggered = 0
+                    mut_res = 0
+                    mut_returncode = 0
+                else:
+                    mut_timed_out = False
+                    mut_res = proc['out']
+                    num_triggered = len(mut_res.split(TRIGGERED_STR)) - 1
+                    mut_res = mut_res.replace(TRIGGERED_STR, "")
+                    mut_res = mut_res
+                    mut_returncode = proc['returncode']
 
                 covered.check()
 
@@ -985,6 +1043,8 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
                     'orig_res': orig_res,
                     'mut_res': mut_res,
                     'num_triggered': num_triggered,
+                    'orig_timeout': orig_timed_out,
+                    'mut_timeout': mut_timed_out,
                 }
 
                 if (orig_returncode != mut_returncode):  # or orig_res != mut_res):
@@ -1335,25 +1395,27 @@ def sequence_mutations(all_mutations):
     Diverse as in the mutations are from different progs and different types.
     """
     random.shuffle(all_mutations)
-    grouped_mutations = defaultdict(list)
-    for mut in all_mutations:
-        prog = mut[1]
-        mutation_id = mut[0]
-        mutation_type = mut[3][int(mutation_id)]['type']
-        grouped_mutations[(prog, mutation_type)].append(mut)
 
-    sequenced_mutations = []
-
-    while len(grouped_mutations) > 0:
-        empty_lists = []
-        for key, mut_list in grouped_mutations.items():
-            sequenced_mutations.append(mut_list.pop())
-            if len(mut_list) == 0:
-                empty_lists.append(key)
-        for empty in empty_lists:
-            del grouped_mutations[empty]
-
-    return sequenced_mutations
+    #  grouped_mutations = defaultdict(list)
+    #  for mut in all_mutations:
+    #      prog = mut[1]
+    #      mutation_id = mut[0]
+    #      mutation_type = mut[3][int(mutation_id)]['type']
+    #      grouped_mutations[(prog, mutation_type)].append(mut)
+    #
+    #  sequenced_mutations = []
+    #
+    #  while len(grouped_mutations) > 0:
+    #      empty_lists = []
+    #      for key, mut_list in grouped_mutations.items():
+    #          sequenced_mutations.append(mut_list.pop())
+    #          if len(mut_list) == 0:
+    #              empty_lists.append(key)
+    #      for empty in empty_lists:
+    #          del grouped_mutations[empty]
+    # 
+    # return sequenced_mutations
+    return all_mutations
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
@@ -1501,6 +1563,7 @@ def handle_run_result(stats, active_mutants, run_future, data):
 
 
 def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, data):
+    os.system("docker ps | wc -l")
     _, mut_data, fuzzer_runs = data
     prog = mut_data['prog']
     mutation_id = mut_data['mutation_id']
@@ -1518,12 +1581,24 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         return
 
     stats.new_seeds_executed(EXEC_ID, prog, mutation_id,
-            task_result['covered_file_seen'], task_result['total_time'])
+            task_result['covered_file_seen'], task_result['timed_out'], task_result['total_time'])
+
+    # Record if seeds timed out, if so, do not add to prepared runs.
+    if task_result['timed_out']:
+        print(f"= mutation [+]: (timeout) {prog}:{mutation_id}")
+        clean_up_mut_base_dir(mut_data)
+        return
 
     # Record if seeds found the mutant, if so, do not add to prepared runs.
     if task_result['found_by_seeds']:
         print(f"= mutation [+]: (seed found) {prog}:{mutation_id}")
         stats.new_seed_crashing_inputs(EXEC_ID, prog, mutation_id, task_result['crashing_inputs'])
+        clean_up_mut_base_dir(mut_data)
+        return
+
+    # If fuzzing should only be done if the mutation is covered by seeds, check that covered and if not do not add runs.
+    if ONLY_IF_COVERED and task_result['covered_file_seen'] is None:
+        print(f"= mutation [+]: (not covered) {prog}:{mutation_id}")
         clean_up_mut_base_dir(mut_data)
         return
 
@@ -1575,12 +1650,17 @@ def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, c
                 '--orig', orig_bin,
                 '--mut', mut_bin,
                 '--workdir', IN_DOCKER_WORKDIR],
-            ['--env', f"TRIGGERED_FOLDER={covered.path}"])
+            ['--env', f"TRIGGERED_FOLDER={covered.path}"], timeout=60*5)
     returncode = proc['returncode']
+    # Ran through without problems
     if returncode == 0:
-        return (False, "")
+        return ("ok", "")
+    # Seeds found mutation 
     elif returncode == 1:
-        return (True, proc['out'])
+        return ("found", proc['out'])
+    # base binary crashed
+    elif returncode == 2:
+        return ("basecrsh", proc['out'])
     else:
         raise ValueError(f"Failed to execute seed files: {proc}")
 
@@ -1600,24 +1680,29 @@ def prepare_mutation(core_to_use, data):
     with start_mutation_container(core_to_use) as mutator, \
          start_testing_container(core_to_use, covered) as testing:
 
-        run_exec_in_container(mutator.name, True, [
-                "./run_mutation.py",
-                "-bc",
-                *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
-                "-m", data['mutation_id'],
-                "--out-dir", str(mut_base_dir),
-                data['orig_bc']
-        ])
+        run_mut_res = None
+        clang_res = None
+        try:
+            run_mut_res = run_exec_in_container(mutator.name, True, [
+                    "./run_mutation.py",
+                    "-bc",
+                    *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
+                    "-m", data['mutation_id'],
+                    "--out-dir", str(mut_base_dir),
+                    data['orig_bc']
+            ])
 
-        # compile the compare version of the mutated binary
-        run_exec_in_container(testing, True, [
-                "/usr/bin/clang++-11",
-                "-v",
-                "-o", str(mut_base_dir/"mut_base"),
-                *shlex.split(compile_args),
-                "/workdir/tmp/lib/libdynamiclibrary.so",
-                str(prog_bc)
-        ] )
+            # compile the compare version of the mutated binary
+            clang_res = run_exec_in_container(testing, True, [
+                    "/usr/bin/clang++-11",
+                    "-v",
+                    "-o", str(mut_base_dir/"mut_base"),
+                    *shlex.split(compile_args),
+                    "/workdir/tmp/lib/libdynamiclibrary.so",
+                    str(prog_bc)
+            ] )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to compile mutation:\nrun_mutation output:\n{run_mut_res}\nclang output:\n{clang_res}\n") from exc
 
         seeds = SEED_BASE_DIR/data['prog']
         orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(data['orig_bin']).relative_to(HOST_TMP_PATH)
@@ -1628,9 +1713,22 @@ def prepare_mutation(core_to_use, data):
         checked_seeds = {}
 
         # do an initial check to see if the seed files are already crashing
-        (found_by_seeds, seeds_out) = check_seeds_crashing(testing, seeds,
-                orig_bin, docker_mut_bin, args, covered)
-        if found_by_seeds:
+        try:
+            (seed_result, seeds_out) = check_seeds_crashing(testing, seeds,
+                    orig_bin, docker_mut_bin, args, covered)
+        except subprocess.TimeoutExpired:
+            return {
+                'total_time': time.time() - start_time,
+                'covered_file_seen': None,
+                'crashing_inputs': checked_seeds,
+                'found_by_seeds': None,
+                'timed_out': True,
+                'all_logs': []
+            }
+        found_by_seeds = False
+        if seed_result == "ok":
+            pass
+        elif seed_result == "found":
             checked_seeds['bulk'] = {
                     'time_found': 0,
                     'stage': 'initial',
@@ -1643,6 +1741,23 @@ def prepare_mutation(core_to_use, data):
                     'mut_res': seeds_out,
                     'num_triggered': None,
             }
+            found_by_seeds = True
+        elif seed_result == "basecrsh":
+            checked_seeds['bulk'] = {
+                    'time_found': 0,
+                    'stage': 'initial',
+                    'data': None,
+                    'orig_returncode': 1,
+                    'mut_returncode': 0,
+                    'orig_cmd': [],
+                    'mut_cmd': [],
+                    'orig_res': None,
+                    'mut_res': seeds_out,
+                    'num_triggered': None,
+            }
+            found_by_seeds = True
+        else:
+            raise ValueError("Unknown seed check result")
 
         covered.check()
 
@@ -1651,6 +1766,7 @@ def prepare_mutation(core_to_use, data):
             'covered_file_seen': covered.found,
             'crashing_inputs': checked_seeds,
             'found_by_seeds': found_by_seeds,
+            'timed_out': False,
             'all_logs': [seeds_out]
         }
 
