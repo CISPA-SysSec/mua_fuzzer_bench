@@ -2866,6 +2866,8 @@ def gather_plot_data(runs, run_results):
         import math
         if event.covered_file_seen is None or math.isnan(event.covered_file_seen):
             continue
+        if event.found_by_seed:
+            continue
         unique_events.append({
             'fuzzer': event.fuzzer,
             'prog': event.prog,
@@ -2876,6 +2878,8 @@ def gather_plot_data(runs, run_results):
         })
 
     for event in run_results.itertuples():
+        if event.found_by_seed:
+            continue
         if event.confirmed != 1:
             continue
         unique_events.append({
