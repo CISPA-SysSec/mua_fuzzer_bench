@@ -469,3 +469,10 @@ select total_until, total_until*1.0 / total_num as percentage, time_found / 60.0
 	order by time_found
 ) join (select count(*) as total_num from all_run_results where found_by_seed is 0 and confirmed is 1);
 
+DROP VIEW IF EXISTS interesting_run_results;
+CREATE VIEW interesting_run_results
+as
+select *
+from run_results
+where found_by_seed is 0 and covered_by_seed is 1;
+
