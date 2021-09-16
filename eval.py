@@ -2801,15 +2801,38 @@ def plot(plot_dir, title, mut_type, data, num_mutations, absolute):
               </script>'''.format(slug_title=slug_title, func_name=func_name, mut_id=mut_type,
                                   spec1=plot.to_json(indent=None))
     if plot_dir is not None:
+        import matplotlib.pyplot as plt
+        from matplotlib import ticker
+        import seaborn
+        import numpy as np
+
+        seaborn.set(style='ticks')
+
+        fuzzers = data.fuzzer.unique()
+        values = { ff: [] for ff in fuzzers }
+        for row in data.itertuples():
+            if row.prog != 'all':
+                continue
+            values[row.fuzzer].append((row.time, row.value))
+
+        fig, ax = plt.subplots()
+        ax.set_title(title)
+        ax.set_xlabel('Time in Minutes')
+        ax.set_xscale('log')
+        ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
+        ax.set_ylabel('Killed Mutants' if absolute else 'Killed Mutants %')
+        ax.grid(True, which='both')
+        plot_handles = []
+        for ff, vals in values.items():
+            x, y = list(zip(*vals))
+            handle, = ax.plot(x, y, label=ff)
+            plot_handles.append(handle)
+        ax.legend(handles=plot_handles, title="Fuzzers")
+        seaborn.despine(ax=ax)
+
         plot_path_svg = plot_dir.joinpath(f"{slug_title}.svg")
         plot_path_pdf = plot_path_svg.with_suffix(".pdf")
-        plot.save(f"{plot_path_svg}")
-        proc = subprocess.run(f'cat {plot_path_svg} | inkscape --pipe --export-filename="{plot_path_pdf}"',
-                shell=True, capture_output=True)
-        if proc.returncode != 0:
-            print("Error during conversion from svg to pdf:")
-            print(proc.stdout.decode())
-            print(proc.stderr.decode())
+        fig.savefig(plot_path_pdf, format="pdf")
     return res
 
 def split_vals(val):
@@ -3023,12 +3046,14 @@ def footer():
     </html>
     """
 
-def generate_plots(db_path):
+def generate_plots(db_path, to_disk):
     import pandas as pd
+    db_path = Path(db_path)
 
-    plot_dir = Path("plots").joinpath(Path(db_path).stem)
-    # shutil.rmtree(plot_dir)
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir = db_path.parent/f"plots_{db_path.stem}"
+    if to_disk:
+        shutil.rmtree(plot_dir, ignore_errors=True)
+        plot_dir.mkdir(parents=True, exist_ok=True)
 
     con = sqlite3.connect(db_path)
     con.isolation_level = None
@@ -3068,9 +3093,9 @@ def generate_plots(db_path):
     print("overall")
     total_plot_data = gather_plot_data(runs, run_results)
     if total_plot_data is not None:
-        res += plot(plot_dir, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
-        res += plot(plot_dir, f"Killed Mutants Overall", "overall", total_plot_data['total'], total_plot_data['num_mutations'], False)
-        res += plot(plot_dir, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
+        res += plot(plot_dir if to_disk else None, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
+        res += plot(plot_dir if to_disk else None, f"Killed Mutants Overall", "overall", total_plot_data['total'], total_plot_data['num_mutations'], False)
+        res += plot(plot_dir if to_disk else None, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
     #  res += '<h4>Unique Finds</h4>'
     #  res += 'Left finds what upper does not.'
     #  res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
@@ -3085,7 +3110,7 @@ def generate_plots(db_path):
         )
     res += footer()
 
-    out_path = Path(db_path).with_suffix(".html").resolve()
+    out_path = db_path.with_suffix(".html").resolve()
     print(f"Writing plots to: {out_path}")
     with open(out_path, 'w') as f:
         f.write(res)
@@ -3411,6 +3436,8 @@ def main():
 
     # CMD: plot 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
+    parser_seed.add_argument("--store-plots", default=False, action="store_true",
+            help="If the images should be written to disk.")
     parser_seed.add_argument("db_path", help="The sqlite database to plot.")
 
     # CMD: merge 
@@ -3445,7 +3472,7 @@ def main():
     elif args.cmd == 'import_seeds':
         import_seeds(args.source_seed_dir)
     elif args.cmd == 'plot':
-        generate_plots(args.db_path)
+        generate_plots(args.db_path, args.store_plots)
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
