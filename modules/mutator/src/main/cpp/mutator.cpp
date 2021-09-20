@@ -98,6 +98,10 @@ namespace {
                     if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &obj, M)) {
                         // we successfully mutated and can stop here as we do not want to mutate the same location
                         // more than once
+                         std::string instructionString;
+                        llvm::raw_string_ostream os(instructionString);
+                        instr->print(os);
+                        std::cout << "[INFO C] Applied mutation " << obj["UID"] << " on instruction " << os.str() << "\n";
                         break;
                     }
                 }
@@ -116,19 +120,6 @@ namespace {
             std::vector<Instruction *> toInstrument;
             for (BasicBlock &bb : F) {
                 auto first_insertion_point = bb.getFirstInsertionPt();
-//
-//            IRBuilder<> builder(&bb, first_insertion_point);
-//
-//            std::vector<Value*> iHeaderArgs;
-//            createStaticArgList(&builder, iHeaderArgs, &*first_insertion_point);
-//            builderMutex.lock();
-//            iHeaderArgs[0] = builder.getInt64(additionalOperators.at("bbenter")->opcode);
-//            builder.CreateCall(tracer("instructionHeader"), iHeaderArgs);
-//            std::vector<Value*> bbEnterArgs;
-//            bbEnterArgs.push_back(builder.getInt64(bbIDCounter++));
-//            builder.CreateCall(tracer("enterBasicBlock"), bbEnterArgs);
-//            builder.CreateCall(tracer("instructionEnd"), {});
-//            builderMutex.unlock();
 
                 for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb) {
                     toInstrument.push_back(&*itr_bb);
