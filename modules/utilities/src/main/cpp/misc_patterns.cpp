@@ -85,7 +85,7 @@ bool CMPXCHGPattern::mutate(
         json *seglist,
         Module& M
 ) {
-    auto surroundingFunction = instr->getFunction()->getName().str();
+    auto surroundingFunction = getFunctionNameSafe(instr);
     auto segref = *seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == ATOMIC_CMP_XCHG
@@ -102,6 +102,8 @@ bool CMPXCHGPattern::mutate(
     }
     return false;
 }
+
+
 
 std::vector<std::string>
 ATOMICRMWPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {

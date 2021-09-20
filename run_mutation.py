@@ -39,7 +39,7 @@ def run_mutation(args):
         mutate = prog
 
     # only run the find algorithm if no mutation should be done
-    if args.mutate == -2:
+    if args.mutate == -2 and not args.mutatelist:
         arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate]
         if args.cpp:
             arguments.append("-cpp")
@@ -59,8 +59,14 @@ def run_mutation(args):
         if args.cpp:
             arguments.append("-cpp")
         # mutation(s) to apply
-        arguments.append("-m")
-        arguments.append(str(args.mutate))  # type must be string when running the subprocess
+        # if a specific id is given, apply this, else apply a set of mutations if a list is given
+        if args.mutate != -2:
+            arguments.append("-m")
+            arguments.append(str(args.mutate))  # type must be string when running the subprocess
+        else:
+            arguments.append("-ml")
+            for val in args.mutatelist:
+                arguments.append(str(val))
         # compiler args
         arguments.append("--bc-args=" + args.bc_args)
         arguments.append("--bin-args=" + args.bin_args)
@@ -84,6 +90,8 @@ def main():
                         help="Uses clang++ instead of clang for compilation.")
     parser.add_argument("-m", "--mutate", type=int, default=-2,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
+    parser.add_argument("-ml", "--mutatelist", type=int, nargs="*", default=[],
+                        help="Defines which mutations should be applied, a sequence of integers: -ml 1 2 3")
     parser.add_argument("--bc-args", default="",
                         help="Compiler arguments that should be used for compilation for all artifacts.")
     parser.add_argument("--bin-args", default="",
@@ -97,7 +105,11 @@ def main():
     if args.mutate != -2 and not any([args.bitcode, args.bitcode_human_readable, args.binary]):
         parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
 
+    if args.mutate != -2 and not args.mutatelist:
+        parser.error("Either mutate or mutatelist can be activated, not both.")
+
     run_mutation(args)
+
 
 if __name__ == "__main__":
     main()

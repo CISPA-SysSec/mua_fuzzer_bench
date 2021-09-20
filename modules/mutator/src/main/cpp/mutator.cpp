@@ -12,6 +12,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
+#include <iostream>
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -25,7 +26,7 @@ using namespace llvm;
 cl::opt<std::string> Mutation("mutation_pattern",
                                    cl::desc("the source location and mutation pattern"),
                                    cl::value_desc("string"));
-cl::opt<bool> CPP ("cpp", cl::desc("Enable CPP-only mutations"));
+cl::opt<bool> CPP("cpp", cl::desc("Enable CPP-only mutations"));
 
 namespace {
 //counter for method calls, each method call gets a unique ID
@@ -92,7 +93,19 @@ namespace {
                     return;
                 }
             }
-            mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
+            if (seglist.is_array()) {
+//                std::cout << "[INFO C] Mutating:" << seglist[0]["UID"] << "\n" << std::flush;
+                for (auto obj : seglist) {
+                    std::cout << "[INFO C] Mutating:" << obj["UID"] << "\n" << std::flush;
+                    if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &obj, M)) {
+                        // we successfully mutated and can stop here as we do not want to mutate the same location
+                        // more than once
+                        break;
+                    }
+                }
+            } else {
+                mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
+            }
         }
 
 

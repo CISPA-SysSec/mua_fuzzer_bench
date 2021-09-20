@@ -75,6 +75,7 @@ protected:
     static std::string getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo);
 
     static void addMutationFoundSignal(IRBuilder<>* builder, Module& M, int UID);
+    static std::string getFunctionNameSafe(Instruction *instr);
 
 };
 
