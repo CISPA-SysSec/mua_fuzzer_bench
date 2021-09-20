@@ -1,10 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
+int my_malloc(int a) {
+    return a;
+}
+
 int main(int argc, char** argv) {
     char inp[3];
-    fgets(inp, 3, stdin);
+    int num_read = 3;
+    fgets(inp, num_read, stdin);
     int size = atoi(inp);
+    char tmp_size = 12;
+    int* test = malloc(tmp_size);
     char* buffer = malloc(sizeof(char) * size);
     char* buffer2 = malloc(sizeof(char) * size);
     for (int i = 0; i <= size - 1; i++) {
