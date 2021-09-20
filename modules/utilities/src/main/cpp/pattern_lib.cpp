@@ -9,20 +9,6 @@ using json = nlohmann::json;
 
 int Pattern::PatternIDCounter = 0;
 
-std::string
-Pattern::getFunctionNameSafe(Instruction *instr) {
-    std::cout << "[INFO C] Instruction: " << instr << "\n" << std::flush;
-    auto function = instr->getFunction();
-    if (function and function->hasName()) {
-        std::cout << "[INFO C] Function: " << function << "\n" << std::flush;
-//        std::cout << "[INFO C] Instruction: " << function->getName() << "\n" << std::flush;
-        std::cout << "[INFO C] Name: " << function->getName().str() << "\n" << std::flush;
-        return function->getName().str();
-    } else {
-        return "DUMMYFUNCTION";
-    }
-}
-
 std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type){
     json j;
     return getIdentifierString(instr, builder, builderMutex, M, type, j);

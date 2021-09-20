@@ -94,9 +94,7 @@ namespace {
                 }
             }
             if (seglist.is_array()) {
-//                std::cout << "[INFO C] Mutating:" << seglist[0]["UID"] << "\n" << std::flush;
                 for (auto obj : seglist) {
-                    std::cout << "[INFO C] Mutating:" << obj["UID"] << "\n" << std::flush;
                     if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &obj, M)) {
                         // we successfully mutated and can stop here as we do not want to mutate the same location
                         // more than once
