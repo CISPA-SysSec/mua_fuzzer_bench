@@ -1052,8 +1052,8 @@ def check_crashing_inputs(testing_container, crashing_inputs, crash_dir,
     return False
 
 
-# Eval function for the afl plus plus fuzzer, compiles the mutated program
-# and fuzzes it. Finally various eval data is returned
+# Does all the eval steps, each fuzzer eval function is based on this one.
+# Compiles the mutated program and fuzzes it. Finally the eval data is returned.
 def base_eval(run_data, docker_image):
     # get start time for the eval
     start_time = time.time()
@@ -2715,6 +2715,47 @@ def prog_stats(con):
     res += stats.to_html()
     return res
 
+def latex_stats(out_dir, con):
+    import pandas as pd
+    print(f"Writing latex tables to: {out_dir}")
+
+    stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
+    stats[['fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
+        buf=out_dir/"fuzzer-stats.tex",
+        header=['fuzzer', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+        index=False,
+    )
+
+    stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
+    stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
+        buf=out_dir/"prog-stats.tex",
+        header=['prog', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+        index=False,
+    )
+
+    stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
+    stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
+        buf=out_dir/"mut-type-stats.tex",
+        header=['mutation', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+        index=False,
+    )
+
+    old_max_with = pd.get_option('display.max_colwidth')
+    pd.set_option('display.max_colwidth', 1000)
+
+    stats = pd.read_sql_query("SELECT * from mutation_types", con)
+    stats[['pattern_name', 'description', 'procedure']].to_latex(
+        buf=out_dir/"mutations.tex",
+        header=['mutation', 'description', 'procedure'],
+        index=False,
+        column_format="p{.18\\textwidth}p{.4\\textwidth}p{.4\\textwidth}",
+        escape=False,
+        longtable=True,
+        multirow=True,
+    )
+
+    pd.set_option('display.max_colwidth', old_max_with)
+
 def aflpp_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from aflpp_runtime_stats", con)
@@ -3058,10 +3099,13 @@ def generate_plots(db_path, to_disk):
     con = sqlite3.connect(db_path)
     con.isolation_level = None
     con.row_factory = sqlite3.Row
-    cur = con.cursor()
 
     with open("eval.sql", "rt") as f:
+        cur = con.cursor()
         cur.executescript(f.read())
+
+    if to_disk:
+        latex_stats(plot_dir, con)
 
     res = header()
     print("crashes")
@@ -3436,8 +3480,8 @@ def main():
 
     # CMD: plot 
     parser_seed = subparsers.add_parser('plot', help="Generate plots for the gathered data")
-    parser_seed.add_argument("--store-plots", default=False, action="store_true",
-            help="If the images should be written to disk.")
+    parser_seed.add_argument("--artifacts", default=False, action="store_true",
+            help="If further detailed plots and latex tables should be written to disk.")
     parser_seed.add_argument("db_path", help="The sqlite database to plot.")
 
     # CMD: merge 
@@ -3472,7 +3516,7 @@ def main():
     elif args.cmd == 'import_seeds':
         import_seeds(args.source_seed_dir)
     elif args.cmd == 'plot':
-        generate_plots(args.db_path, args.store_plots)
+        generate_plots(args.db_path, args.artifacts)
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
