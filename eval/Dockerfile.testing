@@ -47,7 +47,7 @@ WORKDIR /
 
 COPY eval/run_bin.sh .
 RUN chmod +x run_bin.sh
-COPY iterate_seeds.py .
+COPY eval_scripts/iterate_seeds.py .
 RUN chmod +x iterate_seeds.py
 
 USER user

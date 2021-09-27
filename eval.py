@@ -804,14 +804,19 @@ class DockerLogStreamer(threading.Thread):
 
     def run(self):
         global should_run
-        try:
-            for line in self.container.logs(stream=True):
+
+        def add_lines(lines):
+            for line in lines:
                 line = line.decode()
                 if SHOW_CONTAINER_LOGS:
                     print(line.rstrip())
                 if "Fuzzing test case #" in line:
                     continue
                 self.q.put(line)
+
+        try:
+            # keep getting logs
+            add_lines(self.container.logs(stream=True))
         except Exception as exc:
             error_message = traceback.format_exc()
             for line in error_message.splitlines():
@@ -3433,6 +3438,173 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs):
     print("seed minimization done :)")
 
 
+def seed_coverage_run(run_data, docker_image):
+    global should_run
+    start_time = time.time()
+
+    print(run_data, docker_image)
+
+    # extract used values
+    mut_data = run_data['mut_data']
+    workdir = run_data['workdir']
+    orig_bin = run_data['orig_bin']
+    args = mut_data['args']
+    seed_path = run_data['seed_path']
+    # seeds_out = run_data['seed_out_dir']
+
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # get access to the docker client to start the container
+    docker_client = docker.from_env()
+
+    # Start and run the container
+    container = docker_client.containers.run(
+        docker_image, # the image
+        [
+            "/home/mutator/seed_coverage.py",
+            "--prog", str(orig_bin),
+            "--prog-args", str(args),
+            "--seeds", str(seed_path),
+            "--workdir", str(workdir),
+        ], # the arguments
+        user=os.getuid(),
+        privileged=True,
+        init=True,
+        auto_remove=True,
+        volumes={
+            str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+        },
+        working_dir=str(workdir),
+        mem_swappiness=0,
+        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
+            config={'max-size': '10m'}),
+        detach=True
+    )
+
+    logs_queue = queue.Queue()
+    DockerLogStreamer(logs_queue, container).start()
+
+    while should_run:
+        # check if the process stopped, this should only happen in an
+        # error case
+        try:
+            container.reload()
+        except docker.errors.NotFound:
+            # container is dead stop waiting
+            break
+        if container.status not in ["running", "created"]:
+            break
+
+        # Sleep so we only check sometimes and do not busy loop
+        time.sleep(CHECK_INTERVAL)
+
+    # Check if container is still running
+    try:
+        container.reload()
+        if container.status in ["running", "created"]:
+
+            # Send sigint to the process
+            container.kill(2)
+
+            # Wait up to 10 seconds then send sigkill
+            container.stop()
+    except docker.errors.NotFound:
+        # container is dead just continue maybe it worked
+        pass
+
+    all_logs = []
+    while True:
+        line = logs_queue.get()
+        if line == None:
+            break
+        all_logs.append(line)
+
+    return all_logs
+
+
+def seed_coverage(seed_path, res_path, prog):
+    global should_run
+    seed_path = Path(seed_path)
+    res_path = Path(res_path).with_suffix(".json")
+
+    if res_path.exists():
+        print(f"Result path already exists, to avoid data loss, it is required that this dir does not exist: {res_path}")
+        sys.exit(1)
+
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/seed_coverage")
+    shutil.rmtree(base_shm_dir, ignore_errors=True)
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    build_subject_docker_images([prog])
+
+    try:
+        prog_info = PROGRAMS[prog]
+    except Exception as err:
+        print(err)
+        print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+        sys.exit(1)
+
+    if not seed_path.is_dir():
+        print(f"There is no seed directory for prog: {prog}, seed files need be in this dir: {seed_path}")
+        sys.exit(1)
+
+    active_dir = base_shm_dir/f"{prog}"
+    active_dir.mkdir()
+
+    # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
+    seed_in_tmp_dir = active_dir/"seeds_in"
+    seed_in_tmp_dir.mkdir()
+    for ff in seed_path.glob("*"):
+        if ff.is_dir():
+            print("Did not expect any directories in the seed path, something is wrong.")
+            sys.exit(1)
+        shutil.copy2(ff, seed_in_tmp_dir)
+
+    # Compile arguments
+    compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+    # Arguments on how to execute the binary
+    args = prog_info['args']
+
+    mut_data = {
+        'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+        'compile_args': compile_args,
+        'is_cpp': prog_info['is_cpp'],
+        'args': args,
+        'prog': prog,
+        'dict': prog_info['dict'],
+    }
+
+    workdir = active_dir/"workdir"
+    workdir.mkdir()
+
+    orig_bin = Path(prog_info['orig_bin'])
+    print(orig_bin)
+
+    # copy bin into workdir for easy access
+    shutil.copy2(orig_bin, workdir)
+    orig_bin = workdir/orig_bin.name
+    print(orig_bin)
+
+    run_data = {
+        'orig_bin': orig_bin,
+        'workdir': workdir,
+        'seed_path': seed_in_tmp_dir,
+        'mut_data': mut_data,
+    }
+
+    # collect the seed coverage
+    all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
+
+    res_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(workdir/f"result.json", res_path)
+
+    # clean up tmp dirs (everything should have happened inside the active dir)
+    shutil.rmtree(active_dir)
+
+
+
 def main():
     import sys
     import argparse
@@ -3505,6 +3677,16 @@ def main():
     parser_eval.add_argument("--fuzzers", nargs='+', required=True,
         help='The fuzzer on which is used to minimize the seeds.')
 
+    # CMD: seed_coverage
+    parser_eval = subparsers.add_parser('seed_coverage',
+            help="Measure the seed coverage on the programs using kcov.")
+    parser_eval.add_argument("--seed-path", required=True,
+            help=f'The base dir for the seed files. Needs to be inside: {HOST_TMP_PATH}')
+    parser_eval.add_argument("--res-path", required=True,
+            help=f'The path where the coverage stats will be written to. Needs to be inside: {HOST_TMP_PATH}')
+    parser_eval.add_argument("--prog", required=True,
+        help='The program for which to measure coverage.')
+
     args = parser.parse_args()
 
     if args.cmd == 'eval':
@@ -3521,6 +3703,8 @@ def main():
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
         minimize_seeds(args.seed_path, args.res_path, args.fuzzers, args.progs)
+    elif args.cmd == 'seed_coverage':
+        seed_coverage(args.seed_path, args.res_path, args.prog)
     else:
         parser.print_help(sys.stderr)
 
