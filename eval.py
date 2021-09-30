@@ -2724,6 +2724,9 @@ def latex_stats(out_dir, con):
     import pandas as pd
     print(f"Writing latex tables to: {out_dir}")
 
+    old_float_format = pd.options.display.float_format
+    pd.options.display.float_format = lambda x : '{:.0f}'.format(x) if round(x,0) == x else '{:,.2f}'.format(x)
+
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
     stats[['fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
         buf=out_dir/"fuzzer-stats.tex",
@@ -2732,16 +2735,23 @@ def latex_stats(out_dir, con):
     )
 
     stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
-    stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
+    stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
         buf=out_dir/"prog-stats.tex",
-        header=['prog', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+        header=['prog', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
         index=False,
     )
 
     stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
-    stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
+    stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
         buf=out_dir/"mut-type-stats.tex",
-        header=['mutation', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+        header=['mutation', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
+        index=False,
+    )
+
+    stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
+    stats[['prog', 'fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
+        buf=out_dir/"prog-fuzzer-stats.tex",
+        header=['prog', 'fuzzer', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
         index=False,
     )
 
@@ -2759,6 +2769,7 @@ def latex_stats(out_dir, con):
         multirow=True,
     )
 
+    pd.options.display.float_format = old_float_format
     pd.set_option('display.max_colwidth', old_max_with)
 
 def aflpp_stats(con):
@@ -2864,7 +2875,7 @@ def plot(plot_dir, title, mut_type, data, num_mutations, absolute):
         fig, ax = plt.subplots()
         ax.set_title(title)
         ax.set_xlabel('Time in Minutes')
-        ax.set_xscale('log')
+        # ax.set_xscale('log')
         ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
         ax.set_ylabel('Killed Mutants' if absolute else 'Killed Mutants %')
         ax.grid(True, which='both')
@@ -2873,12 +2884,15 @@ def plot(plot_dir, title, mut_type, data, num_mutations, absolute):
             x, y = list(zip(*vals))
             handle, = ax.plot(x, y, label=ff)
             plot_handles.append(handle)
-        ax.legend(handles=plot_handles, title="Fuzzers")
+        ax.legend(handles=plot_handles, bbox_to_anchor=(0.5, -0.2), loc='upper center', ncol=3)
+        # fig.subplots_adjust(top=1-tt, bottom=0.25, wspace=0.2)
+        fig.tight_layout()
         seaborn.despine(ax=ax)
 
         plot_path_svg = plot_dir.joinpath(f"{slug_title}.svg")
         plot_path_pdf = plot_path_svg.with_suffix(".pdf")
         fig.savefig(plot_path_pdf, format="pdf")
+        plt.close(fig)
     return res
 
 def split_vals(val):
