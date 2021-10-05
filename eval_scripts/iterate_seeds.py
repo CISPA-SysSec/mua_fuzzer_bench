@@ -21,7 +21,7 @@ def run_cmd(cmd):
 
 def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
     os.environ['TRIGGERED_OUTPUT'] = ""
-    print(os.environ['TRIGGERED_FOLDER'])
+    print("triggered folder:", os.environ['TRIGGERED_FOLDER'])
     seeds = Path(seeds)
     for path in list(str(pp) for pp in seeds.glob("**/*")):
         path = Path(path)

@@ -47,6 +47,12 @@ else:
 # set the number of concurrent runs
 NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=logical_cores)))
 
+# If the detector binary should be build with ASAN
+WITH_ASAN = os.getenv("MUT_BUILD_ASAN", "0") == "1"
+
+# If the detector binary should be build with MSAN
+WITH_MSAN = os.getenv("MUT_BUILD_MSAN", "0") == "1"
+
 # If container logs should be shown
 SHOW_CONTAINER_LOGS = "MUT_LOGS" in os.environ
 
@@ -402,7 +408,9 @@ class Stats():
             hostname,
             git_status,
             start_time,
-            total_time
+            total_time,
+            with_asan,
+            with_msan
         )
         ''')
 
@@ -559,13 +567,15 @@ class Stats():
 
     @connection
     def new_execution(self, c, exec_id, hostname, git_status, start_time):
-        c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 hostname,
                 git_status,
                 start_time,
-                None
+                None,
+                WITH_ASAN,
+                WITH_MSAN,
             )
         )
         self.conn.commit()
@@ -643,7 +653,6 @@ class Stats():
 
     @connection
     def new_prog(self, c, exec_id, prog, data):
-        print(data)
         c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -1223,6 +1232,20 @@ def aflpp_det_eval(run_data, run_func):
     result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
     return result
 
+def aflpp_asan(run_data, run_func):
+    run_data['crash_dir'] = "output/default/crashes"
+    run_data['fuzzer_args'] = run_data['mut_data']['args']
+    result = run_func(run_data, fuzzer_container_tag("aflpp_asan"))
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
+def aflpp_msan(run_data, run_func):
+    run_data['crash_dir'] = "output/default/crashes"
+    run_data['fuzzer_args'] = run_data['mut_data']['args']
+    result = run_func(run_data, fuzzer_container_tag("aflpp_msan"))
+    result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
+    return result
+
 def afl_eval(run_data, run_func):
     run_data['crash_dir'] = "output/crashes"
     run_data['fuzzer_args'] = run_data['mut_data']['args']
@@ -1293,6 +1316,8 @@ FUZZERS = {
     "afl": afl_eval,
     "aflpp_rec": aflpp_rec_eval,
     "aflpp_det": aflpp_det_eval,
+    "aflpp_asan": aflpp_asan,
+    "aflpp_msan": aflpp_msan,
     "aflpp_fast_exploit": aflppfastexploit_eval,
     "aflpp_mopt": aflppmopt_eval,
     "fairfuzz": fairfuzz_eval,
@@ -1655,7 +1680,7 @@ def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, c
                 '--orig', orig_bin,
                 '--mut', mut_bin,
                 '--workdir', IN_DOCKER_WORKDIR],
-            ['--env', f"TRIGGERED_FOLDER={covered.path}"], timeout=60*5)
+                                 ['--env', f"TRIGGERED_FOLDER={covered.path}"], timeout=60*5*10)
     returncode = proc['returncode']
     # Ran through without problems
     if returncode == 0:
@@ -1678,6 +1703,11 @@ def prepare_mutation(core_to_use, data):
     mut_base_dir = get_mut_base_dir(data)
     mut_base_dir.mkdir(parents=True, exist_ok=True)
     prog_bc.parent.mkdir(parents=True, exist_ok=True)
+
+    if WITH_ASAN:
+        compile_args = "-fsanitize=address " + compile_args
+    if WITH_MSAN:
+        compile_args = "-fsanitize=memory " + compile_args
 
     # get path for covered file and rm the file if it exists
     covered = CoveredFile(mut_base_dir, time.time())
@@ -1860,6 +1890,34 @@ def build_subject_docker_images(progs):
         if proc.returncode != 0:
             print(f"Could not extract {tag} image sample files.", proc)
             sys.exit(1)
+
+    # If running with asan or msan build a unmutated version instrumented with those sanitizers and update the orig_bin path
+    if (WITH_ASAN or WITH_MSAN): #  and prog_info.get('san_is_built') is None:
+        if WITH_ASAN and WITH_MSAN:
+            print("Can't have both active MUT_BUILD_ASAN and MUT_BUILD_MSAN")
+            sys.exit(1)
+
+        with start_mutation_container(None) as build_container:
+            for prog in progs:
+                prog_info = PROGRAMS[prog]
+                if prog_info.get('san_is_built') is not None:
+                    continue
+                compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], "/home/mutator/")
+                orig_bin = Path(prog_info['orig_bin'])
+                orig_sanitizer_bin = str(orig_bin.parent.joinpath(orig_bin.stem + "_san" + orig_bin.suffix))
+                prog_info['orig_bin'] = orig_sanitizer_bin
+                orig_bc = prog_info['orig_bc']
+
+                run_exec_in_container(build_container, True, [
+                    'clang++' if prog_info['is_cpp'] else 'clang',
+                    '-fsanitize=address' if WITH_ASAN else '-fsanitize=memory',
+                    "-g", "-D_FORTIFY_SOURCE=0",
+                    *shlex.split(compile_args),
+                    str(Path("/home/mutator", orig_bc)),
+                    "-o", str(Path("/home/mutator").joinpath(orig_sanitizer_bin))
+                ])
+
+                prog_info['san_is_built'] = True
 
 
 def build_docker_images(fuzzers, progs):
@@ -2605,7 +2663,7 @@ def parse_afl_paths(paths):
         paths_elements.append(elements)
     return paths_elements
 
-TOTAL_FUZZER = 'total'
+TOTAL_FUZZER = 'combined'
 ALL_PROG = 'all'
 
 def header():
@@ -2721,6 +2779,19 @@ def prog_stats(con):
     return res
 
 def latex_stats(out_dir, con):
+    def value_to_file(stats, name, path):
+        val = stats[name].unique()
+        assert len(val) == 1
+        val = val[0]
+        path = path.with_stem(path.stem + "---" + name.replace('_', '-'))
+        with open(path, 'w') as f:
+            f.write(str(val))
+
+    def write_table(latex, path):
+        latex = re.sub(r'\\(toprule|midrule|bottomrule)$', r'\\hline', latex, flags=re.M)
+        with open(path, 'w') as f:
+            f.write(latex)
+
     import pandas as pd
     print(f"Writing latex tables to: {out_dir}")
 
@@ -2728,30 +2799,47 @@ def latex_stats(out_dir, con):
     pd.options.display.float_format = lambda x : '{:.0f}'.format(x) if round(x,0) == x else '{:,.2f}'.format(x)
 
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
-    stats[['fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_f']].to_latex(
-        buf=out_dir/"fuzzer-stats.tex",
-        header=['fuzzer', 'total', 'covered', 'found by seed', 'stubborn', 'found by fuzzer'],
+    stats_total = pd.read_sql_query("SELECT * from interesting_run_results where confirmed is 1 group by exec_id, prog, mut_id, run_ctr", con)
+    combined = len(stats_total)
+
+    value_to_file(stats, 'done', out_dir/"fuzzer-stats.tex")
+    value_to_file(stats, 'covered', out_dir/"fuzzer-stats.tex")
+    value_to_file(stats, 'f_by_seed', out_dir/"fuzzer-stats.tex")
+    value_to_file(stats, 'interesting', out_dir/"fuzzer-stats.tex")
+
+    num_fuzzers = len(stats['fuzzer'])
+    stats = stats[['fuzzer', 'f_by_f']]
+    stats.loc[-1] = ['combined', combined]
+    stats.index = stats.index + 1
+    stats = stats.sort_index()
+    write_table(stats.T.to_latex(
         index=False,
-    )
+        header=False,
+        na_rep='---',
+        column_format="c"*(num_fuzzers+1),
+    ), out_dir/"fuzzer-stats.tex")
 
     stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
     stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
         buf=out_dir/"prog-stats.tex",
-        header=['prog', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
+        header=['prog', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
+        na_rep='---',
         index=False,
     )
 
     stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
     stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
         buf=out_dir/"mut-type-stats.tex",
-        header=['mutation', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
+        header=['mutation', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
+        na_rep='---',
         index=False,
     )
 
     stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
     stats[['prog', 'fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
         buf=out_dir/"prog-fuzzer-stats.tex",
-        header=['prog', 'fuzzer', 'total', 'covered', 'found by seed', 'stubborn', 'by one', 'by all'],
+        header=['prog', 'fuzzer', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
+        na_rep='---',
         index=False,
     )
 
@@ -2762,6 +2850,7 @@ def latex_stats(out_dir, con):
     stats[['pattern_name', 'description', 'procedure']].to_latex(
         buf=out_dir/"mutations.tex",
         header=['mutation', 'description', 'procedure'],
+        na_rep='---',
         index=False,
         column_format="p{.18\\textwidth}p{.4\\textwidth}p{.4\\textwidth}",
         escape=False,
@@ -3181,7 +3270,6 @@ def generate_plots(db_path, to_disk):
 
 
 def merge_dbs(out_path, in_paths):
-    assert len(in_paths) >= 2, f"Need at least two dbs to merge but got: {in_paths}"
     print(out_path, in_paths)
 
     out_db_path = Path(out_path)
@@ -3594,12 +3682,10 @@ def seed_coverage(seed_path, res_path, prog):
     workdir.mkdir()
 
     orig_bin = Path(prog_info['orig_bin'])
-    print(orig_bin)
 
     # copy bin into workdir for easy access
     shutil.copy2(orig_bin, workdir)
     orig_bin = workdir/orig_bin.name
-    print(orig_bin)
 
     run_data = {
         'orig_bin': orig_bin,

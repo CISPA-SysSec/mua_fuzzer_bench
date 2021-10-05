@@ -50,6 +50,7 @@ void signal_triggered_mutation(int64_t UID) {
         int fd = open(filename, O_CREAT);
         fsync(fd);
         close(fd);
+        free(filename);
     }
 }
 
