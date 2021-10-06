@@ -118,7 +118,7 @@ select
 	end
 	as stage
 from all_runs
-left join executed_seeds using (exec_id, prog, mutation_id)
+left join executed_seeds using (exec_id, prog, run_ctr, fuzzer, mutation_id)
 left join executed_runs using (exec_id, prog, mutation_id, run_ctr, fuzzer)
 left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
 left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)

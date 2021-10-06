@@ -5,6 +5,8 @@ import shlex
 import sys
 import subprocess
 import argparse
+import json
+import tempfile
 from pathlib import Path
 
 
@@ -19,13 +21,22 @@ def run_cmd(cmd):
         close_fds=True)
 
 
-def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
+def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
     os.environ['TRIGGERED_OUTPUT'] = ""
-    print("triggered folder:", os.environ['TRIGGERED_FOLDER'])
+    triggered_folder = os.environ.get("TRIGGERED_FOLDER")
+    assert triggered_folder, "Expected to have a triggered folder."
+    triggered_folder = Path(triggered_folder)
+    print("triggered folder:", triggered_folder)
+    covered = set()
+    killed = set()
     seeds = Path(seeds)
     for path in list(str(pp) for pp in seeds.glob("**/*")):
         path = Path(path)
         if path.is_file():
+            # clean up triggered folder dir
+            for tf in triggered_folder.glob("*"):
+                tf.unlink()
+
             input_args = args.replace("<WORK>/", workdir
                     ).replace("@@", str(path)
                     ).replace("___FILE___", str(path))
@@ -36,10 +47,14 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
             orig_res = proc.stdout
             orig_returncode = proc.returncode
             if orig_returncode != 0:
-                print("orig bin returncode != 0, crashing base bin:")
-                print("args:", orig_cmd, "returncode:", orig_returncode)
-                print(orig_res)
-                sys.exit(2)
+                with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+                    json.dump({
+                        'result': 'orig_crash',
+                        'path': str(path),
+                        'args': orig_cmd,
+                        'returncode': orig_returncode,
+                        'orig_res': str(orig_res),
+                    }, f)
 
             # Run input on mutated binary
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
@@ -52,16 +67,38 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
 
             if (orig_returncode != mut_returncode):
                 if proc.returncode != 0:
-                   print("seed finds mutation: =======================",
-                         f"returncode orig: {orig_returncode} != mut: {mut_returncode}",
-                           args,
-                           "orig out:",
-                           orig_res,
-                           "======",
-                           "mut out:",
-                           mut_res,
-                           sep="\n")
-                   sys.exit(1)
+                    mutation_ids = set((int(ff.name) for ff in triggered_folder.glob("*")))
+                    new_killed = mutation_ids - killed
+                    killed |= mutation_ids
+                    if new_killed:
+                        with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+                            json.dump({
+                                'result': 'killed',
+                                'mutation_ids': list(new_killed),
+                                'path': str(path),
+                                'args': args,
+                                'orig_cmd': orig_cmd,
+                                'mut_cmd': mut_cmd,
+                                'orig_returncode': orig_returncode,
+                                'mut_returncode': mut_returncode,
+                                'orig_res': str(orig_res),
+                                'mut_res': str(mut_res),
+                                'num_triggered': len(mutation_ids),
+                            }, f)
+
+            # Write out mutations that are covered
+            mutation_ids = set((int(ff.name) for ff in triggered_folder.glob("*")))
+            new_covered = mutation_ids - covered
+
+            if new_covered:
+                with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+                    json.dump({
+                        'result': 'covered',
+                        'path': str(path),
+                        'mutation_ids': list(new_covered),
+                    }, f)
+
+            covered |= mutation_ids
 
 
 def main():
@@ -76,8 +113,10 @@ def main():
             help="The path to the mutated binary.")
     parser.add_argument("--workdir", required=True,
             help="The workdir, replaces <WORK>/ in args.")
+    parser.add_argument("--results", required=True,
+            help="Directory where to put the results.")
     args = parser.parse_args()
-    run_seeds(args.seeds, args.orig, args.mut, args.args, args.workdir)
+    run_seeds(args.seeds, args.orig, args.mut, args.args, args.workdir, args.results)
 
 
 if __name__ == "__main__":
