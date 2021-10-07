@@ -34,9 +34,6 @@ EXEC_ID = str(uuid.uuid4())
 # If no fuzzing should happen and only the seed files should be run once.
 JUST_CHECK_SEED_CRASHES = os.getenv("MUT_JUST_SEED_CRASHES", "0") == "1"
 
-# If only covered mutation should also be fuzzed
-ONLY_IF_COVERED = os.getenv("MUT_ONLY_IF_COVERED", "0") == "1"
-
 if JUST_CHECK_SEED_CRASHES:
     # no fuzzing is done use all resources available
     logical_cores = True
@@ -69,7 +66,10 @@ MAX_CONTAINER_TIME = 60*60 + TIMEOUT  # one hour plus fuzzing timeout should hop
 # Timeout for the fuzzers during seed gathering in seconds
 SEED_TIMEOUT = 60 * 60 * 24  # 24 hours
 
-# If true do filtering of mutations
+# If only covered mutation should also be fuzzed, using the actual mutants.
+ONLY_IF_COVERED = os.getenv("MUT_ONLY_IF_COVERED", "0") == "1"
+
+# If true filter out those mutations that are not covered by seed files, using the detector version.
 FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
 
 # Flag if the fuzzed seeds should be used
@@ -979,16 +979,28 @@ def get_seed_dir(prog, fuzzer):
     """
     prog_seed_dir = SEED_BASE_DIR/prog
     seed_paths = list(prog_seed_dir.glob("*"))
-    if any(sp.is_file() for sp in seed_paths) and any(sp.is_file() for sp in seed_paths):
-        print(f"There are files and directories in {prog_seed_dir}, either the dir only contains files, "
+    has_files = any(sp.is_file() for sp in seed_paths)
+    has_dirs = any(sp.is_dir() for sp in seed_paths)
+    if has_files and has_dirs:
+        raise ValueError(f"There are files and directories in {prog_seed_dir}, either the dir only contains files, "
               f"in which case all files are used as seeds for every fuzzer, or it contains only directories. "
               f"In the second case the content of each fuzzer directory is used as the seeds for the respective fuzzer.")
-    # If the fuzzer specific seed dir exists, return it.
-    prog_fuzzer_seed_dir = prog_seed_dir/fuzzer
-    if prog_fuzzer_seed_dir.is_dir():
+
+    if has_dirs:
+        # If the fuzzer specific seed dir exists, return it.
+        prog_fuzzer_seed_dir = prog_seed_dir/fuzzer
+        if not prog_fuzzer_seed_dir.is_dir():
+            print(f"WARN: Expected seed dir to exist {prog_fuzzer_seed_dir}, using full dir instead: {prog_seed_dir}")
+            return prog_seed_dir
         return prog_fuzzer_seed_dir
-    # Else just return the prog seed dir.
-    return prog_seed_dir
+
+    elif has_files:
+        # Else just return the prog seed dir.
+        return prog_seed_dir
+
+    # Has no content
+    else:
+        raise ValueError("Seed dir has not content.")
 
 
 # returns true if a crashing input is found that only triggers for the
@@ -1337,7 +1349,7 @@ def instrument_prog(container, prog_info):
 
 
 def build_detector_binary(container, prog_info, detector_path, workdir):
-    print(run_exec_in_container(container.name, True, [
+    run_exec_in_container(container.name, True, [
             "./run_mutation.py",
             str(prog_info['orig_bc']),
             *(['-cpp'] if prog_info['is_cpp'] else []),
@@ -1346,7 +1358,7 @@ def build_detector_binary(container, prog_info, detector_path, workdir):
             "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], workdir),
             "--out-dir", str(detector_path.parent)
             ]
-    )['out'])
+    )
 
 
 def get_all_mutations(stats, mutator, progs):
@@ -1382,12 +1394,7 @@ def get_all_mutations(stats, mutator, progs):
             build_detector_binary(mutator, prog_info, detector_bin, ".")
             print("Filtering mutations, running all seed files.")
 
-            filtered_mutations = set()
-
-            for counter, seed in enumerate(list(seeds.glob("**/*"))):
-                _, found_mutations = eval_seed(counter, seed, mutator_home, SIGNAL_FOLDER_NAME, prog_info,
-                          mutation_container_name, mutator_home, prog_path)
-                filtered_mutations |= found_mutations
+            filtered_mutations = filter_mutations(mutator, detector_bin, prog_info['args'], seeds)
 
         # get additional info on mutations
         mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
@@ -1399,20 +1406,22 @@ def get_all_mutations(stats, mutator, progs):
 
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
-        if FILTER_MUTATIONS:
-            print("Filtering mutations, checking the found mutations.")
-            mutations = list((str(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
-        else:
-            mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
-
+        mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
         print(f"Found {len(mutations)} mutations for {prog}")
-
         for mut in mutations:
             stats.new_mutation(EXEC_ID, {
                 'prog': mut[1],
                 'mutation_id': mut[0],
                 'mutation_data': mut[3][int(mut[0])],
             })
+
+        if FILTER_MUTATIONS:
+            print("Updating for filtered mutations, checking the found mutations.")
+            all_mutation_ids = set((p['UID'] for p in mutation_data))
+            filtered_mutation_ids = set((int(m) for m in filtered_mutations))
+            assert len(filtered_mutation_ids - all_mutation_ids) == 0, 'Filtered mutation ids contain ids not in all ids.'
+            mutations = list((str(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
+            print(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         all_mutations.extend(mutations)
         print(f"Preparations for {prog} took: {time.time() - start:.2f} seconds")
@@ -1593,7 +1602,6 @@ def handle_run_result(stats, active_mutants, run_future, data):
 
 
 def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, data):
-    os.system("docker ps | wc -l")
     _, mut_data, fuzzer_runs = data
     prog = mut_data['prog']
     mutation_id = mut_data['mutation_id']
@@ -1673,6 +1681,7 @@ def check_seeds_crashing(testing_container, seed_dir, orig_bin, mut_bin, args, c
     if not seed_dir.is_dir():
         raise ValueError(f"Given seed dir path is not a directory: {seed_dir}")
 
+    # TODO timeout of individual seeds
     proc = run_exec_in_container(testing_container.name, False,
             ['/iterate_seeds.py',
                 '--seeds', seed_dir,
@@ -3322,38 +3331,24 @@ def update_signal_list(signal_list, to_delete: Set[int]):
     return result
 
 
-def eval_seed(active_containers, counter, seed, mutator_tmp_path, SIGNAL_FOLDER_NAME, prog_info, mutator_home, prog_path):
-    global worker_container
-    if worker_container is None:
-        worker_container = start_mutation_container(
-                None, {'environment': {'TRIGGERED_FOLDER': str(SIGNAL_FOLDER_NAME)}}).__enter__()
-        worker_id = id(multiprocessing.current_process())
-        active_containers[worker_id] = worker_container.name
-
-    mutation_container_name = worker_container.name
-
-    seed_abs = mutator_tmp_path/seed
-    workdir = Path(f"/tmp/seed_abs/{counter}/")
-    signal_folder = workdir/SIGNAL_FOLDER_NAME
-
-    run_exec_in_container(mutation_container_name, True,
-        ['mkdir', '-p', str(signal_folder)])
-    args = prog_info['args'].replace("<WORK>/", str(mutator_home)).replace("@@", str(seed_abs))
-    args = " ".join(shlex.split(args))
-    run_exec_in_container(mutation_container_name, True,
-        ['bash', '-c', f"TRIGGERED_FOLDER={signal_folder} {prog_path} {args}"],
-        exec_args=["-w", str(workdir)])
-    found_mutations = run_exec_in_container(mutation_container_name, True,
-        ['find', str(workdir/signal_folder), '-printf', '%f\n'])
-    found_mutations = set((
-        int(mut_id)
-        for mut_id
-        in found_mutations['out'].strip().splitlines()
-        if mut_id.isdecimal()
-    ))
-    run_exec_in_container(mutation_container_name, True,
-        ['rm', '-r', workdir])
-    return seed, found_mutations
+def filter_mutations(mutator, detector_bin, args, seed_dir):
+    # create tmp folder to where to put trigger signals
+    with tempfile.TemporaryDirectory(dir=HOST_TMP_PATH) as trigger_folder:
+        in_docker_trigger_folder = Path('/home/mutator/tmp/').joinpath(Path(trigger_folder).relative_to(HOST_TMP_PATH))
+        # start detector and run through all seed files
+        run_exec_in_container(mutator.name, True,
+            [
+                '/home/mutator/iterate_seeds_simple.py',
+                '--seeds', seed_dir,
+                '--args', args,
+                '--binary', detector_bin,
+                '--workdir', '/home/mutator'
+            ],
+            exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
+            timeout=60*15)
+        # get a list of all mutation ids from triggered folder
+        mutation_ids = list(pp.stem for pp in Path(trigger_folder).glob("**/*"))
+        return mutation_ids
 
 
 def seed_minimization_run(run_data, docker_image):
