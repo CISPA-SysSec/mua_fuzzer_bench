@@ -36,7 +36,10 @@ def mutate_file(args):
     # According to https://en.wikipedia.org/wiki/Darwin_%28operating_system%29#Release_history,
     # MacOS Catalina corresponds to Darwin's major version number 19.
     # The uname.release checks below check if the major version number of Darwin is greater than 18
-    uid = mutation["UID"]
+    if type(mutation) is list:
+        uid = "_".join(str(mut["UID"]) for mut in mutation)
+    else:
+        uid = mutation["UID"]
     print(f"[INFO] Mutating {mutation} to file {out_dir}/{progname}.{uid}.mut\n")
     with open(f"{progsource}.ll") as progsource_file:
         sp_call_args = [opt, "-S", "-load", mutatorplugin, "-mutatorplugin",
@@ -98,11 +101,19 @@ def mutate(sysroot, clang, args):
         if args.mutate == -1:
             for mutation in mutation_jsondata:
                 mutation_list.append((mutation, mutations_folder, prog, progname, sysroot, clang, args))
-        else:
+        elif args.mutate != -2:
             for mutation in mutation_jsondata:
                 if mutation["UID"] == args.mutate:
                     mutation_list.append((mutation, mutations_folder, prog, progname, sysroot, clang, args))
                     break
+        elif args.mutatelist:
+            tmplist = []
+            for mutation in mutation_jsondata:
+                if mutation["UID"] in args.mutatelist:
+                    tmplist.append(mutation)
+            mutation_list.append((tmplist, mutations_folder, prog, progname, sysroot, clang, args))
+        else:
+            print("Neither mutation ID nor mutation given, please define what to mutate!")
         # TODO later this will get logged to have for each id the correct pattern used
         if mutation_list:
             pool = ThreadPool(cpu_count())
@@ -122,8 +133,10 @@ def main():
                         help="Creates mutated runnable binaries.")
     parser.add_argument('-cpp', "--cpp", action='store_true',
                         help="Uses clang++ instead of clang for compilation.")
-    parser.add_argument("-m", "--mutate", type=int,
+    parser.add_argument("-m", "--mutate", type=int, default=-2,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
+    parser.add_argument("-ml", "--mutatelist", type=int, nargs="*", default=[],
+                        help="Defines which mutations should be applied, a sequence of integers: -ml 1 2 3")
     parser.add_argument("--bc-args", default="",
                         help="Compiler arguments that should be used for compilation for all artifacts.")
     parser.add_argument("--bin-args", default="",
@@ -137,6 +150,9 @@ def main():
 
     if not any([args.bitcode, args.bitcode_human_readable, args.binary]):
         parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
+
+    if args.mutate != -2 and not args.mutatelist:
+        parser.error("Either mutate or mutatelist can be activated, not both.")
 
     if args.cpp:
         clang = f"{llvm_bindir}/clang++"

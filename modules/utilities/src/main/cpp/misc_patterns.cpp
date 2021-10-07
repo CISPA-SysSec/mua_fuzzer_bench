@@ -103,6 +103,8 @@ bool CMPXCHGPattern::mutate(
     return false;
 }
 
+
+
 std::vector<std::string>
 ATOMICRMWPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;

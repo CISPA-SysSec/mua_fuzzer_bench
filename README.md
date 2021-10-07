@@ -68,7 +68,7 @@ gradle build
 General invoke:
 ```shell script
 # invokes the mutation pipeline, check for details on how to invoke the project in detail
-./run_mutation.py [-bc] [-ll] [-bn] [-cpp] [-m <int>] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
+./run_mutation.py [-bc] [-ll] [-bn] [-cpp] [-m <int>] [-ml <int>*] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
 ```
 Explanation of optional arguments (at least one must be chosen, otherwise the output would be empty):
 ```
@@ -77,6 +77,9 @@ Explanation of optional arguments (at least one must be chosen, otherwise the ou
 -bn: Generates runnable binaries if possible.
 -m <int>: Defines the mutation ID that should be applied, -1 for all mutations, 
     -2 or left out for just generation the mutationlocations file and a binary that prints
+    covered mutations to the defined folder.
+-m <int>: Defines a list of mutation IDs that should be applied at once, 
+    left out for just generation the mutationlocations file and a binary that prints
     covered mutations to the defined folder.
 -cpp: Uses clang++ for compilation instead of clang.
 ```

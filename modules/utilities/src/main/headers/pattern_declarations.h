@@ -675,6 +675,7 @@ public:
             Module& M
     ) override;
 };
+
 class INetAddrFailPattern: public LibCFailPattern{
 public:
     std::vector<std::string>
