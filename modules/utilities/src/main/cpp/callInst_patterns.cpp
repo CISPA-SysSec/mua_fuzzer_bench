@@ -36,18 +36,17 @@ bool MallocPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.str() == "malloc" || funNameString.str() == "\01_malloc") {
-        if (isMutationLocation(instr, seglist, MALLOC)) {
+        if (isMutationLocation(instr, &seglist, MALLOC)) {
             // substract 1 and give the new value to malloc
             Value* lhs;
             lhs = callinst->getArgOperand(0);
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(), -16));
             builderMutex.unlock();
@@ -77,19 +76,18 @@ bool FGetsPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.str() == "fgets" || funNameString.str() == "\01_fgets") {
-        if (isMutationLocation(instr, seglist, FGETS_MATCH_BUFFER_SIZE)) {
+        if (isMutationLocation(instr, &seglist, FGETS_MATCH_BUFFER_SIZE)) {
             // add 1 to original value, multiply this new value by 5 and then
             // give the value to fgets
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(), 1));
             newVal = builder->CreateMul(newVal, builder->getIntN(lhs->getType()->getIntegerBitWidth(), 5));
@@ -127,13 +125,12 @@ bool PThreadPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
     auto surroundingFunction = instr->getFunction()->getName().str();
-    auto segref = *seglist;
+    auto segref = seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == PTHREAD_MUTEX
         && surroundingFunction == segref["additionalInfo"]["funname"]
@@ -171,18 +168,17 @@ bool CallocPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     auto funNameString = callinst->getCalledFunction()->getName();
     if (funNameString.str() == "calloc" || funNameString.str() == "\01_calloc") {
-        if (isMutationLocation(instr, seglist, CALLOC)) {
+        if (isMutationLocation(instr, &seglist, CALLOC)) {
             // substract 1 and give the new value to malloc
             Value* lhs;
             lhs = callinst->getArgOperand(1);
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             auto newVal = builder->CreateAdd(lhs, builder->getIntN(lhs->getType()->getIntegerBitWidth(),-16));
             builderMutex.unlock();
@@ -212,15 +208,14 @@ bool NewArrayPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callinst = dyn_cast<CallInst>(instr);
     std::string demangled_instr_name = demangle(callinst);
     if (demangled_instr_name.find("operator new[]") != std::string::npos) {
-        if (isMutationLocation(instr, seglist, NEW_ARRAY)){
+        if (isMutationLocation(instr, &seglist, NEW_ARRAY)){
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             Value *op_val = callinst->getOperand(0);
             Value *newVal = builder->CreateSub(op_val, builder->getIntN(op_val->getType()->getIntegerBitWidth(), 5));

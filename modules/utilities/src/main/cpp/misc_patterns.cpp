@@ -26,15 +26,14 @@ bool FreeArgumentReturnPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    auto segref = *seglist;
+    auto segref = seglist;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
         // llvm has only one exit point per function, hence checking for a return instruction and the function name is
         // sufficient; checking for the actual location might sometimes fail as the debug information might be missing
-        if (isMutationLocation(instr, seglist, FREE_FUNCTION_ARGUMENT)) {
+        if (isMutationLocation(instr, &seglist, FREE_FUNCTION_ARGUMENT)) {
 
             builderMutex.lock();
             addMutationFoundSignal(builder, M, segref["UID"]);
@@ -82,11 +81,10 @@ bool CMPXCHGPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto surroundingFunction = instr->getFunction()->getName().str();
-    auto segref = *seglist;
+    auto segref = seglist;
     // we need a more fuzzy match here, the concrete location is not important, only the function
     if (segref["type"] == ATOMIC_CMP_XCHG
         && surroundingFunction == segref["additionalInfo"]["funname"]
@@ -127,18 +125,17 @@ bool ATOMICRMWPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto surroundingFunction = instr->getFunction()->getName().str();
-    auto segref = *seglist;
+    auto segref = seglist;
     // we need a more fuzzy match here, the concrete location is not important, only if we mutate the atomicrmw instruction
     auto rmw = dyn_cast<AtomicRMWInst>(instr);
     if (segref["type"] == ATOMICRMW_REPLACE && rmw)
     {
         builderMutex.lock();
         // we replace the atomicrmw with its non-atomic counterpart
-        auto mutated = convertAtomicBinOpToBinOp(rmw, seglist, nextInstructionBuilder, M);
+        auto mutated = convertAtomicBinOpToBinOp(rmw, &seglist, nextInstructionBuilder, M);
         builderMutex.unlock();
         return mutated;
     }
@@ -233,13 +230,12 @@ bool ShiftSwitch::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    if (isMutationLocation(instr, seglist, SWITCH_SHIFT)) {
+    if (isMutationLocation(instr, &seglist, SWITCH_SHIFT)) {
         if (auto castedlshr = dyn_cast<LShrOperator>(instr)) {
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             auto ashr = builder->CreateAShr(castedlshr->getOperand(0), castedlshr->getOperand(1));
             instr->replaceAllUsesWith(ashr);
@@ -249,7 +245,7 @@ bool ShiftSwitch::mutate(
         } else {
             if (auto castedashr = dyn_cast<AShrOperator>(instr)) {
                 builderMutex.lock();
-                auto segref = *seglist;
+                auto segref = seglist;
                 addMutationFoundSignal(builder, M, segref["UID"]);
                 auto lshr = builder->CreateLShr(castedashr->getOperand(0), castedashr->getOperand(1));
                 instr->replaceAllUsesWith(lshr);
@@ -284,11 +280,10 @@ bool SwitchPlusMinus::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    if (isMutationLocation(instr, seglist, SWITCH_PLUS_MINUS)) {
-        auto segref = *seglist;
+    if (isMutationLocation(instr, &seglist, SWITCH_PLUS_MINUS)) {
+        auto segref = seglist;
         if (auto castedadd = dyn_cast<AddOperator>(instr)) {
             builderMutex.lock();
             addMutationFoundSignal(builder, M, segref["UID"]);
@@ -353,12 +348,11 @@ bool RedirectBranch::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    if (isMutationLocation(instr, seglist, REDIRECT_BRANCH)) {
+    if (isMutationLocation(instr, &seglist, REDIRECT_BRANCH)) {
         if (auto castedBranch = dyn_cast<BranchInst>(instr)) {
-            auto segref = *seglist;
+            auto segref = seglist;
             if (castedBranch->isConditional()) {
                 builderMutex.lock();
                 addMutationFoundSignal(builder, M, segref["UID"]);
@@ -421,10 +415,9 @@ bool UnInitLocalVariables::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    auto segref = *seglist;
+    auto segref = seglist;
     if (segref["type"] != DELETE_LOCAL_STORE) {
         return false;
     }
@@ -506,11 +499,10 @@ bool CompareEqualToPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    auto segref = *seglist;
-    if (isMutationLocation(instr, seglist, COMPARE_EQUAL_TO)) {
+    auto segref = seglist;
+    if (isMutationLocation(instr, &seglist, COMPARE_EQUAL_TO)) {
         if (auto loadInstr =  dyn_cast<LoadInst>(instr)){
             for(auto user : loadInstr->users()){  // user is of type User*
                 if (auto iCmpInstr = dyn_cast<ICmpInst>(user)){
@@ -566,15 +558,14 @@ bool DeleteArgumentReturnPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    auto segref = *seglist;
+    auto segref = seglist;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
         // llvm has only one exit point per function, hence checking for a return instruction and the function name is
         // sufficient; checking for the actual location might sometimes fail as the debug information might be missing
-        if (isMutationLocation(instr, seglist, DELETE_FUNCTION_ARGUMENT)) {
+        if (isMutationLocation(instr, &seglist, DELETE_FUNCTION_ARGUMENT)) {
             builderMutex.lock();
             addMutationFoundSignal(builder, M, segref["UID"]);
             LLVMContext &llvmContext = M.getContext();

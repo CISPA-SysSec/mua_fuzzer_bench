@@ -44,17 +44,16 @@ bool SignedLessThanEqualToPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SLE) {
-        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN_EQUALTO)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_LESS_THAN_EQUALTO)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -103,17 +102,16 @@ bool SignedLessThanEqualToSquaredPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SLE) {
-        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN_EQUALTO_SQUARED)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_LESS_THAN_EQUALTO_SQUARED)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -161,17 +159,16 @@ bool SignedLessThanPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SLT) {
-        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_LESS_THAN)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -219,17 +216,16 @@ bool SignedLessThanSquaredPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SLT) {
-        if (isMutationLocation(instr, seglist, SIGNED_LESS_THAN_SQUARED)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_LESS_THAN_SQUARED)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -278,17 +274,16 @@ bool UnsignedLessThanEqualToPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_ULE) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_EQUALTO)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_LESS_THAN_EQUALTO)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -337,17 +332,16 @@ bool UnsignedLessThanEqualToSquaredPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_ULE) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_EQUALTO_SQUARED)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_LESS_THAN_EQUALTO_SQUARED)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -398,17 +392,16 @@ bool UnsignedLessThanPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_ULT) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_LESS_THAN)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -458,17 +451,16 @@ bool UnsignedLessThanSquaredPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_ULT) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_LESS_THAN_SQUARED)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_LESS_THAN_SQUARED)) {
             // add 1, multiply the whole value by 2 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -510,17 +502,16 @@ bool SignedGreaterThanPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGT) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -560,17 +551,16 @@ bool SignedGreaterThanHalvedPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGT) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_HALVED)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN_HALVED)) {
             // half and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -610,17 +600,16 @@ bool SignedGreaterThanSqrtPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGT) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_SQRT)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN_SQRT)) {
             // half and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -670,17 +659,16 @@ bool SignedGreaterThanEqualToPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGE) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_EQUALTO)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN_EQUALTO)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -721,17 +709,16 @@ bool SignedGreaterThanEqualToHalvedPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGE) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_EQUALTO_HALVED)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN_EQUALTO_HALVED)) {
             // half and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -772,17 +759,16 @@ bool SignedGreaterThanEqualToSqrtPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_SGE) {
-        if (isMutationLocation(instr, seglist, SIGNED_GREATER_THAN_EQUALTO_SQRT)) {
+        if (isMutationLocation(instr, &seglist, SIGNED_GREATER_THAN_EQUALTO_SQRT)) {
             // half and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -831,17 +817,16 @@ bool UnsignedGreaterThanPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGT) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -881,17 +866,16 @@ bool UnsignedGreaterThanHalvedPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGT) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_HALVED)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN_HALVED)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -931,17 +915,16 @@ bool UnsignedGreaterThanSqrtPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGT) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_SQRT)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN_SQRT)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -991,17 +974,16 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGE) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_EQUALTO)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN_EQUALTO)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -1042,17 +1024,16 @@ bool UnsignedGreaterThanEqualToHalvedPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGE) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_EQUALTO_HALVED)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN_EQUALTO_HALVED)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -1093,17 +1074,16 @@ bool UnsignedGreaterThanEqualToSqrtPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
     auto predicate = icmpinst->getPredicate();
     if (predicate == CmpInst::Predicate::ICMP_UGE) {
-        if (isMutationLocation(instr, seglist, UNSIGNED_GREATER_THAN_EQUALTO_SQRT)) {
+        if (isMutationLocation(instr, &seglist, UNSIGNED_GREATER_THAN_EQUALTO_SQRT)) {
             // substract 1 and give the new value to the instruction
             Value* rhs;
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             rhs = icmpinst->getOperand(1);
             Value *newVal;
@@ -1153,7 +1133,6 @@ bool SignedToUnsigned::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
@@ -1161,10 +1140,10 @@ bool SignedToUnsigned::mutate(
     if (predicate == CmpInst::Predicate::ICMP_SGT || predicate == CmpInst::Predicate::ICMP_SGE
         || predicate == CmpInst::Predicate::ICMP_SLT || predicate == CmpInst::Predicate::ICMP_SLE) {
         std::vector<int> typelist {SIGNED_TO_UNSIGNED};
-        if (isMutationLocation(instr, seglist, &typelist)) {
+        if (isMutationLocation(instr, &seglist, &typelist)) {
             // change from signed to unsigned
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_SGT) {
@@ -1215,7 +1194,6 @@ bool UnsignedToSigned::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* icmpinst = dyn_cast<ICmpInst>(instr);
@@ -1223,10 +1201,10 @@ bool UnsignedToSigned::mutate(
     if (predicate == CmpInst::Predicate::ICMP_UGT || predicate == CmpInst::Predicate::ICMP_UGE
         || predicate == CmpInst::Predicate::ICMP_ULT || predicate == CmpInst::Predicate::ICMP_ULE) {
         std::vector<int> typelist {UNSIGNED_TO_SIGNED};
-        if (isMutationLocation(instr, seglist, &typelist)) {
+        if (isMutationLocation(instr, &seglist, &typelist)) {
             // change from signed to unsigned
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             builderMutex.unlock();
             if (predicate == CmpInst::Predicate::ICMP_UGT) {

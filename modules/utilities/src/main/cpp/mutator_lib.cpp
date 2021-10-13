@@ -88,7 +88,6 @@ bool mutatePattern(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 )
 {
@@ -97,17 +96,17 @@ bool mutatePattern(
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
             for (auto &mutator : CallInstPatterns){
-                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
             }
         }
     }
     else if (dyn_cast<ICmpInst>(instr)){
         for (auto &mutator : ICmpInstPatterns){
-                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
         }
     } else {
         for (auto &mutator : MiscInstPatterns){
-                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M);
+                mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
         }
     }
     return mutated;

@@ -71,10 +71,9 @@ bool INetAddrFailPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
-    return concreteMutate(builder, nextInstructionBuilder, instr, builderMutex, seglist, M, INET_ADDR_FAIL_WITHOUTCHECK, -1);
+    return concreteMutate(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M, INET_ADDR_FAIL_WITHOUTCHECK, -1);
 }
 
 
@@ -93,14 +92,13 @@ bool PrintfPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callInstr = dyn_cast<CallInst>(instr);
     if (callInstr){
-        if (isMutationLocation(instr, seglist, PRINTF)){
+        if (isMutationLocation(instr, &seglist, PRINTF)){
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             std::vector<Value*> cfn_args;
             for (int i =0; i<callInstr->getNumArgOperands(); i++){
@@ -127,14 +125,13 @@ bool SPrintfPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callInstr = dyn_cast<CallInst>(instr);
     if (callInstr){
-        if (isMutationLocation(instr, seglist, SPRINTF)){
+        if (isMutationLocation(instr, &seglist, SPRINTF)){
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             std::vector<Value*> cfn_args;
             for (int i =0; i<callInstr->getNumArgOperands(); i++){
@@ -162,14 +159,13 @@ bool SNPrintfPattern::mutate(
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
         std::mutex& builderMutex,
-        json *seglist,
         Module& M
 ) {
     auto* callInstr = dyn_cast<CallInst>(instr);
     if (callInstr){
-        if (isMutationLocation(instr, seglist, SNPRINTF)){
+        if (isMutationLocation(instr, &seglist, SNPRINTF)){
             builderMutex.lock();
-            auto segref = *seglist;
+            auto segref = seglist;
             addMutationFoundSignal(builder, M, segref["UID"]);
             std::vector<Value*> cfn_args;
             for (int i =0; i<callInstr->getNumArgOperands(); i++){

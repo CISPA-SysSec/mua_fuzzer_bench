@@ -3,6 +3,8 @@
 //
 
 #include <iostream>
+#include <pattern_declarations.h>
+
 #include "../public/pattern_lib.h"
 #include "pattern_list.h"
 using json = nlohmann::json;
@@ -55,6 +57,14 @@ std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, in
     j["UID"] = PatternIDCounter++;
     j["additionalInfo"] = additionalInfo;
     return j.dump(4);
+}
+
+Pattern::Pattern() {
+    seglist = nullptr;
+}
+
+Pattern::Pattern(json* pattern) {
+    seglist = *pattern;
 }
 
 /**

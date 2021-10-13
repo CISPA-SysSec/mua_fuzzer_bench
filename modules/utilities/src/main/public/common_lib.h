@@ -16,10 +16,13 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include <../dependencies/json.hpp>
 
 using namespace llvm;
+using json = nlohmann::json;
 
 void populatePatternVectors(bool cpp);
+void populatePatternVectors(json* patternList);
 void insertMutationApiFunctions(Module& M, bool cpp);
 
 

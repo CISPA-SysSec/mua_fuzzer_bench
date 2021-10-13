@@ -93,20 +93,15 @@ namespace {
                     return;
                 }
             }
-            if (seglist.is_array()) {
-                for (auto obj : seglist) {
-                    if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &obj, M)) {
-                        // we successfully mutated and can stop here as we do not want to mutate the same location
-                        // more than once
-                         std::string instructionString;
-                        llvm::raw_string_ostream os(instructionString);
-                        instr->print(os);
-                        std::cout << "[INFO C] Applied mutation " << obj["UID"] << " on instruction " << os.str() << "\n";
-                        break;
-                    }
-                }
-            } else {
-                mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, &seglist, M);
+            std::string instructionString;
+            llvm::raw_string_ostream os(instructionString);
+            instr->print(os);
+            std::cout << "Running on: " << os.str() << "\n" << std::flush;
+            if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, M)) {
+//                std::string instructionString;
+//                llvm::raw_string_ostream os(instructionString);
+//                instr->print(os);
+//                std::cout << "[INFO C] Applied mutation on instruction " << os.str() << "\n";
             }
         }
 
@@ -153,11 +148,11 @@ namespace {
             std::mutex builderMutex;
             std::mutex fileMutex;
             // std::cout << "[INFO C] Mutating: " << Mutation << "\n";
-            populatePatternVectors(CPP);
+            seglist = json::parse(Mutation);
+            populatePatternVectors(&seglist);
             insertMutationApiFunctions(M, CPP);
             //Parsing the string into a json
             std::string segment;
-            seglist = json::parse(Mutation);
             unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
 //        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
