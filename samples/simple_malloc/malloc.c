@@ -9,6 +9,7 @@ int my_malloc(int a) {
 int main(int argc, char** argv) {
     char inp[3];
     int num_read = 3;
+    printf("%d", my_malloc(5));
     fgets(inp, num_read, stdin);
     int size = atoi(inp);
     char tmp_size = 12;

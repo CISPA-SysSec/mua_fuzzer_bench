@@ -31,6 +31,7 @@ int funcounter = 0;
 
 std::ofstream mutationLocationsstream;
 std::vector<std::string> mutationLocationsvector;
+json callgraph;
 
 class Worker
 {
@@ -130,11 +131,22 @@ public:
             }
         }
 
+        auto funNameArray = json::array();
         for (Instruction* instr : toInstrument)
         {
+            if (auto* callinst = dyn_cast<CallInst>(instr))
+            {
+                Function* fun = callinst->getCalledFunction();
+                if (fun != nullptr && !fun->isIntrinsic()) {
+                    funNameArray.push_back(callinst->getCalledFunction()->getName().str());
+                }
+            }
             handInstructionToPatternMatchers(instr);
         }
 
+        builderMutex.lock();
+        callgraph[F.getName().str()] = funNameArray;
+        builderMutex.unlock();
         return true;
     }
 };
@@ -191,6 +203,10 @@ struct MutatorPlugin : public ModulePass
         }
         mutationLocationsstream << "]";
         mutationLocationsstream.close();
+        std::ofstream graphStream;
+        graphStream.open(std::string(MutationLocationFile.c_str()) + ".graph");
+        graphStream << callgraph.dump(4);
+        graphStream.close();
         return true;
     }
 };
