@@ -96,7 +96,6 @@ namespace {
             std::string instructionString;
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
-            std::cout << "Running on: " << os.str() << "\n" << std::flush;
             if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, M)) {
 //                std::string instructionString;
 //                llvm::raw_string_ostream os(instructionString);
