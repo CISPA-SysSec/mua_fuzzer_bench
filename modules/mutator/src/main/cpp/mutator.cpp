@@ -96,6 +96,7 @@ namespace {
             std::string instructionString;
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
+            // NEVER delete any instruction other than the one we are currently working on, this may result in undef behavior!
             if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, M)) {
 //                std::string instructionString;
 //                llvm::raw_string_ostream os(instructionString);
