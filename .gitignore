@@ -13,6 +13,7 @@ samples/**/mutations/*
 *.bc
 *.out
 *.zip
+*.graph
 
 # custom exclude since this is on my machine for testing -- BM
 /samples/mjs_local/
