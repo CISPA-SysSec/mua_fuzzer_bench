@@ -584,3 +584,38 @@ bool DeleteArgumentReturnPattern::mutate(
     }
     return false;
 }
+
+
+std::vector<std::string>
+DeleteStorePattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    if (auto storeInst = dyn_cast<StoreInst>(instr)) {
+        results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_STORE_PATTERN));
+    }
+    return results;
+}
+
+/**
+ * Delete the given store instruction to simulate a  forgotten variable assignment.
+ */
+bool DeleteStorePattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        Module& M
+        ) {
+    auto segref = seglist;
+    if (auto storeInst = dyn_cast<StoreInst>(instr)) {
+        if (isMutationLocation(instr, &seglist, DELETE_STORE_PATTERN)) {
+
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            storeInst->removeFromParent();
+            builderMutex.unlock();
+
+            return true;
+        }
+    }
+    return false;
+}

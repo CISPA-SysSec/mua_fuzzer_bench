@@ -106,7 +106,7 @@ namespace {
 
 
         /**
-         * Instrument one function, i.e. run over all isntructions in that function and instrument them.
+         * Instrument one function, i.e. run over all instructions in that function and instrument them.
          * @param F the given function
          * @return true on successful instrumentation
          */
@@ -152,7 +152,7 @@ namespace {
             insertMutationApiFunctions(M, CPP);
             //Parsing the string into a json
             std::string segment;
-            unsigned int concurrentThreadsSupported = ceil(std::thread::hardware_concurrency());
+            unsigned int concurrentThreadsSupported = 1; //ceil(std::thread::hardware_concurrency());
 //        std::cout << "[INFO] number of threads: " << concurrentThreadsSupported << std::endl;
 
             std::vector<std::vector<Function *>> threadFunctions(concurrentThreadsSupported);

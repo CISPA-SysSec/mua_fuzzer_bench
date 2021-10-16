@@ -685,6 +685,20 @@ public:
     ) override;
 };
 
+class DeleteStorePattern: public Pattern{
+public:
+    using Pattern::Pattern;
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            Module& M
+            ) override;
+};
+
 class INetAddrFailPattern: public LibCFailPattern{
 public:
     using LibCFailPattern::LibCFailPattern;

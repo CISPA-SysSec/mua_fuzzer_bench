@@ -30,6 +30,7 @@ bool Pattern::isMutationLocation(Instruction* instr, json *seglist, const std::v
 bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     if (debugInfo) {
+        //
         auto surroundingFunction = instr->getFunction()->getName().str();
         if (segref["funname"] != surroundingFunction) {
             // shortcut for faster failing if the function is not the one we are looking for
@@ -97,16 +98,19 @@ bool mutatePattern(
         if (calledFun) {
             for (auto &mutator : CallInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
+                if (mutated) break;
             }
         }
     }
     else if (dyn_cast<ICmpInst>(instr)){
         for (auto &mutator : ICmpInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
+                if (mutated) break;
         }
     } else {
         for (auto &mutator : MiscInstPatterns){
                 mutated |= mutator->mutate(builder, nextInstructionBuilder, instr, builderMutex, M);
+                if (mutated) break; //making sure that one instruction is only altered once, and will not cause crashes
         }
     }
     return mutated;

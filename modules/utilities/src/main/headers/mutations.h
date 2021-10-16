@@ -33,6 +33,7 @@
 #define SWITCH_PLUS_MINUS 25
 #define REDIRECT_BRANCH 26
 #define DELETE_FUNCTION_ARGUMENT 27
+#define DELETE_STORE_PATTERN 28
 
 // testing different mutations for less than and great than
 #define SIGNED_LESS_THAN_SQUARED 102
