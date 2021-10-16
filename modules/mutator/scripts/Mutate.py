@@ -4,6 +4,7 @@ import os
 import shutil
 import json
 import shlex
+from pathlib import Path
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import argparse
@@ -31,7 +32,6 @@ def mutate_file(args):
     bc_args = shlex.split(args.bc_args)
     bin_args = shlex.split(args.bin_args)
 
-
     # Macos catalina and newer need sysroot to be defined when compiling
     # According to https://en.wikipedia.org/wiki/Darwin_%28operating_system%29#Release_history,
     # MacOS Catalina corresponds to Darwin's major version number 19.
@@ -40,11 +40,15 @@ def mutate_file(args):
         uid = "_".join(str(mut["UID"]) for mut in mutation)
     else:
         uid = mutation["UID"]
-    print(f"[INFO] Mutating {mutation} to file {out_dir}/{progname}.{uid}.mut\n")
+    mut_bin = Path(f"{out_dir}/{progname}.{uid}.mut")
+    assert not mut_bin.exists(), f"The output file already exists, aborting: {mut_bin}"
+    mut_bin = str(mut_bin)
+
+    print(f"[INFO] Mutating {mutation} to file {mut_bin}\n")
     with open(f"{progsource}.ll") as progsource_file:
         sp_call_args = [opt, "-S", "-load", mutatorplugin, "-mutatorplugin",
                          "-mutation_pattern", json.dumps(mutation), "-disable-verify", "-o",
-                        f"{out_dir}/{progname}.{uid}.mut.ll"]
+                        f"{mut_bin}.ll"]
         if is_cpp:
             sp_call_args.append("-cpp")
 
@@ -54,22 +58,22 @@ def mutate_file(args):
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", "-isysroot",
                              f"{sysroot}", *bc_args,
-                             "-c", f"{out_dir}/{progname}.{uid}.mut.ll",
-                             "-o", f"{out_dir}/{progname}.{uid}.mut.bc"])
+                             "-c", f"{mut_bin}.ll",
+                             "-o", f"{mut_bin}.bc"])
         else:
             subprocess.call([clang, "-emit-llvm", "-fno-inline", "-O3", *bc_args,
-                             "-c", f"{out_dir}/{progname}.{uid}.mut.ll",
-                             "-o", f"{out_dir}/{progname}.{uid}.mut.bc"])
+                             "-c", f"{mut_bin}.ll",
+                             "-o", f"{mut_bin}.bc"])
 
     if args.binary:
         arguments = [
             # "-v",
-            f"{out_dir}/{progname}.{uid}.mut.ll",  # input file
+            f"{mut_bin}.ll",  # input file
             *bc_args, *bin_args,
             f"-L{dynamic_libraries_folder}",  # points the runtime linker to the location of the included shared library
             "-lm", "-lz", "-ldl",  # some often used libraries
             f"-l{linked_libraries}",  # the library containing all the api functions that were called by mutations
-            "-o", f"{out_dir}/{progname}.{uid}.mut",  # output file
+            "-o", f"{mut_bin}",  # output file
         ]
         if uname.sysname == "Darwin" and int(uname.release.split('.')[0]) >= 19:
             subprocess.call([clang, "-fno-inline", "-O3", "-isysroot", f"{sysroot}"] + arguments)
@@ -77,7 +81,7 @@ def mutate_file(args):
             subprocess.call([clang, "-fno-inline", "-O3"] + arguments)
 
     if not args.bitcode_human_readable:
-        os.remove(f"{out_dir}/{progname}.{uid}.mut.ll")
+        os.remove(f"{mut_bin}.ll")
 
 
 def mutate(sysroot, clang, args):

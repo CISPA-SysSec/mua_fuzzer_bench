@@ -118,7 +118,7 @@ select
 	end
 	as stage
 from all_runs
-left join executed_seeds using (exec_id, prog, mutation_id)
+left join executed_seeds using (exec_id, prog, run_ctr, fuzzer, mutation_id)
 left join executed_runs using (exec_id, prog, mutation_id, run_ctr, fuzzer)
 left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
 left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)
@@ -129,7 +129,7 @@ inner join mutations using (exec_id, prog, mutation_id);
 
 -- add indeces the newly created all_run_results table
 drop index if exists index_all_run_results;
-create unique index index_all_run_results on all_run_results (exec_id, prog, mut_id, run_ctr, fuzzer);
+create unique index index_all_run_results on all_run_results (exec_id, prog, mut_id, run_ctr, fuzzer, confirmed);
 
 drop index if exists index_all_run_results_stage;
 create index index_all_run_results_stage on all_run_results (stage, fuzzer, exec_id, prog, mut_id, run_ctr);
@@ -138,19 +138,11 @@ create index index_all_run_results_stage on all_run_results (stage, fuzzer, exec
 DROP TABLE IF EXISTS completed_runs;
 CREATE TABLE completed_runs
 as
-select a.exec_id, a.prog, a.mut_id, a.run_ctr, complete from (
-	select group_concat(fuzzer) as complete, length(group_concat(fuzzer)) as len, prog, mut_id, * from (
-		select * from all_run_results where stage is not null order by fuzzer
+select exec_id, prog, mut_id, run_ctr, complete, confirmed as num_confirmed, confirmed > 0 as one_found, confirmed == max_len as all_found, max_len from (
+	select count() as max_len, count(stage) as complete, count(confirmed) as confirmed, exec_id, prog, mut_id, run_ctr from (
+		select exec_id, prog, mut_id, run_ctr, fuzzer, confirmed, stage from all_run_results
 	) group by exec_id, prog, mut_id, run_ctr
-) a
-left join (
-	select max(length(complete)) as max_len from (
-		select group_concat(fuzzer) as complete, prog, mut_id, * from (
-			select * from all_run_results where stage is not null order by fuzzer
-		) group by exec_id, prog, mut_id, run_ctr
-	)
-) m
-where a.len = m.max_len;
+) where complete == max_len;
 
 drop index if exists index_completed_runs;
 create index index_completed_runs on completed_runs (exec_id, prog, mut_id, run_ctr);
@@ -177,6 +169,9 @@ select
 	f_by_seed,
 	found - f_by_seed as f_by_f,
 	c_by_seed - f_by_seed as interesting,
+	f_by_one,
+	f_by_all,
+	normalized_complete,
 	seed_timeout,
 	crashed,
 	round(avg(total_time) / done, 2) as avg_run_min,
@@ -197,6 +192,9 @@ left join (
 		   count(case when covered_by_seed is 1 then 1 else null end) as c_by_seed,
 		   count(time_found) as found,
 		   count(case when stage = "seed_found" and confirmed then 1 else null end) as f_by_seed,
+		   sum(one_found) as f_by_one,
+		   sum(all_found) as f_by_all,
+		   cast(sum(complete) as float) / count() as normalized_complete,
 		   sum(seed_timeout) as seed_timeout,
 		   sum(total_time) as total_time
     from run_results
@@ -222,22 +220,24 @@ as
 select	
 	mutation_types.pattern_name as name,
 	mutation_types.mut_type as mut_type,
-	sum(total) as total,
-	sum(done) as done,
-	sum(covered) as covered,
-	sum(c_by_seed) as c_by_seed,
-	sum(c_by_f) as c_by_f,
-	sum(found) as found,
-	sum(f_by_seed) as f_by_seed,
-	sum(f_by_f) as f_by_f,
-	sum(interesting) as interesting,
-	sum(seed_timeout) as seed_timeout,
-	sum(crashed) as crashed,
+	sum(total) / avg(normalized_complete) as total,
+	sum(done) / avg(normalized_complete) as done,
+	sum(covered) / avg(normalized_complete) as covered,
+	sum(c_by_seed) / avg(normalized_complete) as c_by_seed,
+	sum(c_by_f) / avg(normalized_complete) as c_by_f,
+	sum(found) / avg(normalized_complete) as found,
+	sum(f_by_seed) / avg(normalized_complete) as f_by_seed,
+	sum(f_by_one) / avg(normalized_complete) - sum(f_by_seed) / avg(normalized_complete) as f_by_one,
+	sum(f_by_f) / avg(normalized_complete) as f_by_f,
+	sum(f_by_all) / avg(normalized_complete) - sum(f_by_seed) / avg(normalized_complete) as f_by_all,
+	sum(interesting) / avg(normalized_complete) as interesting,
+	sum(seed_timeout) / avg(normalized_complete) as seed_timeout,
+	sum(crashed) / avg(normalized_complete) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
 	round(sum(cpu_days), 2) as cpu_days
 from run_results_by_mut_type_and_fuzzer
-join mutation_types on run_results_by_mut_type_and_fuzzer.mut_type == mutation_types.mut_type
-group by mutation_types.mut_type;
+left join mutation_types  using(mut_type)
+group by mut_type;
 
 -- results for all runs grouped by fuzzer
 DROP VIEW IF EXISTS run_results_by_fuzzer;
@@ -249,7 +249,6 @@ select fuzzer,
 	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
 	sum(c_by_f) as c_by_f,
-	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(interesting) as interesting,
@@ -265,21 +264,46 @@ DROP VIEW IF EXISTS run_results_by_prog;
 CREATE VIEW run_results_by_prog
 as
 select prog,
+	sum(total) / avg(normalized_complete) as total,
+	sum(done) / avg(normalized_complete) as done,
+	sum(covered) / avg(normalized_complete) as covered,
+	sum(c_by_seed) / avg(normalized_complete) as c_by_seed,
+	sum(c_by_f) / avg(normalized_complete) as c_by_f,
+	sum(interesting) / avg(normalized_complete) as interesting,
+	sum(found) / avg(normalized_complete) as found,
+	sum(f_by_seed) / avg(normalized_complete) as f_by_seed,
+	sum(f_by_one) / avg(normalized_complete) - sum(f_by_seed) / avg(normalized_complete) as f_by_one,
+	sum(f_by_f) / avg(normalized_complete) as f_by_f,
+	sum(f_by_all) / avg(normalized_complete) - sum(f_by_seed) / avg(normalized_complete) as f_by_all,
+	sum(seed_timeout) / avg(normalized_complete) as seed_timeout,
+	sum(crashed) / avg(normalized_complete) as crashed,
+	round(avg(avg_run_min), 2) as avg_run_min,
+	round(sum(cpu_days), 2) as cpu_days
+from run_results_by_mut_type_and_fuzzer
+group by prog;
+
+-- results for all runs grouped by prog and fuzzer
+DROP VIEW IF EXISTS run_results_by_prog_and_fuzzer;
+CREATE VIEW run_results_by_prog_and_fuzzer
+as
+select prog, fuzzer,
 	sum(total) as total,
 	sum(done) as done,
 	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
 	sum(c_by_f) as c_by_f,
-	sum(found) as found,
+	sum(found) as avg_found,
 	sum(f_by_seed) as f_by_seed,
+	sum(f_by_one) - sum(f_by_seed) as f_by_one,
 	sum(f_by_f) as f_by_f,
+	sum(f_by_all) - sum(f_by_seed) as f_by_all,
 	sum(interesting) as interesting,
 	sum(seed_timeout) as seed_timeout,
 	sum(crashed) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
 	round(sum(cpu_days), 2) as cpu_days
 from run_results_by_mut_type_and_fuzzer
-group by prog;
+group by prog, fuzzer;
 
 -- ---------------------------------------------------------------------------------
 -- -- afl++

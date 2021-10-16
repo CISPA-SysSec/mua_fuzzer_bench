@@ -19,19 +19,19 @@ def run_cmd(cmd):
         close_fds=True)
 
 
-def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
+def run_seeds(seeds, binary, args, workdir):
     os.environ['TRIGGERED_OUTPUT'] = ""
-    print(os.environ['TRIGGERED_FOLDER'])
+    print("triggered folder:", os.environ['TRIGGERED_FOLDER'])
     seeds = Path(seeds)
     for path in list(str(pp) for pp in seeds.glob("**/*")):
         path = Path(path)
-        if path.is_file() and path.name != "README.txt":
+        if path.is_file():
             input_args = args.replace("<WORK>/", workdir
                     ).replace("@@", str(path)
                     ).replace("___FILE___", str(path))
 
-            # Run input on original binary
-            orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
+            # Run input on binary
+            orig_cmd = ["/home/mutator/run_bin.sh", str(binary)] + shlex.split(input_args)
             proc = run_cmd(orig_cmd)
             orig_res = proc.stdout
             orig_returncode = proc.returncode
@@ -41,28 +41,6 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir):
                 print(orig_res)
                 sys.exit(2)
 
-            # Run input on mutated binary
-            mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
-            proc = run_cmd(mut_cmd)
-            mut_res = proc.stdout
-
-            mut_res = mut_res.replace(TRIGGERED_STR, b"")
-            mut_res = mut_res
-            mut_returncode = proc.returncode
-
-            if (orig_returncode != mut_returncode):
-                if proc.returncode != 0:
-                   print("seed finds mutation: =======================",
-                         f"returncode orig: {orig_returncode} != mut: {mut_returncode}",
-                           args,
-                           "orig out:",
-                           orig_res,
-                           "======",
-                           "mut out:",
-                           mut_res,
-                           sep="\n")
-                   sys.exit(1)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -70,14 +48,12 @@ def main():
             help='The seeds to check.')
     parser.add_argument("--args", required=True,
             help="The args to execute with, where a @@ is replaced with the path to a seed file and <WORK>/ with --workdir.")
-    parser.add_argument("--orig", required=True,
+    parser.add_argument("--binary", required=True,
             help="The path to the original binary.")
-    parser.add_argument("--mut", required=True,
-            help="The path to the mutated binary.")
     parser.add_argument("--workdir", required=True,
             help="The workdir, replaces <WORK>/ in args.")
     args = parser.parse_args()
-    run_seeds(args.seeds, args.orig, args.mut, args.args, args.workdir)
+    run_seeds(args.seeds, args.binary, args.args, args.workdir)
 
 
 if __name__ == "__main__":

@@ -52,5 +52,4 @@ RUN rm -rf /kcov
 COPY samples/common /home/mutator/samples/common
 
 WORKDIR /home/mutator
-COPY iterate_seeds.sh /home/mutator/
-
+COPY eval_scripts/* /home/mutator/
