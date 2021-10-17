@@ -236,6 +236,14 @@
         "procedure": "Find a store instruction and delete it. As there are no further dependencies on the store, there is nothing else to do."
     },
     {
+        "pattern_name": "DELETE_CALL_INSTRUCTION_PATTERN",
+        "typeID": 28,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "DeleteCallInstructionPattern",
+        "description": "Deletes all call instructions without return value assignment one by one to simulate a forgotten call to a function.",
+        "procedure": "Find a call instruction without return value assignment and delete it. As there are no further dependencies on the call instruction, there is nothing else to do."
+    },
+    {
         "pattern_name": "SIGNED_LESS_THAN_SQUARED",
         "typeID": 102,
         "pattern_location": "./modules/utilities/src/main/cpp/iCmpInst_patterns.cpp",

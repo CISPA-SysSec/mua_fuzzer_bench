@@ -14,6 +14,7 @@ void populateCallInstPatterns(bool cpp){
     CallInstPatterns.push_back(std::make_unique <PrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SPrintfPattern>());
     CallInstPatterns.push_back(std::make_unique <SNPrintfPattern>());
+    CallInstPatterns.push_back(std::make_unique <DeleteCallInstructionPattern>());
     if (cpp){
         CallInstPatterns.push_back(std::make_unique <NewArrayPattern>());
     }
@@ -168,6 +169,9 @@ void populatePattern(json* pattern) {
             break;
         case DELETE_STORE_PATTERN:
             MiscInstPatterns.push_back(std::make_unique<DeleteStorePattern>(pattern));
+            break;
+        case DELETE_CALL_INSTRUCTION_PATTERN:
+            CallInstPatterns.push_back(std::make_unique<DeleteCallInstructionPattern>(pattern));
             break;
         default:
             std::cerr << "Unknown Pattern Type: " << patternref["type"] << "\n" << std::flush;

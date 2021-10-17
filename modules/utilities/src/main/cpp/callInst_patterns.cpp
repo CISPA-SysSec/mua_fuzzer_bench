@@ -226,3 +226,40 @@ bool NewArrayPattern::mutate(
     }
     return false;
 }
+
+
+std::vector<std::string>
+DeleteCallInstructionPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    if (auto callInst = dyn_cast<CallInst>(instr)) {
+        if (callInst->user_empty()) {
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_CALL_INSTRUCTION_PATTERN));
+        }
+    }
+    return results;
+}
+
+/**
+ * Delete the given store instruction to simulate a  forgotten variable assignment.
+ */
+bool DeleteCallInstructionPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        Module& M
+        ) {
+    auto segref = seglist;
+    if (auto callInst = dyn_cast<CallInst>(instr)) {
+        if (isMutationLocation(instr, &seglist, DELETE_CALL_INSTRUCTION_PATTERN)) {
+
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            callInst->removeFromParent(); // we do not need to care about any users as there are none, we checked this in the find procedure
+            builderMutex.unlock();
+
+            return true;
+        }
+    }
+    return false;
+}

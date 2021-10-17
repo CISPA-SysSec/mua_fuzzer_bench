@@ -3,6 +3,7 @@
 
 
 int my_malloc(int a) {
+    printf("%d", a);
     return a;
 }
 
