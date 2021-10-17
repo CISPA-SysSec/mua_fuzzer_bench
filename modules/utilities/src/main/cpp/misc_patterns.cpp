@@ -589,7 +589,7 @@ bool DeleteArgumentReturnPattern::mutate(
 std::vector<std::string>
 DeleteStorePattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
-    if (auto storeInst = dyn_cast<StoreInst>(instr)) {
+    if (dyn_cast<StoreInst>(instr)) {
         results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_STORE_PATTERN));
     }
     return results;
@@ -612,6 +612,79 @@ bool DeleteStorePattern::mutate(
             builderMutex.lock();
             addMutationFoundSignal(builder, M, segref["UID"]);
             storeInst->removeFromParent();
+            builderMutex.unlock();
+
+            return true;
+        }
+    }
+    return false;
+}
+
+const Instruction*
+ReassignStoreInstructionPattern::getPrevStore(const Instruction *current, Type* origType) {
+    while (current) {
+        if (auto prevStore = dyn_cast<StoreInst>(current)) {
+            //                std::string instructionString;
+            //                raw_string_ostream os(instructionString);
+            //                prev->print(os);
+            //                std::cout << "Got two store instructions: " <<  os.str() << "\n" << std::flush;
+            if (origType == prevStore->getOperand(1)->getType()) {
+                return current;
+            }
+        }
+        current = current->getPrevNonDebugInstruction();
+    }
+    return nullptr;
+}
+
+std::vector<std::string>
+ReassignStoreInstructionPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    std::vector<std::string> results;
+    if (auto origStore = dyn_cast<StoreInst>(instr)) {
+        auto prev = instr->getPrevNonDebugInstruction();
+        auto prevStore = getPrevStore(prev, origStore->getOperand(1)->getType());
+        if (prevStore) {
+            results.push_back(getIdentifierString(instr, builder, builderMutex, M, REASSIGN_STORE_INSTRUCTION));
+        }
+//        for (int i = 0; i < 10; i++) {
+//            if (!prev) {
+//                return results;
+//            }
+//            if (auto prevStore = dyn_cast<StoreInst>(prev)) {
+////                std::string instructionString;
+////                raw_string_ostream os(instructionString);
+////                prev->print(os);
+////                std::cout << "Got two store instructions: " <<  os.str() << "\n" << std::flush;
+//                if (origStore->getOperand(1)->getType() == prevStore->getOperand(1)->getType()) {
+//                    return results;
+//                }
+//            }
+//            // if the previous store did not match, try to find another
+//            prev = prev->getPrevNonDebugInstruction();
+//        }
+    }
+    return results;
+}
+
+/**
+ * Takes the value from a previous store and assigns it again.
+ */
+bool ReassignStoreInstructionPattern::mutate(
+        IRBuilder<>* builder,
+        IRBuilder<>* nextInstructionBuilder,
+        Instruction* instr,
+        std::mutex& builderMutex,
+        Module& M
+        ) {
+    auto segref = seglist;
+    if (auto storeInst = dyn_cast<StoreInst>(instr)) {
+        if (isMutationLocation(instr, &seglist, REASSIGN_STORE_INSTRUCTION)) {
+
+            builderMutex.lock();
+            addMutationFoundSignal(builder, M, segref["UID"]);
+            auto prevStore = getPrevStore(instr->getPrevNonDebugInstruction(), instr->getOperand(1)->getType());
+            //prevstore should exist as we already found it in the find method
+            storeInst->setOperand(0, prevStore->getOperand(0));
             builderMutex.unlock();
 
             return true;

@@ -238,10 +238,18 @@
     {
         "pattern_name": "DELETE_CALL_INSTRUCTION_PATTERN",
         "typeID": 29,
-        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_location": "./modules/utilities/src/main/cpp/callinst_patterns.cpp",
         "pattern_class": "DeleteCallInstructionPattern",
         "description": "Deletes all call instructions without return value assignment one by one to simulate a forgotten call to a function.",
         "procedure": "Find a call instruction without return value assignment and delete it. As there are no further dependencies on the call instruction, there is nothing else to do."
+    },
+    {
+        "pattern_name": "REASSIGN_STORE_INSTRUCTION",
+        "typeID": 30,
+        "pattern_location": "./modules/utilities/src/main/cpp/misc_patterns.cpp",
+        "pattern_class": "ReassignStoreInstructionPattern",
+        "description": "Reassigns the value of a previous store with the same type in this store.",
+        "procedure": "Checks if in this basic block is another store with the same types used and assigns the first operand of the previous store to the memory location denoted by the second operand of the store we are currently at."
     },
     {
         "pattern_name": "SIGNED_LESS_THAN_SQUARED",

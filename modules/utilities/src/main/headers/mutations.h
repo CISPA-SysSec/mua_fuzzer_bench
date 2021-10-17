@@ -35,6 +35,7 @@
 #define DELETE_FUNCTION_ARGUMENT 27
 #define DELETE_STORE_PATTERN 28
 #define DELETE_CALL_INSTRUCTION_PATTERN 29
+#define REASSIGN_STORE_INSTRUCTION 30
 
 // testing different mutations for less than and great than
 //#define SIGNED_LESS_THAN_SQUARED 102

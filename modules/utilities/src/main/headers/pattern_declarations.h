@@ -770,4 +770,21 @@ public:
             Module& M
     ) override;
 };
+
+class ReassignStoreInstructionPattern: public Pattern{
+public:
+    using Pattern::Pattern;
+    std::vector<std::string>
+    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    bool mutate (
+            IRBuilder<>* builder,
+            IRBuilder<>* nextInstructionBuilder,
+            Instruction* instr,
+            std::mutex& builderMutex,
+            Module& M
+            ) override;
+private:
+    // returns a previous store instruction with the same types if it exists in the current basic block
+    const Instruction* getPrevStore(const Instruction *current, Type* origType);
+};
 #endif //LLVM_MUTATION_TOOL_PATTERN_DECLARATIONS_H

@@ -68,6 +68,7 @@ void populateMiscInstPatterns(bool cpp){
     MiscInstPatterns.push_back(std::make_unique <SwitchPlusMinus>());
     MiscInstPatterns.push_back(std::make_unique <DeleteStorePattern>());
     MiscInstPatterns.push_back(std::make_unique <RedirectBranch>());
+    MiscInstPatterns.push_back(std::make_unique <ReassignStoreInstructionPattern>());
     if (cpp){
         MiscInstPatterns.push_back(std::make_unique <DeleteArgumentReturnPattern>());
     }
@@ -172,6 +173,9 @@ void populatePattern(json* pattern) {
             break;
         case DELETE_CALL_INSTRUCTION_PATTERN:
             CallInstPatterns.push_back(std::make_unique<DeleteCallInstructionPattern>(pattern));
+            break;
+        case REASSIGN_STORE_INSTRUCTION:
+            MiscInstPatterns.push_back(std::make_unique<ReassignStoreInstructionPattern>(pattern));
             break;
         default:
             std::cerr << "Unknown Pattern Type: " << patternref["type"] << "\n" << std::flush;
