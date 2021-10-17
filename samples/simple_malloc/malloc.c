@@ -3,6 +3,9 @@
 
 
 int my_malloc(int a) {
+    if (5 > a) {
+        return a - 1;
+    }
     printf("%d", a);
     return a;
 }

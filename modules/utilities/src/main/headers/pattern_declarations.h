@@ -99,6 +99,7 @@ protected:
     // auto predicate = icmpinst->getPredicate();
     void getpredicate(const Instruction *instr);
     bool isMutateable(const CmpInst::Predicate pred, const Instruction* instr);
+    static Value* insertMutationFunctionCall(Value* toMutate, IRBuilder<> *builder, Module &M, const std::string& function);
 };
 
 // Abstract base classes for Threading types of instruction patterns
@@ -239,19 +240,19 @@ public:
     ) override;
 };
 
-class SignedLessThanEqualToSquaredPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class SignedLessThanEqualToSquaredPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class SignedLessThanPattern: public ICmpInstPattern{
 public:
@@ -267,19 +268,19 @@ public:
     ) override;
 };
 
-class SignedLessThanSquaredPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class SignedLessThanSquaredPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class UnsignedLessThanEqualToPattern: public ICmpInstPattern{
 public:
@@ -295,19 +296,19 @@ public:
     ) override;
 };
 
-class UnsignedLessThanEqualToSquaredPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class UnsignedLessThanEqualToSquaredPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class UnsignedLessThanPattern: public ICmpInstPattern{
 public:
@@ -323,19 +324,19 @@ public:
     ) override;
 };
 
-class UnsignedLessThanSquaredPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class UnsignedLessThanSquaredPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class SignedGreaterThanEqualToPattern: public ICmpInstPattern{
 public:
@@ -351,33 +352,33 @@ public:
     ) override;
 };
 
-class SignedGreaterThanEqualToHalvedPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
-
-class SignedGreaterThanEqualToSqrtPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class SignedGreaterThanEqualToHalvedPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
+//
+//class SignedGreaterThanEqualToSqrtPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class SignedGreaterThanPattern: public ICmpInstPattern{
 public:
@@ -393,33 +394,33 @@ public:
     ) override;
 };
 
-class SignedGreaterThanSqrtPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
-
-class SignedGreaterThanHalvedPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class SignedGreaterThanSqrtPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
+//
+//class SignedGreaterThanHalvedPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class UnsignedGreaterThanEqualToPattern: public ICmpInstPattern{
 public:
@@ -435,33 +436,33 @@ public:
     ) override;
 };
 
-class UnsignedGreaterThanEqualToSqrtPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
-
-class UnsignedGreaterThanEqualToHalvedPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class UnsignedGreaterThanEqualToSqrtPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
+//
+//class UnsignedGreaterThanEqualToHalvedPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 class UnsignedGreaterThanPattern: public ICmpInstPattern{
 public:
@@ -477,33 +478,33 @@ public:
     ) override;
 };
 
-class UnsignedGreaterThanSqrtPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
-
-class UnsignedGreaterThanHalvedPattern: public ICmpInstPattern{
-public:
-    using ICmpInstPattern::ICmpInstPattern;
-    std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
-    bool mutate (
-            IRBuilder<>* builder,
-            IRBuilder<>* nextInstructionBuilder,
-            Instruction* instr,
-            std::mutex& builderMutex,
-            Module& M
-    ) override;
-};
+//class UnsignedGreaterThanSqrtPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
+//
+//class UnsignedGreaterThanHalvedPattern: public ICmpInstPattern{
+//public:
+//    using ICmpInstPattern::ICmpInstPattern;
+//    std::vector<std::string>
+//    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+//    bool mutate (
+//            IRBuilder<>* builder,
+//            IRBuilder<>* nextInstructionBuilder,
+//            Instruction* instr,
+//            std::mutex& builderMutex,
+//            Module& M
+//    ) override;
+//};
 
 
 

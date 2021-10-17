@@ -10,6 +10,7 @@
 #include "includes.h"
 #include <stdarg.h>
 #include <cerrno>
+#include <math.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -111,6 +112,37 @@ int mutate_snprintf_string(char *str, size_t size, const char *format, ...){
 
 void mutate_delete(void* my_ptr){
     delete my_ptr;
+}
+
+/**
+ * Takes a value and squares it if small, otherwise adds a constant.
+ * For 1 and 0 also a constant is added.
+ * @return
+ */
+uint64_t mutate_square_add(uint64_t value) {
+    if (value < 2 or value > 1024) {
+        return value * value;
+    } else {
+        return value + 32;
+    }
+}
+
+/**
+ * Takes a value and takes squareroot if very large, halves it if medium value, otherwise subtracts a constant or returns 0, whatever results in a larger value.
+ * @return
+ */
+uint64_t mutate_root_half_sub(uint64_t value) {
+    if (value > 1024 * 1024) {
+        return (int) sqrt((double) value);
+    } else if (value > 1024) {
+        return value / 2;
+    } else {
+        if (value <= 32) {
+            return 0;
+        } else {
+            return value - 32;
+        }
+    }
 }
 
 #ifdef __cplusplus

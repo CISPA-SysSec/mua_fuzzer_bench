@@ -17,6 +17,8 @@ extern "C" {
     int mutate_sprintf_string(char *str, const char *format, ...);
     int mutate_snprintf_string(char *str, size_t size, const char *format, ...);
     void mutate_delete(void* my_ptr);
+    uint64_t mutate_square_add(uint64_t value);
+    uint64_t mutate_root_half_sub(uint64_t value);
 #ifdef __cplusplus
 }
 #endif
