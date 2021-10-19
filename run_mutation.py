@@ -11,7 +11,10 @@ import shlex
 def run(args):
     print(args, flush=True)
     proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    print(proc.stdout.decode(), flush=True)
+    output = str(proc.stdout)
+    if proc.returncode != 0:
+        raise ValueError(f"Run failed: {args}\n{output}")
+    print(output)
     return proc
 
 

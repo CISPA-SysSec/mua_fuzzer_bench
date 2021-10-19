@@ -25,7 +25,14 @@ int main(int argc, char** argv) {
     fseek(fp, 0L, SEEK_END);
     size = ftell(fp);
 
+
     fd = fileno(fp);
+    if (size == 0) {
+        printf("zero size: %zu\n", size);
+        const uint8_t data[1] = {0};
+        LLVMFuzzerTestOneInput(data, 0);
+        return 0;
+    }
     auto data = static_cast<const uint8_t*>(mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0));
     if (data == (uint8_t*)-1) {
         perror("Could not mmap file\n.");
