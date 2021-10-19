@@ -1,11 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void indir(int b, char c) {
+    printf("in indir: %d %d", b, c);
+}
 
-int my_malloc(int a) {
+int my_malloc(int a, void (*f) (int, char)) {
     if (5 > a) {
         return a - 1;
     }
+    f(a + 100, a + 10);
     printf("%d", a);
     return a;
 }
@@ -13,7 +17,7 @@ int my_malloc(int a) {
 int main(int argc, char** argv) {
     char inp[3];
     int num_read = 3;
-    printf("%d", my_malloc(5));
+    printf("%d", my_malloc(5, indir));
     fgets(inp, num_read, stdin);
     int size = atoi(inp);
     char tmp_size = 12;

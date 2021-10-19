@@ -137,15 +137,53 @@ public:
             if (auto* callinst = dyn_cast<CallInst>(instr))
             {
                 Function* fun = callinst->getCalledFunction();
-                if (fun != nullptr && !fun->isIntrinsic()) {
-                    funNameArray.push_back(callinst->getCalledFunction()->getName().str());
+                std::string result = "";
+                if (fun != nullptr) {
+                    if (!fun->isIntrinsic()) {
+                       result += callinst->getCalledFunction()->getName().str() + " | ";
+                       std::string type_str;
+                       llvm::raw_string_ostream rso(type_str);
+                       callinst->getType()->print(rso);
+                       result += rso.str() + " | ";
+                       for (int i = 0; i < callinst->getNumArgOperands(); i++) {
+                           std::string type_str_inner;
+                           llvm::raw_string_ostream rso_inner(type_str_inner);
+                           callinst->getArgOperand(i)->getType()->print(rso_inner);
+                           result +=  rso_inner.str() + " | ";
+                       }
+                       funNameArray.push_back(result);
+                    }
+                } else {
+                    std::string type_str;
+                    llvm::raw_string_ostream rso(type_str);
+                    callinst->getType()->print(rso);
+                    result += "dummy | " + rso.str() + " | ";
+                    for (int i = 0; i < callinst->getNumArgOperands(); i++) {
+                        std::string type_str_inner;
+                        llvm::raw_string_ostream rso_inner(type_str_inner);
+                        callinst->getArgOperand(i)->getType()->print(rso_inner);
+                        result += rso_inner.str() + " | ";
+                    }
+                    funNameArray.push_back(result);
                 }
             }
             handInstructionToPatternMatchers(instr);
         }
 
         builderMutex.lock();
-        callgraph[F.getName().str()] = funNameArray;
+        std::string result_string = F.getName().str() + " | ";
+        std::string type_str;
+        llvm::raw_string_ostream rso(type_str);
+        F.getFunctionType()->getReturnType()->print(rso);
+        result_string += rso.str() + " | ";
+        for (int i = 0; i < F.getFunctionType()->getNumParams(); i++) {
+            std::string type_str_inner;
+            llvm::raw_string_ostream rso_inner(type_str_inner);
+            F.getFunctionType()->getParamType(i)->print(rso_inner);
+            result_string += rso_inner.str() + " | ";
+        }
+        std::cout << result_string << "\n";
+        callgraph[result_string] = funNameArray;
         builderMutex.unlock();
         return true;
     }
