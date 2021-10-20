@@ -26,7 +26,7 @@ import hashlib
 import multiprocessing
 import copy
 from inspect import getframeinfo, stack
-from itertools import product
+from itertools import product, chain
 from pathlib import Path
 
 import numpy as np
@@ -415,8 +415,17 @@ class Stats():
         CREATE TABLE super_mutants (
             exec_id,
             prog,
-            super_mutant_id INTEGER,
+            super_mutant_id,
             mutation_id INTEGER
+        )''')
+
+        c.execute('''
+        CREATE TABLE super_mutants_multi (
+            exec_id,
+            prog,
+            super_mutant_id,
+            group_id,
+            multi_ids
         )''')
 
         c.execute('''
@@ -604,14 +613,34 @@ class Stats():
                     data['fuzzer'],
                 )
             )
+        self.conn.commit()
+
+    @connection
+    def new_supermutant(self, c, exec_id, data):
+        for m_id in data['mutation_ids']:
             c.execute('INSERT INTO super_mutants VALUES (?, ?, ?, ?)',
                 (
                     exec_id,
-                    mut_data['prog'],
-                    mut_data['supermutant_id'],
+                    data['prog'],
+                    data['supermutant_id'],
                     m_id,
                 )
             )
+        self.conn.commit()
+
+    @connection
+    def new_supermutant_multi(self, c, exec_id, mut_data, multi_groups):
+        for group_id, multi in enumerate(multi_groups):
+            for m_id in multi:
+                c.execute('INSERT INTO super_mutants_multi VALUES (?, ?, ?, ?, ?)',
+                    (
+                        exec_id,
+                        mut_data['prog'],
+                        mut_data['supermutant_id'],
+                        group_id,
+                        m_id
+                    )
+                )
         self.conn.commit()
 
     @connection
@@ -1075,58 +1104,25 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
         }
 
     results = []
+    multi = []
     for rf in result_dir.glob("*"):
         with open(rf, "rt") as f:
             res = json.load(f)
         res['time'] = cur_time
+
+        # get any results that affect multiple mutations
+        mut_ids = res.get('mutation_ids', [])
+        if len(mut_ids) > 1:
+            multi.append(res)
+
         results.append(res)
 
+    # if any results affect multiple mutations, report those
+    if multi:
+        return { 'result': 'multiple', 'results': multi }
+
+    # all good report results
     return { 'result': 'check_done', 'results': results }
-
-    # found_by_seeds = False
-    # if seed_result == "ok":
-    #     pass
-    # elif seed_result == "found":
-    #     checked_seeds['bulk'] = {
-    #             'time_found': 0,
-    #             'stage': 'initial',
-    #             'data': None,
-    #             'orig_returncode': 0,
-    #             'mut_returncode': 1,
-    #             'orig_cmd': [],
-    #             'mut_cmd': [],
-    #             'orig_res': None,
-    #             'mut_res': seeds_out,
-    #             'num_triggered': None,
-    #     }
-    #     found_by_seeds = True
-    # elif seed_result == "basecrsh":
-    #     checked_seeds['bulk'] = {
-    #             'time_found': 0,
-    #             'stage': 'initial',
-    #             'data': None,
-    #             'orig_returncode': 1,
-    #             'mut_returncode': 0,
-    #             'orig_cmd': [],
-    #             'mut_cmd': [],
-    #             'orig_res': None,
-    #             'mut_res': seeds_out,
-    #             'num_triggered': None,
-    #     }
-    #     found_by_seeds = True
-    # else:
-    #     raise ValueError("Unknown seed check result")
-
-    # covered.check()
-
-    # return {
-    #     'total_time': time.time() - start_time,
-    #     'covered_file_seen': covered.found,
-    #     'crashing_inputs': checked_seeds,
-    #     'found_by_seeds': found_by_seeds,
-    #     'timed_out': False,
-    #     'all_logs': [seeds_out]
-    # }
 
 
 # Does all the eval steps, each fuzzer eval function is based on this one.
@@ -1169,14 +1165,10 @@ def base_eval(run_data, docker_image):
 
         new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container)
         if new_results['result'] != 'check_done':
+            if new_results['result'] == 'multiple':
+                return new_results
             raise ValueError(f"Error during seed crash check: {new_results}")
-
         new_results = new_results['results']
-
-        for rr in new_results:
-            if rr['result'] == 'covered':
-                assert len(rr['mutation_ids']) <= 1, f"Multiple mutations are covered by a single input: {rr}"
-
         results += new_results
 
         if any([res for res in new_results if res['result'] == 'killed']):
@@ -1248,16 +1240,11 @@ def base_eval(run_data, docker_image):
             # Check if a crashing input has already been found
             new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                                 crash_dir, workdir, time.time() - start_time)
-
             if new_results['result'] != 'check_done':
-                raise ValueError(f"Error during crash check: {new_results}")
-
+                if new_results['result'] == 'multiple':
+                    return new_results
+                raise ValueError(f"Error during seed crash check: {new_results}")
             new_results = new_results['results']
-
-            for rr in new_results:
-                if rr['result'] == 'covered':
-                    assert len(rr['mutation_ids']) <= 1, f"Multiple mutations are covered by a single input: {rr}"
-
             results += new_results
 
             # Sleep so we only check sometimes and do not busy loop
@@ -1288,16 +1275,11 @@ def base_eval(run_data, docker_image):
         # Also collect all remaining crashing outputs
         new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                     crash_dir, workdir, time.time() - start_time)
-
         if new_results['result'] != 'check_done':
-            raise ValueError(f"Error during crash check: {new_results}")
-
+            if new_results['result'] == 'multiple':
+                return new_results
+            raise ValueError(f"Error during seed crash check: {new_results}")
         new_results = new_results['results']
-
-        for rr in new_results:
-            if rr['result'] == 'covered':
-                assert len(rr['mutation_ids']) <= 1, f"Multiple mutations are covered by a single input: {rr}"
-
         results += new_results
 
         all_logs = []
@@ -1994,6 +1976,33 @@ def clean_up_mut_base_dir(mut_data):
         print(f"Could not clean up {mut_base_dir}: {err}")
 
 
+def split_up_supermutant(multi, all):
+    """
+    Split up the mutants listed in all, into as many chunks as there are mutants in multi, making sure that the 
+    mutants listed in multi end up in different chunks. This can be used to split up a supermutant where
+    multiple mutations are covered at once.
+    """
+    multi = set(chain(*multi))
+    all = set(all)
+    assert all & multi == multi, "Not all covered mutations are in the possible mutations, something is wrong."
+    others = set(all) - multi
+
+    chunk_size = len(others) / len(multi)
+    multi = list(multi)
+    others = list(others)
+
+    chunks = []
+
+    for ii in range(len(multi)):
+        start = int((ii)*chunk_size)
+        end = int((ii+1)*chunk_size)
+        chosen = [multi[ii]] + others[start:end]
+        chunks.append(chosen)
+
+    assert set(chain(*chunks)) == all
+    return chunks
+
+
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
@@ -2009,13 +2018,21 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
         trace = traceback.format_exc()
         for mut_id in mut_data['mutation_ids']:
             stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
-        if "Multiple mutations are covered" in str(trace):
-            print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
-        else:
             print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
     else:
         result_type = run_result['result']
-        if result_type == 'killed_by_seed':
+        if result_type == 'multiple':
+            multi = run_result['results']
+            multi_ids = [mm['mutation_ids'] for mm in multi]
+            print(f"= run (multi):  {mut_data['prog']}:{printable_m_id(mut_data)}:{multi_ids}")
+            stats.new_supermutant_multi(EXEC_ID, mut_data, multi_ids)
+            all_mutations = mut_data['mutation_ids']
+            new_supermutants = split_up_supermutant(multi_ids, all_mutations)
+            # start the new split up supermutants
+            for ii, sm in enumerate(new_supermutants):
+                s_id = str(mut_data['supermutant_id']) + '_' + data['fuzzer'] + '_' + str(ii)
+                recompile_and_run(prepared_runs, data, mut_data, s_id, sm)
+        elif result_type == 'killed_by_seed':
             print(f"= run (seed):   {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
 
             total_time = run_result['total_time']
@@ -2047,7 +2064,8 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             remaining_mutations = cur_mutations - killed_mutants
             if len(remaining_mutations) > 0:
-                restart_run(prepared_runs, data, mut_data, remaining_mutations)
+                s_id = str(mut_data['supermutant_id']) + '_' + data['fuzzer']
+                recompile_and_run(prepared_runs, data, mut_data, s_id, remaining_mutations)
             else:
                 print(f"{mut_data['supermutant_id']} -- no more mutations ========================")
         elif result_type == 'completed':
@@ -2127,14 +2145,14 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             pass
 
 
-def restart_run(prepared_runs, data, mut_data, remaining_mutations):
+def recompile_and_run(prepared_runs, data, mut_data, new_supermutand_id, mutations):
     data = copy.deepcopy(data)
     mut_data = copy.deepcopy(mut_data)
     data['mut_data'] = mut_data
     data['workdir'] = Path("/dev/shm/mutator/")/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
-    mut_data['mutation_ids'] = list(remaining_mutations)
-    mut_data['supermutant_id'] = str(mut_data['supermutant_id']) + '_' + data['fuzzer']
-    print(f"{mut_data['supermutant_id']} -- new run with {len(mut_data['mutation_ids'])} mutations ========================")
+    mut_data['mutation_ids'] = list(mutations)
+    mut_data['supermutant_id'] = new_supermutand_id
+    print(f"! new supermutant: {mut_data['supermutant_id']} with {len(mut_data['mutation_ids'])} mutations")
     prepared_runs.put_nowait({'type': 'mut', 'data': (mut_data, [data])})
 
 
@@ -2281,6 +2299,9 @@ class CpuCores():
         assert self.cores[idx] == True, "Trying to release a already free core"
         self.cores[idx] = False
 
+    def has_free(self):
+        return any(cc is False for cc in self.cores)
+
     def usage(self):
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
@@ -2417,6 +2438,43 @@ def build_docker_images(fuzzers, progs):
     build_subject_docker_images(progs)
 
 
+def start_next_task(prepared_runs, all_runs, tasks, executor, stats, start_time, num_runs, core, ii):
+    # Check if any runs are prepared
+    while True:
+        try:
+            run_data = prepared_runs.get_nowait()
+            break
+        except queue.Empty:
+            # No runs are ready, prepare a mutation and all corresponding runs.
+            try:
+                # Get the next mutant
+                ii, (mut_data, fuzzer_runs) = next(all_runs)
+
+                prepared_runs.put_nowait({'type': 'mut', 'data': (mut_data, fuzzer_runs)})
+
+            except StopIteration:
+                # Done with all mutations and runs, break out of this loop and finish eval.
+                return False
+
+    # A task is ready to start, get it and start the run.
+    if run_data['type'] == 'fuzz':
+        run_data = run_data['data']
+        # update core, print message and submit task
+        run_data['used_core'] = core
+        print_run_start_msg(run_data)
+        tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
+    elif run_data['type'] == 'mut':
+        mut_data, fuzzer_runs = run_data['data']
+        mut_data['used_core'] = core
+        stats.new_supermutant(EXEC_ID, mut_data)
+        print_mutation_prepare_start_msg(ii, mut_data, fuzzer_runs, start_time, num_runs)
+        tasks[executor.submit(prepare_mutation, core, mut_data)] = \
+            ("mutation", core, (ii, mut_data, fuzzer_runs))
+    else:
+        raise ValueError(f"Unknown run type: {run_data}")
+    return True
+
+
 def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_dir, seed_fuzzing, seed_fuzzing_instances):
     global should_run
 
@@ -2472,66 +2530,24 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_d
         # start time
         start_time = time.time()
         # Get each run
-        all_runs = get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats)
+        all_runs = get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats)[:60]
         num_runs = len(all_runs)
         all_runs = enumerate(all_runs)
         ii = 0
 
         while True:
-            # print(f"core usage: {cores.usage()*100:.2f}%")
-            # If we should stop, do so now to not create any new run.
-            if not should_run:
-                break
-
-            # Check if a core is free
+            # Check if a core is free, if so start next task.
             core = cores.try_reserve_core()
-
-            if core is not None:
-                # A core is free, start a new task.
-
-                # Check if any runs are prepared
-                try:
-                    run_data = prepared_runs.get_nowait()
-                except queue.Empty:
-                    # No runs are ready, prepare a mutation and all corresponding runs.
-                    try:
-                        # Get the next mutant
-                        ii, (mut_data, fuzzer_runs) = next(all_runs)
-
-                        prepared_runs.put_nowait({'type': 'mut', 'data': (mut_data, fuzzer_runs)})
-
-                    except StopIteration:
-                        # Done with all mutations and runs, break out of this loop and finish eval.
-                        break
-
-                    cores.release_core(core)
+            if core is not None and should_run:
+                start_next_task(prepared_runs, all_runs, tasks, executor, stats, start_time, num_runs, core, ii)
+                # add tasks while there are more free cores
+                if cores.has_free():
                     continue
 
-                # A run is ready, get it and start the run.
-
-                if run_data['type'] == 'fuzz':
-                    run_data = run_data['data']
-                    # update core, print message and submit task
-                    run_data['used_core'] = core
-                    print_run_start_msg(run_data)
-                    tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
-                elif run_data['type'] == 'mut':
-                    mut_data, fuzzer_runs = run_data['data']
-                    mut_data['used_core'] = core
-                    print_mutation_prepare_start_msg(ii, mut_data, fuzzer_runs, start_time, num_runs)
-                    tasks[executor.submit(prepare_mutation, core, mut_data)] = \
-                        ("mutation", core, (ii, mut_data, fuzzer_runs))
-                else:
-                    raise ValueError(f"Unknown run type: {run_data}")
-
-            else:
-                # No core is free wait for a task to complete.
-                wait_for_task(stats, tasks, cores, prepared_runs, active_mutants)
-
-        # Wait for remaining tasks to complete
-        print(f"Waiting for remaining tasks to complete, {len(tasks)} to go..")
-        while len(tasks) > 0:
-            print(f"{len(tasks)}")
+            # If all tasks are done, stop.
+            if len(tasks) == 0:
+                break
+            # All tasks have been added, wait for a task to complete.
             wait_for_task(stats, tasks, cores, prepared_runs, active_mutants)
 
     # Record total time for this execution.
