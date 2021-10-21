@@ -5,6 +5,10 @@ void indir(int b, char c) {
     printf("in indir: %d %d", b, c);
 }
 
+void indir2(int b, char c) {
+    printf("in indir2: %d %d", b, c);
+}
+
 int my_malloc(int a, void (*f) (int, char)) {
     if (5 > a) {
         return a - 1;
