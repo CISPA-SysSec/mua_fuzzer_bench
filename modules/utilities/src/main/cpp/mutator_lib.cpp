@@ -93,6 +93,10 @@ bool mutatePattern(
 )
 {
     auto mutated = false;
+//    std::string instructionString;
+//    llvm::raw_string_ostream os(instructionString);
+//    instr->print(os);
+//    std::cout << os.str() << "\n" << std::flush;
     if (auto* callinst = dyn_cast<CallInst>(instr)) {
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {

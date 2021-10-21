@@ -115,10 +115,10 @@ void populatePattern(json* pattern) {
             MiscInstPatterns.push_back(std::make_unique<ATOMICRMWPattern>(pattern));
             break;
         case SIGNED_TO_UNSIGNED:
-            MiscInstPatterns.push_back(std::make_unique<SignedToUnsigned>(pattern));
+            ICmpInstPatterns.push_back(std::make_unique<SignedToUnsigned>(pattern));
             break;
         case UNSIGNED_TO_SIGNED:
-            MiscInstPatterns.push_back(std::make_unique<UnsignedToSigned>(pattern));
+            ICmpInstPatterns.push_back(std::make_unique<UnsignedToSigned>(pattern));
             break;
         case SWITCH_SHIFT:
             MiscInstPatterns.push_back(std::make_unique<ShiftSwitch>(pattern));
