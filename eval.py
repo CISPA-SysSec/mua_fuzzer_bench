@@ -324,6 +324,12 @@ def fuzzer_container_tag(name):
 def subject_container_tag(name):
     return f"mutation-testing-subject-{name}"
 
+
+def mutation_locations_path(prog_info):
+    orig_bc = Path(prog_info['orig_bc'])
+    return orig_bc.with_suffix('.ll.mutationlocations')
+
+
 # Indicates if the evaluation should continue, is mainly used to shut down
 # after a keyboard interrupt by the user.
 # Global variable that is only written in the sigint_handler, as such it is safe
@@ -412,7 +418,15 @@ class Stats():
         )''')
 
         c.execute('''
-        CREATE TABLE super_mutants (
+        CREATE TABLE initial_super_mutants (
+            exec_id,
+            prog,
+            super_mutant_id,
+            mutation_id INTEGER
+        )''')
+
+        c.execute('''
+        CREATE TABLE started_super_mutants (
             exec_id,
             prog,
             super_mutant_id,
@@ -451,7 +465,9 @@ class Stats():
             bc_compile_args,
             bin_compile_args,
             dict,
-            orig_bin
+            orig_bin,
+            orig_bc_file_data,
+            mutation_locations_data
         )''')
 
         c.execute('''
@@ -616,9 +632,22 @@ class Stats():
         self.conn.commit()
 
     @connection
+    def new_initial_supermutant(self, c, exec_id, prog, sm_id, mut_ids):
+        for m_id in mut_ids:
+            c.execute('INSERT INTO initial_super_mutants VALUES (?, ?, ?, ?)',
+                (
+                    exec_id,
+                    prog,
+                    sm_id,
+                    m_id,
+                )
+            )
+        self.conn.commit()
+
+    @connection
     def new_supermutant(self, c, exec_id, data):
         for m_id in data['mutation_ids']:
-            c.execute('INSERT INTO super_mutants VALUES (?, ?, ?, ?)',
+            c.execute('INSERT INTO started_super_mutants VALUES (?, ?, ?, ?)',
                 (
                     exec_id,
                     data['prog'],
@@ -678,7 +707,11 @@ class Stats():
 
     @connection
     def new_prog(self, c, exec_id, prog, data):
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?)',
+        with open(data['orig_bc'], 'rb') as f:
+            bc_file_data = f.read()
+        with open(mutation_locations_path(data), 'rt') as f:
+            ml_data = f.read()
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
@@ -686,6 +719,8 @@ class Stats():
                 json.dumps(data['bin_compile_args']),
                 str(data['dict']),
                 str(data['orig_bin']),
+                bc_file_data,
+                ml_data
             )
         )
         self.conn.commit()
@@ -1811,7 +1846,6 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir):
             print(err)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             sys.exit(1)
-        stats.new_prog(EXEC_ID, prog, prog_info)
         start = time.time()
         print(f"Compiling base and locating mutations for {prog}")
 
@@ -1836,13 +1870,11 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir):
 
             filtered_mutations = filter_mutations(mutator, detector_bin, prog_info['args'], seeds)
 
-        # get additional info on mutations
-        mut_data_path = list(Path(HOST_TMP_PATH/prog_info['path'])
-                                .glob('**/*.ll.mutationlocations'))
-        assert len(mut_data_path) == 1, f"found: {mut_data_path}"
-        mut_data_path = mut_data_path[0]
-        with open(mut_data_path, 'rt') as f:
+        # get info on mutations
+        with open(mutation_locations_path(prog_info), 'rt') as f:
             mutation_data = json.load(f)
+
+        stats.new_prog(EXEC_ID, prog, prog_info)
 
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
@@ -1866,6 +1898,9 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir):
             print(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         supermutations = get_supermutations(mutator, prog_info, mutations)
+
+        for ii, sm in enumerate(supermutations):
+            stats.new_initial_supermutant(EXEC_ID, prog, ii, sm)
 
         mutations = list((sm, prog, prog_info, mutation_data) for sm in supermutations)
 
