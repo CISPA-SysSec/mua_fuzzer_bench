@@ -31,13 +31,14 @@ def augment_graph(orig_graph: Dict[str,List[str]]):
         for call_location in call_locations:
             call_splitted = call_location.split(SPLITTER)[:-1]
             called_funname = call_splitted[0]
-            if called_funname in result:
-                new_locations.add(called_funname)
-            elif called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
+            if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
                 call_types = tuple(call_splitted[1:])
                 if call_types in mapping:
                     for fun in mapping[call_types]:
                         new_locations.add(fun)
+            else:
+                new_locations.add(called_funname)
+
         result[function.split(SPLITTER)[0]] = list(new_locations)
 
     return result
