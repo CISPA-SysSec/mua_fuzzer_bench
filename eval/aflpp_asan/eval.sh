@@ -17,7 +17,7 @@ export LD_LIBRARY_PATH=/home/user/lib/
 export AFL_LLVM_USE_TRACE_PC=1
 export AFL_LLVM_DICT2FILE="$(pwd)/afl++.dict"
 
-afl-c++ -o put -v /home/user/lib/libdynamiclibrary.so $1 $2
+afl-c++ -o put -v /home/user/lib/libdynamiclibrary.so /home/user/aflpp_main.cc $1 $2
 
 [[ -d output ]] && rm -rf output
 mkdir output

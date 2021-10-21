@@ -36,11 +36,7 @@ def mutate_file(args):
     # According to https://en.wikipedia.org/wiki/Darwin_%28operating_system%29#Release_history,
     # MacOS Catalina corresponds to Darwin's major version number 19.
     # The uname.release checks below check if the major version number of Darwin is greater than 18
-    if type(mutation) is list:
-        uid = "_".join(str(mut["UID"]) for mut in mutation)
-    else:
-        uid = mutation["UID"]
-    mut_bin = Path(f"{out_dir}/{progname}.{uid}.mut")
+    mut_bin = Path(f"{out_dir}/{progname}.mut")
     assert not mut_bin.exists(), f"The output file already exists, aborting: {mut_bin}"
     mut_bin = str(mut_bin)
 
