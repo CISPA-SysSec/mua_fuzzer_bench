@@ -157,7 +157,7 @@ public:
                     std::string type_str;
                     llvm::raw_string_ostream rso(type_str);
                     callinst->getType()->print(rso);
-                    result += "dummy | " + rso.str() + " | ";
+                    result += ":unnamed: | " + rso.str() + " | ";
                     for (int i = 0; i < callinst->getNumArgOperands(); i++) {
                         std::string type_str_inner;
                         llvm::raw_string_ostream rso_inner(type_str_inner);
