@@ -14,7 +14,7 @@ import json
 import shutil
 import random
 import re
-from typing import Union, List, Tuple, Set
+from typing import Union, List, Tuple, Set, Dict
 import psutil
 import contextlib
 import concurrent.futures
@@ -25,7 +25,7 @@ import tempfile
 import hashlib
 import copy
 from inspect import getframeinfo, stack
-from itertools import product, chain
+from itertools import product, chain, zip_longest
 from pathlib import Path
 
 import numpy as np
@@ -327,6 +327,11 @@ def subject_container_tag(name):
 def mutation_locations_path(prog_info):
     orig_bc = Path(prog_info['orig_bc'])
     return orig_bc.with_suffix('.ll.mutationlocations')
+
+
+def mutation_locations_graph_path(prog_info):
+    orig_bc = Path(prog_info['orig_bc'])
+    return orig_bc.with_suffix('.ll.mutationlocations.graph')
 
 
 def mutation_detector_path(prog_info):
@@ -1735,10 +1740,10 @@ def find_supermutants(matrix, keys, mutants):
     indices = np.arange(len(matrix))
     # for each index a boolean value if there are any mutants remaining
     has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
-    # the selected supermutants each entry contains a list of mutants that are a supermutant
+
+    # the selected supermutants, each entry contains a list of mutants that are a supermutant
     supermutants = []
 
-    # while more supermutants can be created
     while True:
         # continue while there are more mutants remaining
         available = np.array(has_mutants, copy=True)
@@ -1761,9 +1766,61 @@ def find_supermutants(matrix, keys, mutants):
     return supermutants
 
 
+UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
+SPLITTER = " | "
+
+def augment_graph(orig_graph: Dict[str,List[str]]):
+    """
+    Takes the graph and augments it by replacing unknown function calls with all possible calls.
+    :param orig_graph:
+    :return:
+    """
+    result = dict()
+    mapping = dict()
+    # first get an initial mapping of the result set and collect all known functions
+    for key in orig_graph.keys():
+        key_splitted = key.split(SPLITTER)[:-1]
+        funname = key_splitted[0]
+        result[funname] = list()
+        mapped_head = mapping.setdefault(tuple(key_splitted[1:]), list())
+        mapped_head.append(funname)
+
+    #then go over all call locations and look for replacements for unknown calls and just add known calls
+    for function, call_locations in orig_graph.items():
+        new_locations = set()
+        for call_location in call_locations:
+            call_splitted = call_location.split(SPLITTER)[:-1]
+            called_funname = call_splitted[0]
+            if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
+                call_types = tuple(call_splitted[1:])
+                if call_types in mapping:
+                    for fun in mapping[call_types]:
+                        new_locations.add(fun)
+            else:
+                new_locations.add(called_funname)
+
+        result[function.split(SPLITTER)[0]] = list(new_locations)
+
+    return result
+
+
+def flatten_callgraph(call_graph):
+    caller_callee = []
+    for caller, callees in call_graph.items():
+        for callee in callees:
+            caller_callee.append((caller, callee))
+    return caller_callee
+
+
+def get_callgraph(prog_info):
+    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+        call_graph = json.load(f)
+    call_graph = augment_graph(call_graph)
+    return flatten_callgraph(call_graph)
+
+
 def get_supermutations(mutator, prog_info, mutations):
-    callgraph_dot_file = create_callgraph_dot(mutator, prog_info)
-    callgraph = dot_to_callgraph(callgraph_dot_file)
+    callgraph = get_callgraph(prog_info)
 
     loc_mut_map = location_mutation_mapping(mutations)
     callgraph = load_call_graph(callgraph, loc_mut_map)
@@ -1784,47 +1841,6 @@ def get_supermutations(mutator, prog_info, mutations):
     print(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
           f"a reduction by {total_mutants / len(supermutants):.2f} times.")
     return supermutants
-
-
-def create_callgraph_dot(container, prog_info):
-    orig_bc = Path(prog_info['orig_bc'])
-    # Compile the mutation location detector for the prog.
-    callgraph_dot = orig_bc.with_suffix(orig_bc.suffix + '.callgraph.dot')
-    print(f"Writing callgraph to: {callgraph_dot}")
-    args = ["opt",
-            "--dot-callgraph",
-            orig_bc]
-
-    run_exec_in_container(container.name, True, args)
-
-    return callgraph_dot
-
-
-def dot_to_callgraph(dot_file):
-    import re
-    import pydot
-    import networkx
-    from pathlib import Path
-
-    graphs = pydot.graph_from_dot_file(dot_file)
-    assert len(graphs) == 1
-    graph = graphs[0]
-    graph = networkx.drawing.nx_pydot.from_pydot(graph)
-
-    name_re = re.compile("\"\{(.*)\}\"")
-
-    callgraph = []
-
-    for node in graph.nodes():
-        label = graph.nodes[node]['label']
-        name = name_re.match(label).group(1)
-
-        for to_reach in graph.neighbors(node):
-            to_reach_label = graph.nodes[to_reach]['label']
-            to_reach_name = name_re.match(to_reach_label).group(1)
-            callgraph.append((name, to_reach_name))
-
-    return callgraph
 
 
 def get_all_mutations(stats, mutator, progs, seed_base_dir):
@@ -1988,32 +2004,33 @@ def clean_up_mut_base_dir(mut_data):
         print(f"Could not clean up {mut_base_dir}: {err}")
 
 
-def split_up_supermutant(multi, all):
+
+def split_up_supermutant(multi, all_muts):
     """
-    Split up the mutants listed in all, into as many chunks as there are mutants in multi, making sure that the 
+    Split up the mutants listed in all_muts, into as many chunks as there are mutants in multi, making sure that the
     mutants listed in multi end up in different chunks. This can be used to split up a supermutant where
     multiple mutations are covered at once.
     """
     multi = set(chain(*multi))
-    all = set(all)
-    assert all & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
-                                 f"all: {all}, multi: {multi}"
-    others = set(all) - multi
+    all_muts = set(all_muts)
+    assert all_muts & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
+                                      f"all_muts: {all_muts}, multi: {multi}"
+    others = all_muts - multi
 
-    chunk_size = len(others) / len(multi)
+    chunk_size = int(len(others) / len(multi)) + 1
     multi = list(multi)
     others = list(others)
 
-    chunks = []
+    mut_chunks = []
 
-    for ii in range(len(multi)):
-        start = int((ii)*chunk_size)
-        end = int((ii+1)*chunk_size)
-        chosen = [multi[ii]] + others[start:end]
-        chunks.append(chosen)
+    for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
+        chosen = [multi[ii]] + cc
+        mut_chunks.append(chosen)
 
-    assert set(chain(*chunks)) == all, f"chunks: {chunks}, all: {all}"
-    return chunks
+    assert len(list(chain(*mut_chunks))) == len(all_muts), f"mut_chunks: {len(list(chain(*mut_chunks)))}, all_muts: {len(all_muts)}"
+    assert set(chain(*mut_chunks)) == all_muts, f"mut_chunks: {mut_chunks}, all_muts: {all_muts}"
+    return mut_chunks
+
 
 
 # Helper function to wait for the next eval run to complete.
