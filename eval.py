@@ -23,7 +23,6 @@ import uuid
 import platform
 import tempfile
 import hashlib
-import multiprocessing
 import copy
 from inspect import getframeinfo, stack
 from itertools import product, chain
@@ -3056,9 +3055,9 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     destination_dir.mkdir(parents=True, exist_ok=True)
 
     # prepare environment
-    base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
-    shutil.rmtree(base_shm_dir, ignore_errors=True)
-    base_shm_dir.mkdir(parents=True, exist_ok=True)
+    seed_coverage_base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
+    shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
+    seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     build_docker_images(fuzzers, progs)
 
@@ -3098,7 +3097,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
     print("Copying seeds to target dir and measuring coverage...")
     seed_runs = []
-    for seed_source in base_shm_dir.glob("*"):
+    for seed_source in seed_coverage_base_shm_dir.glob("*"):
         if not seed_source.is_dir():
             continue
 
@@ -3106,7 +3105,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         prog = seed_base_dir_parts[0]
         fuzzer = seed_base_dir_parts[1]
         instance = seed_base_dir_parts[2]
-        fuzzed_seed_dir = destination_dir/prog/fuzzer/instance
+        fuzzed_seed_dir = destination_dir/"all_runs"/prog/fuzzer/instance
         fuzzed_seed_dir.mkdir(parents=True, exist_ok=True)
 
         collector = SEED_HANDLERS[fuzzer]
@@ -3130,14 +3129,50 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             prog_info = PROGRAMS[prog]
             instrument_prog(mutator, prog_info)
 
+        kcov_res_dir = Path('/dev/shm/kcov_res')
+        shutil.rmtree(kcov_res_dir, ignore_errors=True)
+        kcov_res_dir.mkdir(parents=True)
+
+        seed_coverage_base_shm_dir = Path("/dev/shm/seed_coverage")
+        shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
+        seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
+
         for sr in seed_runs:
+            prog = sr['prog']
             covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr['dir'])
             sr['covered_mutations'] = covered_mutations
+
+            kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
+            get_kcov(prog, sr['dir'], kcov_res_path)
+            with open(kcov_res_path) as f:
+                kcov_res = json.load(f)
+            sr['kcov_res'] = kcov_res
             print(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
                   f"created {sr['num_seeds']} seeds inputs covering {len(covered_mutations)} mutations")
 
     with open(destination_dir/'info.json', 'wt') as f:
         json.dump(seed_runs, f)
+
+    runs_by_prog_fuzzer = defaultdict(list)
+    for sr in seed_runs:
+        runs_by_prog_fuzzer[(sr['prog'], sr['fuzzer'])].append(sr)
+
+    dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for pf in runs_by_prog_fuzzer.values() for rr in pf])
+
+    median_runs_base_dir = destination_dir/'median_runs'
+    median_runs_base_dir.mkdir()
+
+    print(f"Copying median runs to: {str(median_runs_base_dir)}")
+    for rr in runs_by_prog_fuzzer.values():
+        sorted_runs = sorted(rr, key=lambda x: len(x['covered_mutations']))
+        dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for rr in sorted_runs])
+        mr = sorted_runs[int(len(sorted_runs) / 2)]
+        dbg((mr['prog'], mr['fuzzer'], len(mr['covered_mutations'])))
+        median_run_dir = median_runs_base_dir/mr['prog']/mr['fuzzer']
+        median_run_dir.mkdir(parents=True)
+
+        for si in Path(mr['dir']).glob("*"):
+            shutil.copyfile(si, median_run_dir/si.name)
 
 
 def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances):
@@ -3148,7 +3183,6 @@ def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances)
     assert not result_dir.exists(), f"Expected the --result-dir: {result_dir} to not exist."
 
     gather_seeds(progs, fuzzers, fuzz_time, instances, True, seed_dir, result_dir)
-    # minimize_seeds(tmp_seed_fuzzing_dir, seed_fuzzing_dir, fuzzers, progs, True)
 
 
 # dest dir is seed_base_dir
@@ -4076,9 +4110,6 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
 
 def seed_coverage_run(run_data, docker_image):
     global should_run
-    start_time = time.time()
-
-    print(run_data, docker_image)
 
     # extract used values
     mut_data = run_data['mut_data']
@@ -4159,15 +4190,69 @@ def seed_coverage_run(run_data, docker_image):
     return all_logs
 
 
-def seed_coverage(seed_path, res_path, prog):
+def get_kcov(prog, seed_path, res_path):
     global should_run
+    prog_info = PROGRAMS[prog]
     seed_path = Path(seed_path)
-    res_path = Path(res_path).with_suffix(".json")
+    res_path = Path(res_path)
+
+    if not seed_path.is_dir():
+        print(f"There is no seed directory for prog: {prog}, seed files need be in this dir: {seed_path}")
+        sys.exit(1)
 
     if res_path.exists():
         print(f"Result path already exists, to avoid data loss, it is required that this dir does not exist: {res_path}")
         sys.exit(1)
 
+    with tempfile.TemporaryDirectory(dir="/dev/shm/seed_coverage") as active_dir:
+        active_dir = Path(active_dir)
+
+        # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
+        seed_in_tmp_dir = active_dir/"seeds_in"
+        seed_in_tmp_dir.mkdir()
+        for ff in seed_path.glob("*"):
+            if ff.is_dir():
+                print("Did not expect any directories in the seed path, something is wrong.")
+                sys.exit(1)
+            shutil.copy2(ff, seed_in_tmp_dir)
+
+        # Compile arguments
+        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+        # Arguments on how to execute the binary
+        args = "@@"
+
+        mut_data = {
+            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+            'compile_args': compile_args,
+            'is_cpp': prog_info['is_cpp'],
+            'args': args,
+            'prog': prog,
+            'dict': prog_info['dict'],
+        }
+
+        workdir = active_dir/"workdir"
+        workdir.mkdir()
+
+        orig_bin = Path(prog_info['orig_bin'])
+
+        # copy bin into workdir for easy access
+        shutil.copy2(orig_bin, workdir)
+        orig_bin = workdir/orig_bin.name
+
+        run_data = {
+            'orig_bin': orig_bin,
+            'workdir': workdir,
+            'seed_path': seed_in_tmp_dir,
+            'mut_data': mut_data,
+        }
+
+        # collect the seed coverage
+        all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
+
+        res_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(workdir/f"result.json", res_path)
+
+def seed_coverage(seed_path, res_path, prog):
     # prepare environment
     base_shm_dir = Path("/dev/shm/seed_coverage")
     shutil.rmtree(base_shm_dir, ignore_errors=True)
@@ -4182,61 +4267,7 @@ def seed_coverage(seed_path, res_path, prog):
         print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
         sys.exit(1)
 
-    if not seed_path.is_dir():
-        print(f"There is no seed directory for prog: {prog}, seed files need be in this dir: {seed_path}")
-        sys.exit(1)
-
-    active_dir = base_shm_dir/f"{prog}"
-    active_dir.mkdir()
-
-    # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
-    seed_in_tmp_dir = active_dir/"seeds_in"
-    seed_in_tmp_dir.mkdir()
-    for ff in seed_path.glob("*"):
-        if ff.is_dir():
-            print("Did not expect any directories in the seed path, something is wrong.")
-            sys.exit(1)
-        shutil.copy2(ff, seed_in_tmp_dir)
-
-    # Compile arguments
-    compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
-    # Arguments on how to execute the binary
-    args = prog_info['args']
-
-    mut_data = {
-        'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
-        'compile_args': compile_args,
-        'is_cpp': prog_info['is_cpp'],
-        'args': args,
-        'prog': prog,
-        'dict': prog_info['dict'],
-    }
-
-    workdir = active_dir/"workdir"
-    workdir.mkdir()
-
-    orig_bin = Path(prog_info['orig_bin'])
-
-    # copy bin into workdir for easy access
-    shutil.copy2(orig_bin, workdir)
-    orig_bin = workdir/orig_bin.name
-
-    run_data = {
-        'orig_bin': orig_bin,
-        'workdir': workdir,
-        'seed_path': seed_in_tmp_dir,
-        'mut_data': mut_data,
-    }
-
-    # collect the seed coverage
-    all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
-
-    res_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(workdir/f"result.json", res_path)
-
-    # clean up tmp dirs (everything should have happened inside the active dir)
-    shutil.rmtree(active_dir)
-
+    get_kcov(prog, seed_path, res_path)
 
 
 def main():
