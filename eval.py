@@ -3034,13 +3034,14 @@ def collect_afl(path):
     return list(found)
 
 
-def not_implemented():
-    raise NotImplementedError("no seed handler for fairfuzz")
+def collect_libfuzzer(path):
+    found = path.glob("seeds/*")
+    return list(found)
 
 
 SEED_HANDLERS = {
         'honggfuzz': collect_honggfuzz,
-        'libfuzzer': not_implemented,
+        'libfuzzer': collect_libfuzzer,
         'aflpp': collect_afl,
         'afl': collect_afl,
 }
@@ -3145,7 +3146,6 @@ def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances)
     assert seed_dir.exists(), f"Expected the --seed-dir: {seed_dir} to exist."
     assert not result_dir.exists(), f"Expected the --result-dir: {result_dir} to not exist."
 
-    # with tempfile.TemporaryDirectory(prefix="tmp_seed_fuzzing_dir_", dir=HOST_TMP_PATH) as tmp_seed_fuzzing_dir:
     gather_seeds(progs, fuzzers, fuzz_time, instances, True, seed_dir, result_dir)
     # minimize_seeds(tmp_seed_fuzzing_dir, seed_fuzzing_dir, fuzzers, progs, True)
 
