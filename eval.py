@@ -1997,7 +1997,8 @@ def split_up_supermutant(multi, all):
     """
     multi = set(chain(*multi))
     all = set(all)
-    assert all & multi == multi, "Not all covered mutations are in the possible mutations, something is wrong."
+    assert all & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
+                                 f"all: {all}, multi: {multi}"
     others = set(all) - multi
 
     chunk_size = len(others) / len(multi)
@@ -2012,7 +2013,7 @@ def split_up_supermutant(multi, all):
         chosen = [multi[ii]] + others[start:end]
         chunks.append(chosen)
 
-    assert set(chain(*chunks)) == all
+    assert set(chain(*chunks)) == all, f"chunks: {chunks}, all: {all}"
     return chunks
 
 
