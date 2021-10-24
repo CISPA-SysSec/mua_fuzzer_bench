@@ -100,7 +100,7 @@ def compute_scc(
         components.append(new_component)
 
 
-def build_scc_edges(sccs: Dict[str, int], graph: Dict[str, List[str]]):
+def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[str]]):
     """
     Takes the sccs and builds a mapping showing which scc can be reached or can reach any other SCC.
     :param sccs:
@@ -144,33 +144,71 @@ def build_scc_edges(sccs: Dict[str, int], graph: Dict[str, List[str]]):
     return reachable_dict
 
 
-def compute_sccs(graph: Dict[str, List[str]]) -> Dict[str, int]:
+def compute_non_reaching_scc_set_random(reachability_dict: Dict[int, Set[int]]):
+    """
+    Takes a reachability dictionary and greedily grows unreachable sets of SCCs.
+    :param reachability_dict:
+    :return:
+    """
+    to_compute = {el for el in range(len(reachability_dict))}
+    exclusion_list = list()
+    while to_compute:
+        seed_value = to_compute.pop()
+        tmp_exclusion_set = {seed_value}
+        tmp_reachability_set = set(reachability_dict[seed_value])
+        for el in to_compute:
+            if el not in tmp_reachability_set:
+                tmp_exclusion_set.add(el)
+                tmp_reachability_set.update(reachability_dict[el])
+        to_compute.difference_update(tmp_exclusion_set)
+        exclusion_list.append(tmp_exclusion_set)
+    return exclusion_list
+
+
+def compute_sccs(graph: Dict[str, List[str]]) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """
+    Computing Strongly Connected Components with Dijkstra algorithm (linear in edges+nodes).
+    :param graph:
+    :return:
+    """
     # use Dijkstra's SCC algorithm: https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm
     components = []
     preorders = {}
     compute_scc("main", graph, preorders, [], [], components, 0)
     print(components, preorders)
 
-    result = {}
+    sccs = {}
+    sccs_uid_to_name = {}
     uid = 0
     for comp in components:
+        sccs_uid_to_name[uid] = comp
         for vert in comp:
-            result[vert] = uid
+            sccs[vert] = uid
         uid += 1
-    return result
+    return sccs, sccs_uid_to_name
 
 
 def main(path: str):
     """
-    Takes a path to a graph file and returns a graph as dictionary containing resolved unnamed calls.
+    Takes a path to a graph file and returns a list of lists of mutually exclusive function sets.
+    That is: pick any list from the root list, then pick from every function set at most one function.
+    The picked functions are not reachable by each other.
     :param path:
     :return:
     """
     with open(path, "r") as graph_file:
         orig_graph = json.load(graph_file)
     augmented_graph = augment_graph(orig_graph)
-    sccs = compute_sccs(augmented_graph)
-    build_scc_edges(sccs, augmented_graph)
+    sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
+    scc_reachability_mapping = build_scc_reachability_mapping(sccs, augmented_graph)
+    exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
+    final_list = []  # will contain a list of lists containing mutually exclusive
+    for excl_set in exclusion_list:
+        tmp_exclusion_list = list()
+        for scc in excl_set:
+            tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
+        final_list.append(tmp_exclusion_list)
+    return final_list
 
 
 if __name__ == "__main__":
