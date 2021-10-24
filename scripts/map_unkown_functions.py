@@ -102,29 +102,45 @@ def compute_scc(
 
 def build_scc_edges(sccs: Dict[str, int], graph: Dict[str, List[str]]):
     """
-    Takes the sccs and builds a new graph based on them.
+    Takes the sccs and builds a mapping showing which scc can be reached or can reach any other SCC.
     :param sccs:
     :return:
     """
     # build the scc DAG
-    scc_dag = {}
+    scc_forward_dag = {}
     for vert, uid in sccs.items():
-        vert_scc = scc_dag.setdefault(sccs[vert], set())
+        vert_scc = scc_forward_dag.setdefault(sccs[vert], set())
         vert_scc.add(uid)
         for neighbor in graph[vert]:
             vert_scc.add(sccs[neighbor])
-        # add itself as a scc is reachable from itself
+
+    scc_backward_dag = {}
+    for vert, uid in sccs.items():
+        vert_scc = scc_backward_dag.setdefault(sccs[vert], set())
+        vert_scc.add(uid)
+        for neighbor in graph[vert]:
+            child_scc = scc_backward_dag.setdefault(sccs[neighbor], set())
+            child_scc.add(sccs[vert])
 
     # compute for any scc the reachable scc's
     reachable_dict = {}
-    for uid in scc_dag:
+    for uid in scc_forward_dag:
         reachable = {uid}
-        neighbors: Set[int] = set(scc_dag[uid])
-        while neighbors:
-            neighbor = neighbors.pop()
-            reachable.add(neighbor)
-            neighbors.update({el for el in scc_dag[neighbor] if el not in reachable})
+        children: Set[int] = set(scc_forward_dag[uid])
+        while children:
+            child = children.pop()
+            reachable.add(child)
+            children.update({el for el in scc_forward_dag[child] if el not in reachable})
         reachable_dict[uid] = reachable
+
+    for uid in scc_backward_dag:
+        reachable = {uid}
+        parents: Set[int] = set(scc_backward_dag[uid])
+        while parents:
+            parent = parents.pop()
+            reachable.add(parent)
+            parents.update({el for el in scc_backward_dag[parent] if el not in reachable})
+        reachable_dict[uid].update(reachable)
     return reachable_dict
 
 
