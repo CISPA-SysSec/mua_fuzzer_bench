@@ -14,7 +14,7 @@ import json
 import shutil
 import random
 import re
-from typing import Union, List, Tuple, Set
+from typing import Union, List, Tuple, Set, Dict
 import psutil
 import contextlib
 import concurrent.futures
@@ -23,10 +23,9 @@ import uuid
 import platform
 import tempfile
 import hashlib
-import multiprocessing
 import copy
 from inspect import getframeinfo, stack
-from itertools import product, chain
+from itertools import product, chain, zip_longest
 from pathlib import Path
 
 import numpy as np
@@ -328,6 +327,16 @@ def subject_container_tag(name):
 def mutation_locations_path(prog_info):
     orig_bc = Path(prog_info['orig_bc'])
     return orig_bc.with_suffix('.ll.mutationlocations')
+
+
+def mutation_locations_graph_path(prog_info):
+    orig_bc = Path(prog_info['orig_bc'])
+    return orig_bc.with_suffix('.ll.mutationlocations.graph')
+
+
+def mutation_detector_path(prog_info):
+    orig_bc = Path(prog_info['orig_bc'])
+    return  orig_bc.with_suffix(".ll.opt_mutate")
 
 
 # Indicates if the evaluation should continue, is mainly used to shut down
@@ -1731,10 +1740,10 @@ def find_supermutants(matrix, keys, mutants):
     indices = np.arange(len(matrix))
     # for each index a boolean value if there are any mutants remaining
     has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
-    # the selected supermutants each entry contains a list of mutants that are a supermutant
+
+    # the selected supermutants, each entry contains a list of mutants that are a supermutant
     supermutants = []
 
-    # while more supermutants can be created
     while True:
         # continue while there are more mutants remaining
         available = np.array(has_mutants, copy=True)
@@ -1757,9 +1766,61 @@ def find_supermutants(matrix, keys, mutants):
     return supermutants
 
 
+UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
+SPLITTER = " | "
+
+def augment_graph(orig_graph: Dict[str,List[str]]):
+    """
+    Takes the graph and augments it by replacing unknown function calls with all possible calls.
+    :param orig_graph:
+    :return:
+    """
+    result = dict()
+    mapping = dict()
+    # first get an initial mapping of the result set and collect all known functions
+    for key in orig_graph.keys():
+        key_splitted = key.split(SPLITTER)[:-1]
+        funname = key_splitted[0]
+        result[funname] = list()
+        mapped_head = mapping.setdefault(tuple(key_splitted[1:]), list())
+        mapped_head.append(funname)
+
+    #then go over all call locations and look for replacements for unknown calls and just add known calls
+    for function, call_locations in orig_graph.items():
+        new_locations = set()
+        for call_location in call_locations:
+            call_splitted = call_location.split(SPLITTER)[:-1]
+            called_funname = call_splitted[0]
+            if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
+                call_types = tuple(call_splitted[1:])
+                if call_types in mapping:
+                    for fun in mapping[call_types]:
+                        new_locations.add(fun)
+            else:
+                new_locations.add(called_funname)
+
+        result[function.split(SPLITTER)[0]] = list(new_locations)
+
+    return result
+
+
+def flatten_callgraph(call_graph):
+    caller_callee = []
+    for caller, callees in call_graph.items():
+        for callee in callees:
+            caller_callee.append((caller, callee))
+    return caller_callee
+
+
+def get_callgraph(prog_info):
+    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+        call_graph = json.load(f)
+    call_graph = augment_graph(call_graph)
+    return flatten_callgraph(call_graph)
+
+
 def get_supermutations(mutator, prog_info, mutations):
-    callgraph_dot_file = create_callgraph_dot(mutator, prog_info)
-    callgraph = dot_to_callgraph(callgraph_dot_file)
+    callgraph = get_callgraph(prog_info)
 
     loc_mut_map = location_mutation_mapping(mutations)
     callgraph = load_call_graph(callgraph, loc_mut_map)
@@ -1782,60 +1843,6 @@ def get_supermutations(mutator, prog_info, mutations):
     return supermutants
 
 
-def create_callgraph_dot(container, prog_info):
-    orig_bc = Path(prog_info['orig_bc'])
-    # Compile the mutation location detector for the prog.
-    callgraph_dot = orig_bc.with_suffix(orig_bc.suffix + '.callgraph.dot')
-    print(f"Writing callgraph to: {callgraph_dot}")
-    args = ["opt",
-            "--dot-callgraph",
-            orig_bc]
-
-    run_exec_in_container(container.name, True, args)
-
-    return callgraph_dot
-
-
-def dot_to_callgraph(dot_file):
-    import re
-    import pydot
-    import networkx
-    from pathlib import Path
-
-    graphs = pydot.graph_from_dot_file(dot_file)
-    assert len(graphs) == 1
-    graph = graphs[0]
-    graph = networkx.drawing.nx_pydot.from_pydot(graph)
-
-    name_re = re.compile("\"\{(.*)\}\"")
-
-    callgraph = []
-
-    for node in graph.nodes():
-        label = graph.nodes[node]['label']
-        name = name_re.match(label).group(1)
-
-        for to_reach in graph.neighbors(node):
-            to_reach_label = graph.nodes[to_reach]['label']
-            to_reach_name = name_re.match(to_reach_label).group(1)
-            callgraph.append((name, to_reach_name))
-
-    return callgraph
-
-
-def build_detector_binary(container, prog_info, detector_path, workdir):
-    run_exec_in_container(container.name, True, [
-            "./run_mutation.py",
-            str(prog_info['orig_bc']),
-            *(['-cpp'] if prog_info['is_cpp'] else []),
-            "-bn",
-            "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], workdir),
-            "--bin-args=" + build_compile_args(prog_info['bin_compile_args'], workdir),
-            "--out-dir", str(detector_path.parent)
-            ]
-    )
-
-
 def get_all_mutations(stats, mutator, progs, seed_base_dir):
     all_mutations = []
     # For all programs that can be done by our evaluation
@@ -1850,25 +1857,13 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir):
         print(f"Compiling base and locating mutations for {prog}")
 
         # Run the seeds through the mutation detector
-        mutation_list_dir = Path("/dev/shm/mutation_detection")/prog
         seeds = Path(seed_base_dir/prog)
 
         instrument_prog(mutator, prog_info)
 
         if FILTER_MUTATIONS:
-            mutation_container_name = mutator.name
-            SIGNAL_FOLDER_NAME = Path("trigger_signal")
-            mutator_home = Path("/home/mutator")
-            detector_bin = mutator_home/Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
-            mutator_tmp_path = mutator_home/"tmp"
-            prog_path = mutator_home/detector_bin
-
-            detector_bin = Path(prog_info['orig_bc']).with_suffix(".ll.opt_mutate")
-            print("Building detector binary...")
-            build_detector_binary(mutator, prog_info, detector_bin, ".")
             print("Filtering mutations, running all seed files.")
-
-            filtered_mutations = filter_mutations(mutator, detector_bin, prog_info['args'], seeds)
+            filtered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
 
         # get info on mutations
         with open(mutation_locations_path(prog_info), 'rt') as f:
@@ -1878,8 +1873,6 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir):
 
         # Get all mutations that are possible with that program, they are identified by the file names
         # in the mutation_list_dir
-        # mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data
-        #                  if p['type'] not in [14, 19, 21, 22, 23, 9])
         mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
         print(f"Found {len(mutations)} mutations for {prog}")
         for mut in mutations:
@@ -2011,31 +2004,33 @@ def clean_up_mut_base_dir(mut_data):
         print(f"Could not clean up {mut_base_dir}: {err}")
 
 
-def split_up_supermutant(multi, all):
+
+def split_up_supermutant(multi, all_muts):
     """
-    Split up the mutants listed in all, into as many chunks as there are mutants in multi, making sure that the 
+    Split up the mutants listed in all_muts, into as many chunks as there are mutants in multi, making sure that the
     mutants listed in multi end up in different chunks. This can be used to split up a supermutant where
     multiple mutations are covered at once.
     """
     multi = set(chain(*multi))
-    all = set(all)
-    assert all & multi == multi, "Not all covered mutations are in the possible mutations, something is wrong."
-    others = set(all) - multi
+    all_muts = set(all_muts)
+    assert all_muts & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
+                                      f"all_muts: {all_muts}, multi: {multi}"
+    others = all_muts - multi
 
-    chunk_size = len(others) / len(multi)
+    chunk_size = int(len(others) / len(multi)) + 1
     multi = list(multi)
     others = list(others)
 
-    chunks = []
+    mut_chunks = []
 
-    for ii in range(len(multi)):
-        start = int((ii)*chunk_size)
-        end = int((ii+1)*chunk_size)
-        chosen = [multi[ii]] + others[start:end]
-        chunks.append(chosen)
+    for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
+        chosen = [multi[ii]] + cc
+        mut_chunks.append(chosen)
 
-    assert set(chain(*chunks)) == all
-    return chunks
+    assert len(list(chain(*mut_chunks))) == len(all_muts), f"mut_chunks: {len(list(chain(*mut_chunks)))}, all_muts: {len(all_muts)}"
+    assert set(chain(*mut_chunks)) == all_muts, f"mut_chunks: {mut_chunks}, all_muts: {all_muts}"
+    return mut_chunks
+
 
 
 # Helper function to wait for the next eval run to complete.
@@ -2510,7 +2505,7 @@ def start_next_task(prepared_runs, all_runs, tasks, executor, stats, start_time,
     return True
 
 
-def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_dir, seed_fuzzing, seed_fuzzing_instances):
+def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir):
     global should_run
 
     seed_base_dir = Path(seed_base_dir)
@@ -2541,18 +2536,6 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_d
     # Keep a list of which cores can be used
     cores = CpuCores(NUM_CPUS)
 
-    if seed_fuzzing > 0:
-        print("Starting with seed fuzzing.")
-        assert seed_fuzzing_dir is not None, "--seed-fuzzing-dir needs to be set."
-        seed_fuzzing_dir = Path(seed_fuzzing_dir)
-        assert not seed_fuzzing_dir.exists(), f"Expected the --seed-fuzzing-dir: {seed_fuzzing_dir} to not exist."
-        with tempfile.TemporaryDirectory(prefix="tmp_seed_fuzzing_dir_", dir=HOST_TMP_PATH) as tmp_seed_fuzzing_dir:
-            # TODO this could be repeated to get a more thorough result
-            gather_seeds(progs, fuzzers, seed_fuzzing, seed_fuzzing_instances, True, seed_base_dir, tmp_seed_fuzzing_dir)
-            minimize_seeds(tmp_seed_fuzzing_dir, seed_fuzzing_dir, fuzzers, progs, True)
-        # continue with new seed_base_dir
-        seed_base_dir = seed_fuzzing_dir
-
     # mutants in use
     active_mutants = defaultdict(lambda: {'ref_cnt': 0, 'killed': False})
 
@@ -2565,7 +2548,7 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_d
         # start time
         start_time = time.time()
         # Get each run
-        all_runs = get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats)[:60]
+        all_runs = get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats)
         num_runs = len(all_runs)
         all_runs = enumerate(all_runs)
         ii = 0
@@ -2592,6 +2575,7 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, seed_fuzzing_d
 
 
 def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats):
+    assert num_repeats >= 1
     all_runs = []
 
     for prog in progs:
@@ -2602,7 +2586,6 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             sys.exit(1)
 
-        fuzzer_runs = []
         for fuzzer in fuzzers:
             try:
                 eval_func = FUZZERS[fuzzer]
@@ -2615,21 +2598,20 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
 
             # Compile arguments
             compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
-            # Arguments on how to execute the binary
-            args = prog_info['args']
 
             mut_data = {
                 'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
                 'compile_args': compile_args,
                 'is_cpp': prog_info['is_cpp'],
-                'args': args,
                 'prog': prog,
                 'dict': prog_info['dict'],
             }
 
-            for _ in range(num_repeats):
+            for ii in range(num_repeats):
 
-                workdir = Path(tempfile.mkdtemp(prefix=f"{prog}__{fuzzer}__", dir="/dev/shm/mutator_seed_gathering/"))
+                workdir = Path(tempfile.mkdtemp(
+                    prefix=f"{prog}__{fuzzer}__{ii}__",
+                    dir="/dev/shm/mutator_seed_gathering/"))
 
                 run_data = {
                     'fuzzer': fuzzer,
@@ -3049,7 +3031,6 @@ def check_seeds(progs, fuzzers, seed_base_dir):
 
 BLOCK_SIZE = 1024*4
 
-# Based on: https://stackoverflow.com/a/44873382
 def hash_file(file_path):
     h = hashlib.sha512()
     b  = bytearray(BLOCK_SIZE)
@@ -3070,11 +3051,15 @@ def collect_afl(path):
     return list(found)
 
 
+def collect_libfuzzer(path):
+    found = path.glob("seeds/*")
+    return list(found)
+
+
 SEED_HANDLERS = {
         'honggfuzz': collect_honggfuzz,
-        'fairfuzz': collect_afl,
-        'aflpp_rec': collect_afl,
-        'aflpp_det': collect_afl,
+        'libfuzzer': collect_libfuzzer,
+        'aflpp': collect_afl,
         'afl': collect_afl,
 }
 
@@ -3087,9 +3072,9 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     destination_dir.mkdir(parents=True, exist_ok=True)
 
     # prepare environment
-    base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
-    shutil.rmtree(base_shm_dir, ignore_errors=True)
-    base_shm_dir.mkdir(parents=True, exist_ok=True)
+    seed_coverage_base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
+    shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
+    seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     build_docker_images(fuzzers, progs)
 
@@ -3127,29 +3112,94 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
         assert len(all_runs) == 0 or should_run is False
 
-    print("Copying seeds to target dir...")
-    for seed_source in base_shm_dir.glob("*"):
+    print("Copying seeds to target dir and measuring coverage...")
+    seed_runs = []
+    for seed_source in seed_coverage_base_shm_dir.glob("*"):
         if not seed_source.is_dir():
             continue
 
         seed_base_dir_parts = str(seed_source.name).split('__')
         prog = seed_base_dir_parts[0]
         fuzzer = seed_base_dir_parts[1]
-        prog_dir = destination_dir/prog
-        if per_fuzzer:
-            prog_dir = prog_dir/fuzzer
-        prog_dir.mkdir(parents=True, exist_ok=True)
+        instance = seed_base_dir_parts[2]
+        fuzzed_seed_dir = destination_dir/"all_runs"/prog/fuzzer/instance
+        fuzzed_seed_dir.mkdir(parents=True, exist_ok=True)
 
         collector = SEED_HANDLERS[fuzzer]
-
         found_seeds = collector(seed_source)
-        print(prog, fuzzer, len(found_seeds))
+
         for fs in found_seeds:
             file_hash = hash_file(fs)
-            dest_path = prog_dir/file_hash
+            dest_path = fuzzed_seed_dir/file_hash
             shutil.copyfile(fs, dest_path)
 
-    print("seed gathering done :)")
+        seed_runs.append({
+            'prog': prog,
+            'fuzzer': fuzzer,
+            'instance': instance,
+            'dir': str(fuzzed_seed_dir),
+            'num_seeds': len(found_seeds),
+        })
+
+    with start_mutation_container(None, 60*60) as mutator:
+        for prog in set(sr['prog'] for sr in seed_runs):
+            prog_info = PROGRAMS[prog]
+            instrument_prog(mutator, prog_info)
+
+        kcov_res_dir = Path('/dev/shm/kcov_res')
+        shutil.rmtree(kcov_res_dir, ignore_errors=True)
+        kcov_res_dir.mkdir(parents=True)
+
+        seed_coverage_base_shm_dir = Path("/dev/shm/seed_coverage")
+        shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
+        seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+        for sr in seed_runs:
+            prog = sr['prog']
+            covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr['dir'])
+            sr['covered_mutations'] = covered_mutations
+
+            kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
+            get_kcov(prog, sr['dir'], kcov_res_path)
+            with open(kcov_res_path) as f:
+                kcov_res = json.load(f)
+            sr['kcov_res'] = kcov_res
+            print(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
+                  f"created {sr['num_seeds']} seeds inputs covering {len(covered_mutations)} mutations")
+
+    with open(destination_dir/'info.json', 'wt') as f:
+        json.dump(seed_runs, f)
+
+    runs_by_prog_fuzzer = defaultdict(list)
+    for sr in seed_runs:
+        runs_by_prog_fuzzer[(sr['prog'], sr['fuzzer'])].append(sr)
+
+    dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for pf in runs_by_prog_fuzzer.values() for rr in pf])
+
+    median_runs_base_dir = destination_dir/'median_runs'
+    median_runs_base_dir.mkdir()
+
+    print(f"Copying median runs to: {str(median_runs_base_dir)}")
+    for rr in runs_by_prog_fuzzer.values():
+        sorted_runs = sorted(rr, key=lambda x: len(x['covered_mutations']))
+        dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for rr in sorted_runs])
+        mr = sorted_runs[int(len(sorted_runs) / 2)]
+        dbg((mr['prog'], mr['fuzzer'], len(mr['covered_mutations'])))
+        median_run_dir = median_runs_base_dir/mr['prog']/mr['fuzzer']
+        median_run_dir.mkdir(parents=True)
+
+        for si in Path(mr['dir']).glob("*"):
+            shutil.copyfile(si, median_run_dir/si.name)
+
+
+def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances):
+    seed_dir = Path(seed_dir)
+    result_dir = Path(result_dir)
+
+    assert seed_dir.exists(), f"Expected the --seed-dir: {seed_dir} to exist."
+    assert not result_dir.exists(), f"Expected the --result-dir: {result_dir} to not exist."
+
+    gather_seeds(progs, fuzzers, fuzz_time, instances, True, seed_dir, result_dir)
 
 
 # dest dir is seed_base_dir
@@ -3868,7 +3918,9 @@ def update_signal_list(signal_list, to_delete: Set[int]):
     return result
 
 
-def filter_mutations(mutator, detector_bin, args, seed_dir):
+def measure_mutation_coverage(mutator, prog_info, seed_dir):
+    detector_path = mutation_detector_path(prog_info)
+    args = "@@"
     # create tmp folder to where to put trigger signals
     with tempfile.TemporaryDirectory(dir=HOST_TMP_PATH) as trigger_folder:
         in_docker_trigger_folder = Path('/home/mutator/tmp/').joinpath(Path(trigger_folder).relative_to(HOST_TMP_PATH))
@@ -3878,7 +3930,7 @@ def filter_mutations(mutator, detector_bin, args, seed_dir):
                 '/home/mutator/iterate_seeds_simple.py',
                 '--seeds', seed_dir,
                 '--args', args,
-                '--binary', detector_bin,
+                '--binary', detector_path,
                 '--workdir', '/home/mutator'
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
@@ -4075,9 +4127,6 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
 
 def seed_coverage_run(run_data, docker_image):
     global should_run
-    start_time = time.time()
-
-    print(run_data, docker_image)
 
     # extract used values
     mut_data = run_data['mut_data']
@@ -4158,15 +4207,69 @@ def seed_coverage_run(run_data, docker_image):
     return all_logs
 
 
-def seed_coverage(seed_path, res_path, prog):
+def get_kcov(prog, seed_path, res_path):
     global should_run
+    prog_info = PROGRAMS[prog]
     seed_path = Path(seed_path)
-    res_path = Path(res_path).with_suffix(".json")
+    res_path = Path(res_path)
+
+    if not seed_path.is_dir():
+        print(f"There is no seed directory for prog: {prog}, seed files need be in this dir: {seed_path}")
+        sys.exit(1)
 
     if res_path.exists():
         print(f"Result path already exists, to avoid data loss, it is required that this dir does not exist: {res_path}")
         sys.exit(1)
 
+    with tempfile.TemporaryDirectory(dir="/dev/shm/seed_coverage") as active_dir:
+        active_dir = Path(active_dir)
+
+        # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
+        seed_in_tmp_dir = active_dir/"seeds_in"
+        seed_in_tmp_dir.mkdir()
+        for ff in seed_path.glob("*"):
+            if ff.is_dir():
+                print("Did not expect any directories in the seed path, something is wrong.")
+                sys.exit(1)
+            shutil.copy2(ff, seed_in_tmp_dir)
+
+        # Compile arguments
+        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+        # Arguments on how to execute the binary
+        args = "@@"
+
+        mut_data = {
+            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+            'compile_args': compile_args,
+            'is_cpp': prog_info['is_cpp'],
+            'args': args,
+            'prog': prog,
+            'dict': prog_info['dict'],
+        }
+
+        workdir = active_dir/"workdir"
+        workdir.mkdir()
+
+        orig_bin = Path(prog_info['orig_bin'])
+
+        # copy bin into workdir for easy access
+        shutil.copy2(orig_bin, workdir)
+        orig_bin = workdir/orig_bin.name
+
+        run_data = {
+            'orig_bin': orig_bin,
+            'workdir': workdir,
+            'seed_path': seed_in_tmp_dir,
+            'mut_data': mut_data,
+        }
+
+        # collect the seed coverage
+        all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
+
+        res_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(workdir/f"result.json", res_path)
+
+def seed_coverage(seed_path, res_path, prog):
     # prepare environment
     base_shm_dir = Path("/dev/shm/seed_coverage")
     shutil.rmtree(base_shm_dir, ignore_errors=True)
@@ -4181,61 +4284,7 @@ def seed_coverage(seed_path, res_path, prog):
         print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
         sys.exit(1)
 
-    if not seed_path.is_dir():
-        print(f"There is no seed directory for prog: {prog}, seed files need be in this dir: {seed_path}")
-        sys.exit(1)
-
-    active_dir = base_shm_dir/f"{prog}"
-    active_dir.mkdir()
-
-    # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
-    seed_in_tmp_dir = active_dir/"seeds_in"
-    seed_in_tmp_dir.mkdir()
-    for ff in seed_path.glob("*"):
-        if ff.is_dir():
-            print("Did not expect any directories in the seed path, something is wrong.")
-            sys.exit(1)
-        shutil.copy2(ff, seed_in_tmp_dir)
-
-    # Compile arguments
-    compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
-    # Arguments on how to execute the binary
-    args = prog_info['args']
-
-    mut_data = {
-        'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
-        'compile_args': compile_args,
-        'is_cpp': prog_info['is_cpp'],
-        'args': args,
-        'prog': prog,
-        'dict': prog_info['dict'],
-    }
-
-    workdir = active_dir/"workdir"
-    workdir.mkdir()
-
-    orig_bin = Path(prog_info['orig_bin'])
-
-    # copy bin into workdir for easy access
-    shutil.copy2(orig_bin, workdir)
-    orig_bin = workdir/orig_bin.name
-
-    run_data = {
-        'orig_bin': orig_bin,
-        'workdir': workdir,
-        'seed_path': seed_in_tmp_dir,
-        'mut_data': mut_data,
-    }
-
-    # collect the seed coverage
-    all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
-
-    res_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(workdir/f"result.json", res_path)
-
-    # clean up tmp dirs (everything should have happened inside the active dir)
-    shutil.rmtree(active_dir)
-
+    get_kcov(prog, seed_path, res_path)
 
 
 def main():
@@ -4260,18 +4309,27 @@ def main():
             help='Time in minutes for how long the fuzzers have to find mutations.')
     parser_eval.add_argument("--num-repeats", type=int, default=1, help="How often to repeat each mutation for each fuzzer.")
     parser_eval.add_argument("--seed-dir", required=True,
-            help="The directory containing the seed inputs.")
-    parser_eval.add_argument("--seed-fuzzing-dir", default=None,
-            help="The directory where the seed inputs that are collected during fuzzing are stored.")
-    parser_eval.add_argument("--seed-fuzzing", type=int, default=0,
-            help="Let each fuzzer find coverage during a initial fuzzing stage, that uses only the unmutated subject. "
-                 "Then use the found inputs as the seed inputs for each fuzzer. "
-                 "If the value is 0 (default), just use the given inputs as seed inputs. "
-                 "Otherwise, the value is the number of minutes each fuzzer instance gets. "
-                 "See also the --seed-fuzzing-instances argument.")
-    parser_eval.add_argument("--seed-fuzzing-instances", type=int, default=1,
-            help="The number of instances for each fuzzer, that will be run. Defaults to 1.")
+            help="The directory containing the initial seed inputs.")
     del parser_eval
+
+    # CMD: coverage_fuzzing
+    parser_coverage = subparsers.add_parser('coverage_fuzzing',
+            help="Run the evaluation executing the requested fuzzers (--fuzzers) on "
+                 "the requested programs (--progs) and gather the resulting data.")
+    parser_coverage.add_argument("--fuzzers", nargs='+', required=True,
+            help='The fuzzers to evaluate, will fail if the name is not known.')
+    parser_coverage.add_argument("--progs", nargs='+', required=True,
+            help='The programs to evaluate on, will fail if the name is not known.')
+    parser_coverage.add_argument("--fuzz-time", required=True,
+            help='Time in minutes for how long the fuzzers have to find coverage.')
+    parser_coverage.add_argument("--seed-dir", required=True,
+            help="The directory containing the initial seed inputs.")
+    parser_coverage.add_argument("--result-dir", default=None,
+            help="The directory where the coverage seed inputs that are collected during fuzzing are stored. "
+                 "One directory for each fuzzer and instance.")
+    parser_coverage.add_argument("--instances", type=int, default=1,
+            help="The number of instances for each fuzzer, that will be run. Defaults to 1.")
+    del parser_coverage
 
     # CMD: check_seeds 
     parser_check_seeds = subparsers.add_parser('check_seeds', help="Execute the seeds once with every fuzzer to check that they do not "
@@ -4354,13 +4412,15 @@ def main():
     args = parser.parse_args()
 
     if args.cmd == 'eval':
-        run_eval(args.progs, args.fuzzers, args.fuzz_time, args.num_repeats,
-                 args.seed_dir, args.seed_fuzzing_dir, args.seed_fuzzing, args.seed_fuzzing_instances)
+        run_eval(args.progs, args.fuzzers, args.fuzz_time, args.num_repeats, args.seed_dir)
+    elif args.cmd == 'coverage_fuzzing':
+        coverage_fuzzing(args.progs, args.fuzzers, args.fuzz_time,
+            args.seed_dir, args.result_dir, args.instances)
     elif args.cmd == 'check_seeds':
         check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
         gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,
-                     args.per_fuzzer, args.seed_dir, args.dest_dir)
+            args.per_fuzzer, args.seed_dir, args.dest_dir)
     elif args.cmd == 'import_seeds':
         import_seeds(args.source, args.dest)
     elif args.cmd == 'plot':
