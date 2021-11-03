@@ -35,8 +35,6 @@ def run_mutation(args):
         # only run the pre computation algorithm if no mutation should be done
         if args.mutate == -2:
             proc_res = run(["clang", "-S", "-emit-llvm", *bc_args, prog, "-o", f"{prog[:-3]}.ll"])
-            #  if proc_res != 0:
-            #      sys.exit(proc_res.returncode)
         mutate = f"{prog[:-3]}.ll"
     else:
         mutate = prog

@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 TRIGGERED_STR = b"Triggered!\r\n"
-MAX_RUN_EXEC_IN_CONTAINER_TIME = 30
+MAX_RUN_EXEC_IN_CONTAINER_TIME = 2
 
 
 def run_cmd(cmd):
@@ -19,6 +19,23 @@ def run_cmd(cmd):
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
         close_fds=True)
+
+
+def record_covered(result_dir, triggered_folder, covered, path):
+    # Write out mutations that are covered
+    mutation_ids = set((int(ff.name) for ff in triggered_folder.glob("*")))
+    new_covered = mutation_ids - covered
+
+    if new_covered:
+        with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+            json.dump({
+                'result': 'covered',
+                'path': str(path),
+                'mutation_ids': list(new_covered),
+            }, f)
+
+    covered |= mutation_ids
+    return mutation_ids
 
 
 def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
@@ -43,7 +60,17 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
 
             # Run input on original binary
             orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
-            proc = run_cmd(orig_cmd)
+            try:
+                proc = run_cmd(orig_cmd)
+            except subprocess.TimeoutExpired:
+                with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+                    json.dump({
+                        'result': 'orig_timeout',
+                        'path': str(path),
+                        'args': orig_cmd,
+                    }, f)
+                break
+
             orig_res = proc.stdout
             orig_returncode = proc.returncode
             if orig_returncode != 0:
@@ -58,47 +85,44 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
 
             # Run input on mutated binary
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
-            proc = run_cmd(mut_cmd)
-            mut_res = proc.stdout
-
-            mut_res = mut_res.replace(TRIGGERED_STR, b"")
-            mut_res = mut_res
-            mut_returncode = proc.returncode
-
-            if (orig_returncode != mut_returncode):
-                if proc.returncode != 0:
-                    mutation_ids = set((int(ff.name) for ff in triggered_folder.glob("*")))
-                    new_killed = mutation_ids - killed
-                    killed |= mutation_ids
-                    if new_killed:
-                        with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
-                            json.dump({
-                                'result': 'killed',
-                                'mutation_ids': list(new_killed),
-                                'path': str(path),
-                                'args': args,
-                                'orig_cmd': orig_cmd,
-                                'mut_cmd': mut_cmd,
-                                'orig_returncode': orig_returncode,
-                                'mut_returncode': mut_returncode,
-                                'orig_res': str(orig_res),
-                                'mut_res': str(mut_res),
-                                'num_triggered': len(mutation_ids),
-                            }, f)
-
-            # Write out mutations that are covered
-            mutation_ids = set((int(ff.name) for ff in triggered_folder.glob("*")))
-            new_covered = mutation_ids - covered
-
-            if new_covered:
+            try:
+                proc = run_cmd(mut_cmd)
+            except subprocess.TimeoutExpired:
+                covered = record_covered(result_dir, triggered_folder, covered, path)
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
                     json.dump({
-                        'result': 'covered',
+                        'result': 'timeout',
                         'path': str(path),
-                        'mutation_ids': list(new_covered),
+                        'args': mut_cmd,
+                        'mutation_ids': list(covered),
                     }, f)
+            else:
+                covered = record_covered(result_dir, triggered_folder, covered, path)
 
-            covered |= mutation_ids
+                mut_res = proc.stdout
+                mut_res = mut_res.replace(TRIGGERED_STR, b"")
+                mut_res = mut_res
+                mut_returncode = proc.returncode
+
+                if (orig_returncode != mut_returncode):
+                    if proc.returncode != 0:
+                        new_killed = covered - killed
+                        killed |= covered
+                        if new_killed:
+                            with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
+                                json.dump({
+                                    'result': 'killed',
+                                    'mutation_ids': list(new_killed),
+                                    'path': str(path),
+                                    'args': args,
+                                    'orig_cmd': orig_cmd,
+                                    'mut_cmd': mut_cmd,
+                                    'orig_returncode': orig_returncode,
+                                    'mut_returncode': mut_returncode,
+                                    'orig_res': str(orig_res),
+                                    'mut_res': str(mut_res),
+                                    'num_triggered': len(covered),
+                                }, f)
 
 
 def main():
