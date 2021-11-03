@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
+void unreachable(int b, int c) {
+    printf("in unreachable: %d %d", b, c);
+}
+
 void indir(int b, char c) {
     printf("in indir: %d %d", b, c);
 }

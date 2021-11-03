@@ -194,7 +194,7 @@ def main(path: str):
     That is: pick any list from the root list, then pick from every function set at most one function.
     The picked functions are not reachable by each other.
     :param path:
-    :return:
+    :return: The list of mutually exclusive functions plus a list of functions that is unreachable from the main function.
     """
     with open(path, "r") as graph_file:
         orig_graph = json.load(graph_file)
@@ -208,8 +208,10 @@ def main(path: str):
         for scc in excl_set:
             tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
         final_list.append(tmp_exclusion_list)
-    return final_list
+    reachable_functions = set(sccs.keys())
+    unreachable_functions = set(augmented_graph) - reachable_functions
+    return final_list , unreachable_functions
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    print(main(sys.argv[1]))
