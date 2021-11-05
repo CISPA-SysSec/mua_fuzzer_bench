@@ -26,6 +26,7 @@ import hashlib
 import copy
 from inspect import getframeinfo, stack
 from itertools import product, chain, zip_longest
+from random import choice
 from pathlib import Path
 
 import numpy as np
@@ -79,34 +80,34 @@ MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 PROGRAMS = {
     "cares_parse_reply": {
         "bc_compile_args": [
-            {'val': "-I", 'action': None},
-            {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
-            {'val': "-I", 'action': None},
-            {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
+            # {'val': "-I", 'action': None},
+            # {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
+            # {'val': "-I", 'action': None},
+            # {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
         ],
         "bin_compile_args": [
-            {'val': "tmp/samples/c-ares/out/ares-test-fuzz.o", 'action': 'prefix_workdir'},
+            # {'val': "tmp/samples/c-ares/out/ares-test-fuzz.o", 'action': 'prefix_workdir'},
         ],
         "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/c-ares/out/ares_parse_reply_fuzzer")),
-        "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
+        "orig_bin": str(Path("tmp/samples/c-ares/out/ares-parse-reply")),
+        "orig_bc": str(Path("tmp/samples/c-ares/out/ares-parse-reply.bc")),
         "name": "cares",
         "path": "samples/c-ares",
         "dict": None,
     },
     "cares_name": {
         "bc_compile_args": [
-            {'val': "-I", 'action': None},
-            {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
-            {'val': "-I", 'action': None},
-            {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
+            # {'val': "-I", 'action': None},
+            # {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
+            # {'val': "-I", 'action': None},
+            # {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
         ],
         "bin_compile_args": [
-            {'val': "tmp/samples/c-ares/out/ares-test-fuzz-name.o", 'action': 'prefix_workdir'},
+            # {'val': "tmp/samples/c-ares/out/ares-test-fuzz-name.o", 'action': 'prefix_workdir'},
         ],
         "is_cpp": True,
-        "orig_bin": str(Path("tmp/samples/c-ares/out/ares_create_query_fuzzer")),
-        "orig_bc": str(Path("tmp/samples/c-ares/out/libcares.bc")),
+        "orig_bin": str(Path("tmp/samples/c-ares/out/ares-name")),
+        "orig_bc": str(Path("tmp/samples/c-ares/out/ares-name.bc")),
         "name": "cares",
         "path": "samples/c-ares",
         "dict": None,
@@ -314,6 +315,13 @@ PROGRAMS = {
 }
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        return json.JSONEncoder.default(self, obj)
+
+
 def dbg(*args, **kwargs):
     caller = getframeinfo(stack()[1][0])
     print(f"{caller.filename}:{caller.lineno}:", *args, **kwargs, flush=True)
@@ -487,7 +495,8 @@ class Stats():
             orig_bin,
             orig_bc_file_data,
             prog_source_file_data,
-            mutation_locations_data
+            mutation_locations_data,
+            supermutant_graph_info
         )''')
 
         c.execute('''
@@ -740,7 +749,7 @@ class Stats():
             prog_source_data = f.read()
         with open(mutation_locations_path(data), 'rt') as f:
             ml_data = f.read()
-        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO progs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
@@ -750,7 +759,20 @@ class Stats():
                 str(data['orig_bin']),
                 bc_file_data,
                 prog_source_data,
-                ml_data
+                ml_data,
+                None
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def new_supermutant_graph_info(self, c, exec_id, prog, graph_info):
+        # c.execute('UPDATE execution SET total_time = ? where exec_id = ?',
+        c.execute('UPDATE progs SET supermutant_graph_info = ? where exec_id = ? and prog = ?',
+            (
+                graph_info,
+                exec_id,
+                prog,
             )
         )
         self.conn.commit()
@@ -1234,9 +1256,6 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
         if len(mut_ids) > 1:
             multi.append(res)
 
-        if 'timeout' in res['result']:
-            dbg("!"*100, '\n', res)
-
         results.append(res)
 
     # if any results affect multiple mutations, report those
@@ -1548,10 +1567,6 @@ FUZZERS = {
 
 
 def load_rerun_prog(rerun, prog, prog_info):
-    bc_content = rerun.get_bc_file_content(prog)
-    with open(prog_info['orig_bc'], 'wb') as f:
-        f.write(bc_content)
-
     prog_source_content = rerun.get_prog_source_content(prog)
     with open(mutation_prog_source_path(prog_info), 'wt') as f:
         f.write(prog_source_content)
@@ -1571,315 +1586,12 @@ def instrument_prog(container, prog_info):
     run_exec_in_container(container.name, True, args)
 
 
-############################### SUPERMUTANTS OLD
-
-# # Find functions that are reachable from fnA
-# def find_reachable(call_g, fnA, reachable_keys=None, found_so_far=None):
-#     if reachable_keys is None: reachable_keys = {}
-#     if found_so_far is None: found_so_far = set()
-
-#     for fnB in call_g[fnA]:
-#         if fnB in found_so_far: continue
-#         found_so_far.add(fnB)
-#         if fnB not in call_g: continue
-#         if fnB in reachable_keys:
-#             for k in reachable_keys[fnB]:
-#                 found_so_far.add(k)
-#         else:
-#             keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
-#     return found_so_far
-
-# # Produce reachability dictionary given the call graph.
-# # For each function, we have functions that are reachable from it.
-# def reachable_dict(call_g):
-#     reachable = {}
-#     for fnA in call_g:
-#         keys = find_reachable(call_g, fnA, reachable)
-#         reachable[fnA] = keys
-#     return reachable
-
-# # Given the call graph, produce the reachability matrix with 1 for reachability
-# # and 0 for non reachability. The rows and columns are locations
-# def reachability_matrix(call_g):
-#     reachability = reachable_dict(call_g)
-#     rows = list(reachability.keys())
-#     columns = list(reachability.keys())
-#     matrix = []
-#     for i in rows:
-#         matrix_row = []
-#         for j in columns:
-#             matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
-#             #matrix_row.append(1 if i in reachability[j] or i == j else 0)
-#         matrix.append(matrix_row)
-#     return matrix, columns
-
-
-# # Insert the location information to matrix
-# def insert_names(matrix, keys):
-#     new_m = []
-#     for i,row in enumerate(matrix):
-#         new_r = []
-#         for j,c in enumerate(row):
-#             new_r.append((keys[j], c))
-#         new_m.append((keys[i], new_r))
-#     return new_m
-
-# # Remove a single row corresponding to a location from matrix
-# def remove_single_row(named_matrix, location):
-#     return [(k, row) for k,row in named_matrix if k != location]
-
-# # Remove a single column corresponding to a location from matrix
-# def remove_single_column(named_matrix, location):
-#     return [(k, [(k1,c) for k1,c in row if k1 != location]) for k,row in named_matrix]
-
-# # Remove a row and column corresponding to location
-# def remove_row_column(named_matrix, loc):
-#     m1 = remove_single_row(named_matrix, loc)
-#     m2 = remove_single_column(m1, loc)
-#     return m2
-
-# import random
-# def get_chosen_row(named_matrix, mutants):
-#     remaining_loc = [(loc,row) for loc,row in named_matrix if mutants[loc]]
-#     if remaining_loc:
-#         loc,row = random.choice(remaining_loc)
-#         return loc,row
-#     return None, None
-
-# def identify_superlocations(matrix, locations, mutants):
-#     named_matrix = insert_names(matrix, locations)
-#     my_locations = []
-#     while named_matrix:
-#         loc, row = get_chosen_row(named_matrix, mutants)
-#         if loc is None: break
-#         my_locations.append(loc)
-
-#         m1 = remove_row_column(named_matrix, loc)
-#         named_matrix = m1
-
-#         # now find locations which are 1
-#         reachable = [k1 for k1,c in row if c == 1]
-#         for loc_ in reachable:
-#             m1 = remove_row_column(named_matrix, loc_)
-#             named_matrix = m1
-
-#     return my_locations
-
-# def total_mutants(mutants):
-#     m =  sum([len(mutants[loc]) for loc in mutants])
-#     return m
-
-# def generate_supermutants(matrix, keys, mutants, total_num_mutants):
-#     all_supermutants = []
-#     while total_mutants(mutants):
-#         superloc = identify_superlocations(matrix, keys, mutants)
-#         assert superloc
-#         # now choose one mutant per location
-#         my_mutants = []
-#         for loc in superloc:
-#             m,*rest = mutants[loc]
-#             mutants[loc] = rest
-#             my_mutants.append(int(m))
-#         all_supermutants.append(my_mutants)
-#         cur_num_mutants = total_mutants(mutants)
-#         print(f"remaining mutants: {cur_num_mutants} / {total_num_mutants}, "
-#               f"supermutants: {len(all_supermutants)}, "
-#               f"reduction by {(total_num_mutants - cur_num_mutants) / len(all_supermutants):.1f} times", end='\r')
-#     return all_supermutants
-
-# def print_matrix(matrix, keys):
-#     print('\t' + ',\t'.join(keys))
-#     for i,row in enumerate(matrix):
-#         print(keys[i] + '\t' + ',\t'.join([str(c) for c in row]))
-
-# def load_mutants(mutations, locations):
-#     my_m = {}
-#     unknown_functions = []
-
-#     for mm in mutations:
-#         mID = mm[0]
-#         fn = mm[3][int(mID)]['funname']
-#         if fn not in locations:
-#             unknown_functions.append(fn)
-#             continue
-#         if fn not in  my_m: my_m[fn] = []
-#         my_m[fn].append(mID)
-
-#     for loc in locations:
-#         if loc not in my_m:
-#             my_m[loc] = []
-
-#     # If a function has more than 10000 mutations, ignore that function.
-#     for fn, muts in my_m.items():
-#         if len(muts) > 10_000:
-#             del my_m[fn]
-
-#     return my_m, unknown_functions
-
-# def load_call_graph(callgraph):
-#     my_g = {}
-#     called = {}
-
-#     for fnA, fnB in callgraph:
-#         if fnA not in  my_g: my_g[fnA] = []
-#         my_g[fnA].append(fnB)
-#         called[fnB] = True
-
-#     # now, populate leaf functions
-#     for b in called:
-#         if b not in my_g: my_g[b] = []
-#     return my_g
-
-
-# def get_supermutations(mutator, prog_info, mutations):
-#     callgraph_dot_file = create_callgraph_dot(mutator, prog_info)
-#     callgraph = dot_to_callgraph(callgraph_dot_file)
-#     callgraph = load_call_graph(callgraph)
-#     mutants, unknown = load_mutants(mutations, callgraph.keys())
-#     # print('Unknown:', unknown)
-#     total_num_mutants = total_mutants(mutants)
-
-#     matrix, keys = reachability_matrix(callgraph)
-#     print('computed reachability')
-#     # print_matrix(matrix, keys)
-#     return generate_supermutants(matrix, keys, mutants, total_num_mutants)
-
-############################### SUPERMUTANTS NEW
-
-
-# Find functions that are reachable from fnA
-def find_reachable(call_g, fnA, reachable_keys=None, found_so_far=None):
-    if reachable_keys is None: reachable_keys = {}
-    if found_so_far is None: found_so_far = set()
-
-    for fnB in call_g[fnA]:
-        if fnB in found_so_far: continue
-        found_so_far.add(fnB)
-        if fnB not in call_g: continue
-        if fnB in reachable_keys:
-            for k in reachable_keys[fnB]:
-                found_so_far.add(k)
-        else:
-            keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
-    return found_so_far
-
-
-# Produce reachability dictionary given the call graph.
-# For each function, we have functions that are reachable from it.
-def reachable_dict(call_g):
-    reachable = {}
-    for fnA in call_g:
-        keys = find_reachable(call_g, fnA, reachable)
-        reachable[fnA] = keys
-    return reachable
-
-
-# Given the call graph, produce the reachability matrix with 1 for reachability
-# and 0 for non reachability. The rows and columns are locations
-def reachability_matrix(call_g):
-    reachability = reachable_dict(call_g)
-    rows = list(reachability.keys())
-    columns = list(reachability.keys())
-    matrix = []
-    for i in rows:
-        matrix_row = []
-        for j in columns:
-            matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
-            #matrix_row.append(1 if i in reachability[j] or i == j else 0)
-        matrix.append(matrix_row)
-    return matrix, columns
-
-
-def location_mutation_mapping(mutations):
-    loc_mut_map = defaultdict(list)
-    for mut in mutations:
-        mut_id = mut[0]
-        fn = mut[3][int(mut_id)]['funname']
-        loc_mut_map[fn].append(mut_id)
-
-    # If a function has more than 10000 mutations, ignore that function.
-    for fn, muts in loc_mut_map.items():
-        if len(muts) > 10_000:
-            del loc_mut_map[fn]
-
-    return {**loc_mut_map}
-
-
-def load_call_graph(callgraph, mutants):
-    my_g = {}
-    called = {}
-
-    for fn_a, fn_b in callgraph:
-        if fn_a not in my_g: my_g[fn_a] = []
-        my_g[fn_a].append(fn_b)
-        called[fn_b] = True
-
-    # now, populate leaf functions
-    for b in called:
-        if b not in my_g: my_g[b] = []
-
-    unknown_funcs = [uf for uf in mutants.keys() if uf not in my_g]
-    # add unknown functions to callgraph
-    for uf in unknown_funcs:
-        my_g[uf] = []
-
-    # mark all unknown functions as reachable by all
-    for reachable in my_g.values():
-        reachable.extend(unknown_funcs)
-    return my_g
-
-
-def pop_mutant(mutants, eligible, has_mutants, indices, matrix, keys):
-    """
-    Get a single mutant id, choice is made from the eligible locations and the corresponding
-    index of has_mutants is set to false if no mutants are remaining for that location.
-    """
-    chosen_idx = np.random.choice(indices[eligible])
-    chosen = keys[chosen_idx]
-    possible_mutants = mutants[str(chosen)]
-    mut = int(possible_mutants.pop())
-    if len(possible_mutants) == 0:
-        has_mutants[chosen_idx] = False
-    # Remove locations reachable by the chosen location from the eligible list
-    eligible &= np.invert(matrix[chosen_idx])
-    # Remove location that can reach the chosen location from the eligible list
-    eligible &= np.invert(matrix[:, chosen_idx])
-    return mut
-
-def find_supermutants(matrix, keys, mutants):
-    indices = np.arange(len(matrix))
-    # for each index a boolean value if there are any mutants remaining
-    has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
-
-    # the selected supermutants, each entry contains a list of mutants that are a supermutant
-    supermutants = []
-
-    while True:
-        # continue while there are more mutants remaining
-        available = np.array(has_mutants, copy=True)
-        if not np.any(available):
-            break
-
-        # mutants selected for the current supermutant
-        selected_mutants = []
-
-        # while more mutants can be added to the supermutants
-        while np.any(available):
-            mutant = pop_mutant(
-                # these arguments are changed in the called function
-                mutants, available, has_mutants,
-                # these are not
-                indices, matrix, keys)
-            selected_mutants.append(mutant)
-
-        supermutants.append(selected_mutants)
-    return supermutants
-
-
 UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
 SPLITTER = " | "
+ENTRY = "LLVMFuzzerTestOneInput"
 
-def augment_graph(orig_graph: Dict[str,List[str]]):
+
+def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
     """
     Takes the graph and augments it by replacing unknown function calls with all possible calls.
     :param orig_graph:
@@ -1907,50 +1619,257 @@ def augment_graph(orig_graph: Dict[str,List[str]]):
                     for fun in mapping[call_types]:
                         new_locations.add(fun)
             else:
-                new_locations.add(called_funname)
+                if called_funname in result:
+                    new_locations.add(called_funname)
 
         result[function.split(SPLITTER)[0]] = list(new_locations)
 
     return result
 
 
-def flatten_callgraph(call_graph):
-    caller_callee = []
-    for caller, callees in call_graph.items():
-        for callee in callees:
-            caller_callee.append((caller, callee))
-    return caller_callee
+def has_component(vertex: str, components: List[Set[str]]):
+    """
+    Checks if the given vertex is in any SCC.
+    :param vertex:
+    :param components:
+    :return:
+    """
+    for comp in components:
+        if vertex in comp:
+            return True
+    return False
 
 
-def get_callgraph(prog_info):
-    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
-        call_graph = json.load(f)
-    call_graph = augment_graph(call_graph)
-    return flatten_callgraph(call_graph)
+def compute_scc(
+        vertex: str,
+        graph: Dict[str, List[str]],
+        preorder: Dict[str, int],
+        stack_s: List[str],
+        stack_p: List[str],
+        components: List[Set[str]],
+        preorder_number: int):
+    """
+    Recursively builds strongly connected components.
+    :param vertex:
+    :param graph:
+    :param preorder:
+    :param stack_s:
+    :param stack_p:
+    :param components:
+    :param preorder_number:
+    :return:
+    """
+    stack_s.append(vertex)
+    stack_p.append(vertex)
+    preorder[vertex] = preorder_number
+    preorder_number += 1
+    for neighbor in graph.get(vertex, []):
+        if neighbor not in preorder:
+            compute_scc(neighbor, graph, preorder, stack_s, stack_p, components, preorder_number)
+        elif not has_component(neighbor, components):
+            neighbor_preorder_number = preorder[neighbor]
+            while preorder[stack_p[-1]] > neighbor_preorder_number:
+                stack_p.pop()
+    if stack_p[-1] == vertex:
+        popped = stack_s.pop()
+        new_component = set()
+        while popped != vertex:
+            new_component.add(popped)
+            popped = stack_s.pop()
+        new_component.add(popped)
+        stack_p.pop()
+        components.append(new_component)
 
 
-def get_supermutations(mutator, prog_info, mutations):
-    callgraph = get_callgraph(prog_info)
+def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[str]]):
+    """
+    Takes the sccs and builds a mapping showing which scc can be reached or can reach any other SCC.
+    :param sccs:
+    :return:
+    """
+    # build the scc DAG
+    scc_forward_dag = {}
+    for vert, uid in sccs.items():
+        vert_scc = scc_forward_dag.setdefault(sccs[vert], set())
+        vert_scc.add(uid)
+        for neighbor in graph[vert]:
+            vert_scc.add(sccs[neighbor])
 
-    loc_mut_map = location_mutation_mapping(mutations)
-    callgraph = load_call_graph(callgraph, loc_mut_map)
+    scc_backward_dag = {}
+    for vert, uid in sccs.items():
+        vert_scc = scc_backward_dag.setdefault(sccs[vert], set())
+        vert_scc.add(uid)
+        for neighbor in graph[vert]:
+            child_scc = scc_backward_dag.setdefault(sccs[neighbor], set())
+            child_scc.add(sccs[vert])
 
-    total_mutants =  sum([len(loc_mut_map[loc]) for loc in loc_mut_map])
+    # compute for any scc the reachable scc's
+    reachable_dict = {}
+    for uid in scc_forward_dag:
+        reachable = {uid}
+        children: Set[int] = set(scc_forward_dag[uid])
+        while children:
+            child = children.pop()
+            reachable.add(child)
+            children.update({el for el in scc_forward_dag[child] if el not in reachable})
+        reachable_dict[uid] = reachable
 
-    matrix, keys = reachability_matrix(callgraph)
-    matrix = np.array(matrix, dtype=bool)
-    keys = np.array(keys)
+    for uid in scc_backward_dag:
+        reachable = {uid}
+        parents: Set[int] = set(scc_backward_dag[uid])
+        while parents:
+            parent = parents.pop()
+            reachable.add(parent)
+            parents.update({el for el in scc_backward_dag[parent] if el not in reachable})
+        reachable_dict[uid].update(reachable)
+    return reachable_dict
 
-    # assert that everything has the right dimensions
-    assert len(callgraph) == len(matrix) == len(matrix[0]) == len(keys)
-    print(f'Computed reachability, there are {len(callgraph)} functions.')
 
-    supermutants = find_supermutants(matrix, keys, loc_mut_map)
-    # assert that all mutants have been assigned
-    assert total_mutants == sum((len(sm) for sm in supermutants))
-    print(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
-          f"a reduction by {total_mutants / len(supermutants):.2f} times.")
-    return supermutants
+def compute_non_reaching_scc_set_random(reachability_dict: Dict[int, Set[int]]):
+    """
+    Takes a reachability dictionary and greedily grows unreachable sets of SCCs.
+    :param reachability_dict:
+    :return:
+    """
+    to_compute = {el for el in range(len(reachability_dict))}
+    exclusion_list = list()
+    while to_compute:
+        seed_value = to_compute.pop()
+        tmp_exclusion_set = {seed_value}
+        tmp_reachability_set = set(reachability_dict[seed_value])
+        for el in to_compute:
+            if el not in tmp_reachability_set:
+                tmp_exclusion_set.add(el)
+                tmp_reachability_set.update(reachability_dict[el])
+        to_compute.difference_update(tmp_exclusion_set)
+        exclusion_list.append(tmp_exclusion_set)
+    return exclusion_list
+
+
+def compute_sccs(graph: Dict[str, List[str]]) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """
+    Computing Strongly Connected Components with Dijkstra algorithm (linear in edges+nodes).
+    :param graph:
+    :return:
+    """
+    # use Dijkstra's SCC algorithm: https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm
+    components = []
+    preorders = {}
+    compute_scc(ENTRY, graph, preorders, [], [], components, 0)
+
+    sccs = {}
+    sccs_uid_to_name = {}
+    uid = 0
+    for comp in components:
+        sccs_uid_to_name[uid] = comp
+        for vert in comp:
+            sccs[vert] = uid
+        uid += 1
+    return sccs, sccs_uid_to_name
+
+
+def load_graph(path: str):
+    """
+    Takes a path to a graph file and returns a list of lists of mutually exclusive function sets.
+    That is: pick any list from the root list, then pick from every function set at most one function.
+    The picked functions are not reachable by each other.
+    :param path:
+    :return: The list of mutually exclusive functions plus a list of functions that is unreachable
+    from the main function.
+    """
+    with open(path, "r") as graph_file:
+        orig_graph = json.load(graph_file)
+    augmented_graph = augment_graph(orig_graph)
+    sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
+    scc_reachability_mapping = build_scc_reachability_mapping(sccs, augmented_graph)
+    exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
+    final_list = []  # will contain a list of lists containing mutually exclusive
+    for excl_set in exclusion_list:
+        tmp_exclusion_list = list()
+        for scc in excl_set:
+            tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
+        final_list.append(tmp_exclusion_list)
+    reachable_functions = set(sccs.keys())
+    unreachable_functions = set(augmented_graph) - reachable_functions
+    return final_list, unreachable_functions
+
+
+def location_mutation_mapping(mutations):
+    loc_mut_map = defaultdict(list)
+    for mut in mutations:
+        mut_id = int(mut[0])
+        fn = mut[3][mut_id]['funname']
+        loc_mut_map[fn].append(mut_id)
+
+    # # If a function has more than 10000 mutations, ignore that function.
+    # for fn, muts in loc_mut_map.items():
+    #     if len(muts) > 10_000:
+    #         del loc_mut_map[fn]
+
+    return {**loc_mut_map}
+
+
+def get_supermutations(prog_info, mutations):
+    # associate mutations with their respective functions
+    mutations = location_mutation_mapping(mutations)
+
+    # check that there are no duplicate mutation ids
+    all_mutations = sorted(chain(*mutations.values()))
+    assert all_mutations == sorted(set(all_mutations))
+
+    # load the set of disjunct functions for the subect
+    callgraph, unreachable_functions = load_graph(mutation_locations_graph_path(prog_info))
+    graph_info = json.dumps({
+        'disjunct': callgraph,
+        'unreachable': unreachable_functions,
+    }, cls=CustomJSONEncoder)
+
+    supermutants = []
+    while callgraph:
+        supermutant = []
+        # choose one of the disjunct function sets
+        disj_func_sets_idx = choice(range(len(callgraph)))
+        disj_func_sets = callgraph[disj_func_sets_idx]
+        # for each set of disjunct functions choose a mutation
+        for dfs_idx in reversed(range(len(disj_func_sets))):
+            dfs = disj_func_sets[dfs_idx]
+            chosen_func = choice(list(dfs))
+            try:
+                chosen_mut = mutations[chosen_func].pop()
+            except (IndexError, KeyError):
+                dfs.remove(chosen_func)
+                if len(dfs) == 0:
+                    del disj_func_sets[dfs_idx]
+                    if len(disj_func_sets) == 0:
+                        del callgraph[disj_func_sets_idx]
+                continue
+            supermutant.append(chosen_mut)
+        if supermutant:
+            supermutants.append(supermutant)
+
+    # assign all remaining unknown mutations to existing supermutants
+    # they should never be covered so have no influence
+    # alternatively all these mutations could be assigned to a single supermutant but that creates an extreme
+    # outlier of a supermutant due to a usually large number of mutations
+    unknown_mutant_count = 0
+    for ff, muts in mutations.items():
+        if not muts:
+            continue
+        assert ff in unreachable_functions
+        for mm in muts:
+            supermutants[unknown_mutant_count % len(supermutants)].append(mm)
+            unknown_mutant_count += 1
+    print(f'There are {unknown_mutant_count} mutants in unknown functions.')
+    
+    # assert that we got all mutants into exactly one supermutant
+    all_mutations_in_supermutants = sorted(chain(*supermutants))
+    assert all_mutations == all_mutations_in_supermutants
+
+    print(f"Made {len(supermutants)} supermutants out of {len(all_mutations)} mutations, "
+        f"a reduction by {len(all_mutations) / len(supermutants):.2f} times with unknown mutations and "
+        f"{(len(all_mutations) - unknown_mutant_count) / len(supermutants):.2f} without.")
+
+    return supermutants, graph_info
 
 
 def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun):
@@ -2025,7 +1944,9 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun):
                 assert mut_id in mutations_set
                 supermutations[super_mut_id].append(mut_id)
         else:
-            supermutations = get_supermutations(mutator, prog_info, mutations)
+            supermutations, graph_info = get_supermutations(prog_info, mutations)
+            stats.new_supermutant_graph_info(EXEC_ID, prog, graph_info)
+
 
         for ii, sm in enumerate(supermutations):
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sm)
@@ -2139,7 +2060,6 @@ def clean_up_mut_base_dir(mut_data):
         print(f"Could not clean up {mut_base_dir}: {err}")
 
 
-
 def split_up_supermutant(multi, all_muts):
     """
     Split up the mutants listed in all_muts, into as many chunks as there are mutants in multi, making sure that the
@@ -2226,7 +2146,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             del run_result
 
             killed_mutants = set()
-            for killed in [rr for rr in results if rr['result'] == 'killed']:
+            for killed in [rr for rr in results if rr['result'] == 'killed_by_seed']:
                 new_killed_mutants = set(killed['mutation_ids']) - killed_mutants
                 for nkm in new_killed_mutants:
                     stats.new_run_executed(
@@ -2267,9 +2187,11 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                 # record covered by seed
                 seed_covered_time = has_result(mut_id, results,
                     ['covered_by_seed', 'killed_by_seed', 'timeout_by_seed'])
-                seed_timeout_time = has_result(mut_id, results, ['timeout_by_seed'])
                 if seed_covered_time:
                     seed_covered_time = seed_covered_time.get('time', None)
+                seed_timeout_time = has_result(mut_id, results, ['timeout_by_seed'])
+                if seed_timeout_time:
+                    seed_timeout_time = 1
                 stats.new_seeds_executed(
                     EXEC_ID,
                     prog,
@@ -2301,8 +2223,6 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                 # record killed
                 killed = has_result(mut_id, results, ['killed'])
                 timeout = has_result(mut_id, results, ['timeout', 'timeout_by_seed'])
-                if orig_timeout or timeout:
-                    dbg('!'*500, killed, orig_timeout, timeout)
                 
                 if killed:
                     killed['orig_timeout'] = None
@@ -2606,7 +2526,7 @@ def build_subject_docker_images(progs):
             "-f", f"subjects/Dockerfile.{name}",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc)
+            print(f"Could not build {tag} image.", proc, "\n", str(proc.stdout))
             sys.exit(1)
         # extract sample files
         proc = subprocess.run(f"""
@@ -3388,17 +3308,13 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     for sr in seed_runs:
         runs_by_prog_fuzzer[(sr['prog'], sr['fuzzer'])].append(sr)
 
-    dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for pf in runs_by_prog_fuzzer.values() for rr in pf])
-
     median_runs_base_dir = destination_dir/'median_runs'
     median_runs_base_dir.mkdir()
 
     print(f"Copying median runs to: {str(median_runs_base_dir)}")
     for rr in runs_by_prog_fuzzer.values():
         sorted_runs = sorted(rr, key=lambda x: len(x['covered_mutations']))
-        dbg([(rr['prog'], rr['fuzzer'], len(rr['covered_mutations'])) for rr in sorted_runs])
         mr = sorted_runs[int(len(sorted_runs) / 2)]
-        dbg((mr['prog'], mr['fuzzer'], len(mr['covered_mutations'])))
         median_run_dir = median_runs_base_dir/mr['prog']/mr['fuzzer']
         median_run_dir.mkdir(parents=True)
 
