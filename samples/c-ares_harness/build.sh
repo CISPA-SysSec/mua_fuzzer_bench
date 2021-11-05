@@ -30,26 +30,37 @@ $CC $CFLAGS \
     -Iinclude \
     -Isrc/lib \
     -c $SRC/test/ares-test-fuzz.c \
-    -o $OUT/ares-test-fuzz.o
+    -o $OUT/ares-parse-reply-entry
+
+get-bc -b $OUT/ares-parse-reply-entry
+
+llvm-link \
+    -o $OUT/ares-parse-reply.bc \
+    $OUT/ares-parse-reply-entry.bc \
+    $OUT/libcares.bc
 
 $CXX $CXXFLAGS \
     -std=c++11 \
-    $OUT/ares-test-fuzz.o \
-    -o $OUT/ares_parse_reply_fuzzer \
-    $LIB_FUZZING_ENGINE \
-    $OUT/libcares.bc
+    $OUT/ares-parse-reply.bc \
+    -o $OUT/ares-parse-reply \
+    $LIB_FUZZING_ENGINE
 
 # name
 $CC $CFLAGS \
     -Iinclude \
     -Isrc/lib \
     -c $SRC/test/ares-test-fuzz-name.c \
-    -o $OUT/ares-test-fuzz-name.o
+    -o $OUT/ares-name-entry
+
+get-bc -b $OUT/ares-name-entry
+
+llvm-link \
+    -o $OUT/ares-name.bc \
+    $OUT/ares-name-entry.bc \
+    $OUT/libcares.bc
 
 $CXX $CXXFLAGS \
     -std=c++11 \
-    $OUT/ares-test-fuzz-name.o \
-    $LIB_FUZZING_ENGINE \
-    -o $OUT/ares_create_query_fuzzer \
-    $OUT/libcares.bc
-
+    $OUT/ares-name.bc \
+    -o $OUT/ares-name \
+    $LIB_FUZZING_ENGINE

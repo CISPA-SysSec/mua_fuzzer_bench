@@ -500,3 +500,14 @@ select *
 from run_results
 where found_by_seed is 0 and covered_by_seed is 1;
 
+DROP VIEW IF EXISTS started_super_mutants_group;
+CREATE VIEW started_super_mutants_group
+as
+select exec_id, prog, super_mutant_id from started_super_mutants
+group by exec_id, prog, super_mutant_id;
+
+DROP VIEW IF EXISTS super_mutants_multi_group;
+CREATE VIEW super_mutants_multi_group
+as
+select prog, super_mutant_id from super_mutants_multi
+group by prog, super_mutant_id;
