@@ -3247,6 +3247,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         assert len(all_runs) == 0 or should_run is False
 
     print("Copying seeds to target dir and measuring coverage...")
+    all_runs_dir = destination_dir/"all_runs"
     seed_runs = []
     for seed_source in seed_coverage_base_shm_dir.glob("*"):
         if not seed_source.is_dir():
@@ -3256,7 +3257,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         prog = seed_base_dir_parts[0]
         fuzzer = seed_base_dir_parts[1]
         instance = seed_base_dir_parts[2]
-        fuzzed_seed_dir = destination_dir/"all_runs"/prog/fuzzer/instance
+        fuzzed_seed_dir = all_runs_dir/prog/fuzzer/instance
         fuzzed_seed_dir.mkdir(parents=True, exist_ok=True)
 
         collector = SEED_HANDLERS[fuzzer]
@@ -3275,6 +3276,25 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             'num_seeds': len(found_seeds),
         })
 
+    # for each seed_run, minimize the run in new folder minimize_dir
+    all_minimized_runs_dir = destination_dir/"minimized_runs"
+
+    minimize_shm_dir = Path("/dev/shm/minimize_coverage_seeds")
+    shutil.rmtree(minimize_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
+    minimize_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    for sr in seed_runs:
+        sr_fuzzer = sr['fuzzer']
+        sr_prog = sr['prog']
+        sr_seed_dir = Path(sr['dir'])
+        sr_minimized_dir = all_minimized_runs_dir.joinpath(sr_seed_dir.relative_to(all_runs_dir))
+        sr_minimized_dir.mkdir(parents=True)
+        dbg(sr_seed_dir, sr_minimized_dir)
+        sr['minimized_dir'] = str(sr_minimized_dir)
+        dbg(sr_minimized_dir)
+        minimize_seeds_one(minimize_shm_dir, sr_prog, sr_fuzzer, sr_seed_dir, sr_minimized_dir)
+
+
     with start_mutation_container(None, 60*60) as mutator:
         for prog in set(sr['prog'] for sr in seed_runs):
             prog_info = PROGRAMS[prog]
@@ -3290,11 +3310,12 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
         for sr in seed_runs:
             prog = sr['prog']
-            covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr['dir'])
+            sr_seed_dir = sr['dir']
+            covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
             sr['covered_mutations'] = covered_mutations
 
             kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
-            get_kcov(prog, sr['dir'], kcov_res_path)
+            get_kcov(prog, sr_seed_dir, kcov_res_path)
             with open(kcov_res_path) as f:
                 kcov_res = json.load(f)
             sr['kcov_res'] = kcov_res
@@ -3318,7 +3339,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         median_run_dir = median_runs_base_dir/mr['prog']/mr['fuzzer']
         median_run_dir.mkdir(parents=True)
 
-        for si in Path(mr['dir']).glob("*"):
+        for si in Path(mr['minimized_dir']).glob("*"):
             shutil.copyfile(si, median_run_dir/si.name)
 
 
@@ -4155,58 +4176,28 @@ def seed_minimization_run(run_data, docker_image):
     }
 
 
-def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
-    global should_run
-    seed_path_base = Path(seed_path_base)
-    res_path_base = Path(res_path_base)
-
-    if res_path_base.exists():
-        print(f"Result path already exists, to avoid data loss, it is required that this path does not exist: {res_path_base}")
+def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
+    try:
+        prog_info = PROGRAMS[prog]
+    except Exception as err:
+        print(err)
+        print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
+        sys.exit(1)
+    try:
+        eval_func = FUZZERS[fuzzer]
+    except Exception as err:
+        print(err)
+        print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
         sys.exit(1)
 
-    # prepare environment
-    base_shm_dir = Path("/dev/shm/minimize_seeds")
-    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
-    base_shm_dir.mkdir(parents=True, exist_ok=True)
-
-    build_docker_images(fuzzers, progs)
-
-    for prog, fuzzer in product(progs, fuzzers):
-        if not should_run:
-            break
-
-        # Gather all data to start a seed minimization run
-        try:
-            prog_info = PROGRAMS[prog]
-        except Exception as err:
-            print(err)
-            print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
-            sys.exit(1)
-        try:
-            eval_func = FUZZERS[fuzzer]
-        except Exception as err:
-            print(err)
-            print(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
-            sys.exit(1)
-
-        prog_seed_path = seed_path_base/prog
-        if per_fuzzer:
-            prog_seed_path = prog_seed_path/fuzzer
-        if not prog_seed_path.is_dir():
-            print(f"There is no seed directory for prog: {prog}, seed files need to be here: {prog_seed_path}")
-            sys.exit(1)
-        prog_fuzzer_res_path = res_path_base/prog/fuzzer
-        prog_fuzzer_res_path.mkdir(parents=True)
-
-        active_dir = base_shm_dir/f"{prog}__{fuzzer}"
-        active_dir.mkdir()
-
+    with tempfile.TemporaryDirectory(dir=base_shm_dir) as active_dir:
+        active_dir = Path(active_dir)
         # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
         seed_in_tmp_dir = active_dir/"seeds_in"
         seed_in_tmp_dir.mkdir()
         seed_out_tmp_dir = active_dir/"seeds_out"
         seed_out_tmp_dir.mkdir()
-        for ff in prog_seed_path.glob("*"):
+        for ff in in_path.glob("*"):
             if ff.is_dir():
                 raise ValueError("Did not expect any directories in the seed path, something is wrong.")
             print(ff, seed_in_tmp_dir)
@@ -4238,7 +4229,7 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
             'mut_data': mut_data,
         }
 
-        # start the fuzzer in seed minimization mode on the prog
+            # start the fuzzer in seed minimization mode on the prog
         eval_func(run_data, seed_minimization_run)
 
         print(f"copying results to: {seed_out_tmp_dir}")
@@ -4247,12 +4238,42 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
         for ff in seed_out_tmp_dir.glob("*"):
             if ff.is_dir():
                 print("Did not expect any directories in the seed path, something is wrong.")
-            shutil.copy2(ff, prog_fuzzer_res_path)
+            shutil.copy2(ff, out_path)
 
-        # clean up tmp dirs (everything should have happened inside the active dir)
-        # shutil.rmtree(active_dir)
 
+def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
+    global should_run
+    seed_path_base = Path(seed_path_base)
+    res_path_base = Path(res_path_base)
+
+    if res_path_base.exists():
+        print(f"Result path already exists, to avoid data loss, it is required that this path does not exist: {res_path_base}")
+        sys.exit(1)
+
+    # prepare environment
+    base_shm_dir = Path("/dev/shm/minimize_seeds")
+    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
+    base_shm_dir.mkdir(parents=True, exist_ok=True)
+
+    build_docker_images(fuzzers, progs)
+
+    for prog, fuzzer in product(progs, fuzzers):
+        if not should_run:
+            break
+
+        # Gather all data to start a seed minimization run
+        prog_seed_path = seed_path_base/prog
+        if per_fuzzer:
+            prog_seed_path = prog_seed_path/fuzzer
+        if not prog_seed_path.is_dir():
+            print(f"There is no seed directory for prog: {prog}, seed files need to be here: {prog_seed_path}")
+            sys.exit(1)
+        prog_fuzzer_res_path = res_path_base/prog/fuzzer
+        prog_fuzzer_res_path.mkdir(parents=True)
+
+        minimize_seeds_one(base_shm_dir, prog, fuzzer, prog_seed_path, prog_fuzzer_res_path)
     print("seed minimization done :)")
+
 
 
 def seed_coverage_run(run_data, docker_image):
@@ -4552,12 +4573,12 @@ def main():
         run_eval(args.progs, args.fuzzers, args.fuzz_time, args.num_repeats, args.seed_dir, args.rerun)
     elif args.cmd == 'coverage_fuzzing':
         coverage_fuzzing(args.progs, args.fuzzers, args.fuzz_time,
-            args.seed_dir, args.result_dir, args.instances)
+        args.seed_dir, args.result_dir, args.instances)
     elif args.cmd == 'check_seeds':
         check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
         gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,
-            args.per_fuzzer, args.seed_dir, args.dest_dir)
+        args.per_fuzzer, args.seed_dir, args.dest_dir)
     elif args.cmd == 'import_seeds':
         import_seeds(args.source, args.dest)
     elif args.cmd == 'plot':

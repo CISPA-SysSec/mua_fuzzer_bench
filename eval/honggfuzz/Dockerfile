@@ -5,4 +5,4 @@ RUN wget https://github.com/google/honggfuzz/archive/2.4.tar.gz && tar xfv 2.4.t
 ENV PATH="/home/user/honggfuzz/:/home/user/honggfuzz/hfuzz_cc/:$PATH"
 COPY tmp/lib/ /home/user/lib/
 COPY eval/honggfuzz/eval.sh /home/user/eval.sh
-COPY eval/honggfuzz_minimize.sh /home/user/minimize.sh
+COPY eval/honggfuzz/minimize.sh /home/user/minimize.sh

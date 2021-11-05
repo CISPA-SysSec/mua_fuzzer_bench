@@ -8,4 +8,4 @@ ENV AFL_PATH="/home/user/afl/"
 COPY tmp/lib/ /home/user/lib/
 COPY samples/common/ /home/user/common/
 COPY eval/afl/eval.sh /home/user/eval.sh
-COPY eval/afl_minimize.sh /home/user/minimize.sh
+COPY eval/afl/minimize.sh /home/user/minimize.sh

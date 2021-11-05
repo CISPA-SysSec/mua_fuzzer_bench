@@ -13,7 +13,7 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-afl-lto++ -o put -v /home/user/lib/libdynamiclibrary.so $1 $2
+afl-clang++ -o put -v /home/user/lib/libdynamiclibrary.so /home/user/common/main.cc $1 $2
 
 shift
 shift
@@ -26,8 +26,8 @@ shift
 
 export AFL_NO_AFFINITY=1
 
-ln -s "$SEEDS_OUT" out_seeds
+echo "afl-cmin -i "$SEEDS_IN" -o out_seeds -- ./put $@ @@"
+afl-cmin -i "$SEEDS_IN" -o out_seeds -- ./put $@ @@
 
-echo "afl-cmin -i "$SEEDS_IN" -o out_seeds -- ./put $@"
-exec afl-cmin -i "$SEEDS_IN" -o out_seeds -- ./put $@
+mv out_seeds/* "$SEEDS_OUT"/
 
