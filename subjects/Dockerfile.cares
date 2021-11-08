@@ -12,7 +12,7 @@ RUN git checkout 809d5e84f3423ab8165650d923acb0e246cbd006
 
 # build
 COPY samples/c-ares_harness /home/mutator/samples/c-ares_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/c-ares" \
     WORK="/home/mutator/samples/c-ares/work" \
     OUT="/home/mutator/samples/c-ares/out" \

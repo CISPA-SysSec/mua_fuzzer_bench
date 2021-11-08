@@ -2527,7 +2527,13 @@ def build_subject_docker_images(progs):
             "-f", f"subjects/Dockerfile.{name}",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc, "\n", str(proc.stdout))
+            try:
+                stdout = proc.stdout.decode()
+            except:
+                stdout = str(proc.stdout)
+            print(f"Could not build {tag} image.\n"
+                  f"{proc.args} -> {proc.returncode}\n"
+                  f"{stdout}")
             sys.exit(1)
         # extract sample files
         proc = subprocess.run(f"""
@@ -2597,7 +2603,13 @@ def build_docker_images(fuzzers, progs):
             "-f", f"eval/{name}/Dockerfile",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc)
+            try:
+                stdout = proc.stdout.decode()
+            except:
+                stdout = str(proc.stdout)
+            print(f"Could not build {tag} image.\n"
+                  f"{proc.args} -> {proc.returncode}\n"
+                  f"{stdout}")
             sys.exit(1)
 
     build_subject_docker_images(progs)
