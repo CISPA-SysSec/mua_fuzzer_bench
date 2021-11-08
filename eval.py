@@ -217,19 +217,19 @@ PROGRAMS = {
     #      "dict": None,
     #      "args": "@@",
     #  },
-    # "guetzli": {
-    #     "bc_compile_args": [
-    #     ],
-    #     "bin_compile_args": [
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-    #     "name": "guetzli",
-    #     "path": "samples/guetzli/",
-    #     "dict": "tmp/samples/guetzli_harness/guetzli.dict",
-    #     "args": "@@",
-    # },
+    "guetzli": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/guetzli/guetzli-orig")),
+        "orig_bc": str(Path("tmp/samples/guetzli/guetzli.bc")),
+        "name": "guetzli",
+        "path": "samples/guetzli/",
+        "dict": "tmp/samples/guetzli_harness/guetzli.dict",
+        "args": "@@",
+    },
     #  "mjs": {
     #      "bc_compile_args": [
     #      ],
