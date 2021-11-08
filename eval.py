@@ -1791,7 +1791,7 @@ def load_graph(path: str):
         final_list.append(tmp_exclusion_list)
     reachable_functions = set(sccs.keys())
     unreachable_functions = set(augmented_graph) - reachable_functions
-    return final_list, unreachable_functions
+    return final_list, unreachable_functions, augmented_graph
 
 
 def location_mutation_mapping(mutations):
@@ -1818,8 +1818,9 @@ def get_supermutations(prog_info, mutations):
     assert all_mutations == sorted(set(all_mutations))
 
     # load the set of disjunct functions for the subect
-    callgraph, unreachable_functions = load_graph(mutation_locations_graph_path(prog_info))
+    callgraph, unreachable_functions, graph = load_graph(mutation_locations_graph_path(prog_info))
     graph_info = json.dumps({
+        'graph': graph,
         'disjunct': callgraph,
         'unreachable': unreachable_functions,
     }, cls=CustomJSONEncoder)
