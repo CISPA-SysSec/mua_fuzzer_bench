@@ -20,6 +20,8 @@ RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
+# For all subjects provide the path to the default main here. This is based on oss-fuzz convention.
+ENV LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc"
 
 # install common dependencies
 RUN apt-get update -y && \

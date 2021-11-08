@@ -16,5 +16,4 @@ RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/c-ares" \
     WORK="/home/mutator/samples/c-ares/work" \
     OUT="/home/mutator/samples/c-ares/out" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../c-ares_harness/build.sh
