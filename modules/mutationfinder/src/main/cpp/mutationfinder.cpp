@@ -134,13 +134,14 @@ public:
         auto funNameArray = json::array();
         for (Instruction* instr : toInstrument)
         {
-            if (auto* callinst = dyn_cast<CallInst>(instr))
+            auto* callinst = dyn_cast<CallBase>(instr);
+            if (callinst)
             {
                 Function* fun = callinst->getCalledFunction();
-                std::string result = "";
+                std::string result;
                 if (fun != nullptr) {
                     if (!fun->isIntrinsic()) {
-                       result += callinst->getCalledFunction()->getName().str() + " | ";
+                       result += fun->getName().str() + " | ";
                        std::string type_str;
                        llvm::raw_string_ostream rso(type_str);
                        callinst->getType()->print(rso);
