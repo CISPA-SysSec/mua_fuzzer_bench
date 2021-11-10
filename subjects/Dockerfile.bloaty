@@ -11,11 +11,10 @@ RUN git clone --depth 1 https://github.com/google/bloaty.git bloaty
 # build
 WORKDIR /home/mutator/samples/bloaty/
 COPY samples/bloaty_harness /home/mutator/samples/bloaty_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/bloaty" \
     WORK="/home/mutator/samples/bloaty/work" \
     OUT="/home/mutator/samples/bloaty/out" \
     SANITIZER="undefined" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../bloaty_harness/build.sh
 
