@@ -17,42 +17,10 @@ cd ${WORK}
 export ASAN_OPTIONS="detect_leaks=0"
 
 cmake ${ARROW} -GNinja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DARROW_DEPENDENCY_SOURCE=BUNDLED \
-    -DBOOST_SOURCE=SYSTEM \
-    -DCMAKE_C_FLAGS="${CFLAGS}" \
-    -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
-    -DARROW_EXTRA_ERROR_CONTEXT=off \
-    -DARROW_JEMALLOC=off \
-    -DARROW_MIMALLOC=off \
-    -DARROW_FILESYSTEM=off \
-    -DARROW_PARQUET=on \
-    -DARROW_BUILD_SHARED=off \
-    -DARROW_BUILD_STATIC=on \
-    -DARROW_BUILD_TESTS=off \
-    -DARROW_BUILD_INTEGRATION=off \
-    -DARROW_BUILD_BENCHMARKS=off \
-    -DARROW_BUILD_EXAMPLES=off \
-    -DARROW_BUILD_UTILITIES=off \
-    -DARROW_TEST_LINKAGE=static \
-    -DPARQUET_BUILD_EXAMPLES=off \
-    -DPARQUET_BUILD_EXECUTABLES=off \
-    -DPARQUET_REQUIRE_ENCRYPTION=off \
-    -DARROW_WITH_BROTLI=off \
-    -DARROW_WITH_BZ2=off \
-    -DARROW_WITH_LZ4=off \
-    -DARROW_WITH_SNAPPY=off \
-    -DARROW_WITH_ZLIB=off \
-    -DARROW_WITH_ZSTD=off \
-    -DARROW_USE_GLOG=off \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DARROW_USE_ASAN=off \
     -DARROW_USE_UBSAN=off \
-    -DARROW_USE_TSAN=off \
-    -DARROW_FUZZING=on \
-
-cmake --build .
-
-cp -a release/* ${OUT}
+    -DARROW_FUZZING=on
 
 ls -la $OUT
 ls -la $WORK
