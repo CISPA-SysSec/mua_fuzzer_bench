@@ -17,11 +17,10 @@ RUN git clone -b master https://github.com/gnuaspell/aspell-fuzz.git aspell-fuzz
 # build
 COPY samples/aspell_harness /home/mutator/samples/aspell_harness
 WORKDIR /home/mutator/samples/aspell/aspell-fuzz
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/aspell" \
     WORK="/home/mutator/samples/aspell/work" \
     OUT="/home/mutator/samples/aspell/out" \
     SANITIZER="undefined" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../../aspell_harness/build.sh
 
