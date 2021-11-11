@@ -2,12 +2,29 @@
 Given a call-graph, maps the unknown functions to possible call locations.
 It returns a new call-graph
 """
+import os
 import sys
 import json
+import graphviz
 from typing import Dict, List, Set, Tuple
 
 UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
 SPLITTER = " | "
+
+def build_graph_pdf(location: str, graph: Dict[str, List[str]]):
+    """
+    Takes a graph as dictionary and builds a pdf which shows the graph as generated from graphviz.
+    :param location: file to save the graph to
+    :param graph: the graph as dictionary
+    :return:
+    """
+    dot = graphviz.Digraph()
+    for node in graph.keys():
+        dot.node(node, label=node)
+    for node, targets in graph.items():
+        for target in targets:
+            dot.edge(node, target)
+    dot.render(location)
 
 
 def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -199,6 +216,7 @@ def main(path: str):
     with open(path, "r") as graph_file:
         orig_graph = json.load(graph_file)
     augmented_graph = augment_graph(orig_graph)
+    build_graph_pdf(path + ".digraph", augmented_graph)
     sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
     scc_reachability_mapping = build_scc_reachability_mapping(sccs, augmented_graph)
     exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
