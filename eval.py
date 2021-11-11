@@ -212,25 +212,25 @@ PROGRAMS = {
          "dict": None,
          "args": "@@",
      },
-    #  "curl": {
-    #      "bc_compile_args": [
-    #          {'val': "-L", 'action': None},
-    #          {'val': "tmp/samples/curl/out/lib", 'action': 'prefix_workdir'},
-    #          {'val': "-lpthread", 'action': None},
-    #          {'val': "-lidn2", 'action': None},
-    #          {'val': "-lz", 'action': None},
-    #          {'val': "-lnghttp2", 'action': None},
-    #      ],
-    #      "bin_compile_args": [
-    #      ],
-    #      "is_cpp": True,
-    #      "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
-    #      "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
-    #      "name": "curl",
-    #      "path": "samples/curl/",
-    #      "dict": None,
-    #      "args": "@@",
-    #  },
+     "curl": {
+         "bc_compile_args": [
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/curl/out/lib/", 'action': 'prefix_workdir'},
+            {'val': "-lpthread", 'action': None},
+            {'val': "-lidn2", 'action': None},
+            {'val': "-lz", 'action': None},
+            {'val': "-lnghttp2", 'action': None},
+         ],
+         "bin_compile_args": [
+         ],
+         "is_cpp": True,
+         "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
+         "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
+         "name": "curl",
+         "path": "samples/curl/",
+         "dict": None,
+         "args": "@@",
+     },
     "guetzli": {
         "bc_compile_args": [
         ],

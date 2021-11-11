@@ -36,7 +36,10 @@ RUN apt-get update -y && \
         libiberty-dev \
         libssl-dev \
         libelf-dev \
-        libdw-dev
+        libdw-dev \
+        libidn2-dev \
+        libidn2-0 \
+        idn2
 
 
 # install kcov
