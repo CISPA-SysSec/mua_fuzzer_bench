@@ -13,12 +13,10 @@ RUN git -C curl_fuzzer checkout -f 9a48d437484b5ad5f2a97c0cab0d8bcbb5d058de
 # build
 WORKDIR /home/mutator/samples/curl/curl_fuzzer/
 COPY samples/curl_harness /home/mutator/samples/curl_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/curl" \
     WORK="/home/mutator/samples/curl/work" \
     OUT="/home/mutator/samples/curl/out" \
     SANITIZER="undefined" \
     FUZZ_TARGETS="curl_fuzzer_http" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../../curl_harness/build.sh
-

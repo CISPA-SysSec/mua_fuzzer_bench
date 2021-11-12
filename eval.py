@@ -56,6 +56,9 @@ FILTER_MUTATIONS = os.getenv("MUT_FILTER_MUTS", "0") == "1"
 # If true only run the seed inputs and dont do any fuzzing.
 JUST_SEEDS = os.getenv("MUT_JUST_SEEDS", "0") == "1"
 
+# The maximum number of mutants to include in one supermutant
+MAX_SUPERMUTANT_SIZE = int(os.getenv("MUT_MAX_SUPERMUTANT_SIZE", "100"))
+
 # Flag if the fuzzed seeds should be used
 USE_GATHERED_SEEDS = False
 
@@ -185,51 +188,62 @@ PROGRAMS = {
     #     "dict": None,
     #     "args": "@@",
     # },
-    #  "bloaty": {
-    #      "bc_compile_args": [
-    #      ],
-    #      "bin_compile_args": [
-    #      ],
-    #      "is_cpp": True,
-    #      "orig_bin": str(Path("tmp/samples/bloaty/out/fuzz_target")),
-    #      "orig_bc": str(Path("tmp/samples/bloaty/out/fuzz_target.bc")),
-    #      "name": "bloaty",
-    #      "path": "samples/bloaty/",
-    #      "dict": None,
-    #      "args": "@@",
-    #  },
-    #  "curl": {
-    #      "bc_compile_args": [
-    #          {'val': "-L", 'action': None},
-    #          {'val': "tmp/samples/curl/out/lib", 'action': 'prefix_workdir'},
-    #          {'val': "-lpthread", 'action': None},
-    #          {'val': "-lidn2", 'action': None},
-    #          {'val': "-lz", 'action': None},
-    #          {'val': "-lnghttp2", 'action': None},
-    #      ],
-    #      "bin_compile_args": [
-    #      ],
-    #      "is_cpp": True,
-    #      "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
-    #      "orig_bc": str(Path("tmp/samples/curl/out/curl_fuzzer.bc")),
-    #      "name": "curl",
-    #      "path": "samples/curl/",
-    #      "dict": None,
-    #      "args": "@@",
-    #  },
-    # "guetzli": {
-    #     "bc_compile_args": [
-    #     ],
-    #     "bin_compile_args": [
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/guetzli/fuzz_target")),
-    #     "orig_bc": str(Path("tmp/samples/guetzli/fuzz_target.bc")),
-    #     "name": "guetzli",
-    #     "path": "samples/guetzli/",
-    #     "dict": "tmp/samples/guetzli_harness/guetzli.dict",
-    #     "args": "@@",
-    # },
+     "bloaty": {
+         "bc_compile_args": [
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/bloaty/work/third_party/protobuf/cmake/", 'action': 'prefix_workdir'},
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/bloaty/work/third_party/re2/", 'action': 'prefix_workdir'},
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/bloaty/work/third_party/capstone/", 'action': 'prefix_workdir'},
+            {'val': "-lprotobuf", 'action': None},
+            {'val': "-lre2", 'action': None},
+            {'val': "-lcapstone", 'action': None},
+            {'val': "-lpthread", 'action': None},
+            {'val': "-lz", 'action': None},
+         ],
+         "bin_compile_args": [
+         ],
+         "is_cpp": True,
+         "orig_bin": str(Path("tmp/samples/bloaty/work/bloaty-orig")),
+         "orig_bc": str(Path("tmp/samples/bloaty/work/bloaty.bc")),
+         "name": "bloaty",
+         "path": "samples/bloaty/",
+         "dict": None,
+         "args": "@@",
+     },
+     "curl": {
+         "bc_compile_args": [
+            {'val': "-L", 'action': None},
+            {'val': "tmp/samples/curl/out/lib/", 'action': 'prefix_workdir'},
+            {'val': "-lpthread", 'action': None},
+            {'val': "-lidn2", 'action': None},
+            {'val': "-lz", 'action': None},
+            {'val': "-lnghttp2", 'action': None},
+         ],
+         "bin_compile_args": [
+         ],
+         "is_cpp": True,
+         "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
+         "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
+         "name": "curl",
+         "path": "samples/curl/",
+         "dict": None,
+         "args": "@@",
+     },
+    "guetzli": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/guetzli/guetzli-orig")),
+        "orig_bc": str(Path("tmp/samples/guetzli/guetzli.bc")),
+        "name": "guetzli",
+        "path": "samples/guetzli/",
+        "dict": "tmp/samples/guetzli_harness/guetzli.dict",
+        "args": "@@",
+    },
     #  "mjs": {
     #      "bc_compile_args": [
     #      ],
@@ -1044,8 +1058,8 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile, timeout):
     finally: # This will stop the container if there is an exception or not.
         try:
             container.kill(2)
-            for _ in range(5):
-                time.sleep(1)
+            for _ in range(50):
+                time.sleep(.1)
                 container.reload()
             while True:
                 container.stop()
@@ -1084,7 +1098,18 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
     except Exception as exc:
         raise exc
     finally: # This will stop the container if there is an exception or not.
-        container.stop()
+        try:
+            container.kill(2)
+            for _ in range(50):
+                time.sleep(.1)
+                container.reload()
+            while True:
+                container.stop()
+                print(f"! Container still alive {container.name}, keep killing it.")
+                time.sleep(1)
+        except docker.errors.NotFound:
+            # container is dead
+            pass
 
 
 def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None):
@@ -1349,8 +1374,8 @@ def base_eval(run_data, docker_image):
             docker_image, # the image
             [
                 "/home/user/eval.sh",
-                str(compile_args),
                 str(prog_bc),
+                str(compile_args),
                 str(IN_DOCKER_WORKDIR/seeds),
             ], # the arguments
             environment={
@@ -1825,14 +1850,19 @@ def get_supermutations(prog_info, mutations):
         'unreachable': unreachable_functions,
     }, cls=CustomJSONEncoder)
 
+    dbg(callgraph)
+
     supermutants = []
     while callgraph:
         supermutant = []
+        # do not let supermutants grow above 100 mutations
         # choose one of the disjunct function sets
         disj_func_sets_idx = choice(range(len(callgraph)))
         disj_func_sets = callgraph[disj_func_sets_idx]
         # for each set of disjunct functions choose a mutation
         for dfs_idx in reversed(range(len(disj_func_sets))):
+            if len(supermutant) >= MAX_SUPERMUTANT_SIZE:
+                break
             dfs = disj_func_sets[dfs_idx]
             chosen_func = choice(list(dfs))
             try:
@@ -1848,27 +1878,29 @@ def get_supermutations(prog_info, mutations):
         if supermutant:
             supermutants.append(supermutant)
 
-    # assign all remaining unknown mutations to existing supermutants
+    # assign all remaining unreachable mutations to existing supermutants
     # they should never be covered so have no influence
     # alternatively all these mutations could be assigned to a single supermutant but that creates an extreme
     # outlier of a supermutant due to a usually large number of mutations
-    unknown_mutant_count = 0
-    for ff, muts in mutations.items():
-        if not muts:
-            continue
+    supermutants_unreachable = [(ff, mm) for ff, muts in mutations.items() for mm in muts]
+    new_supermutants = []
+    for ii in range(len(supermutants_unreachable)//(MAX_SUPERMUTANT_SIZE-1)):
+        new_supermutants.append([])
+
+    for ii, (ff, mm) in enumerate(supermutants_unreachable):
         assert ff in unreachable_functions
-        for mm in muts:
-            supermutants[unknown_mutant_count % len(supermutants)].append(mm)
-            unknown_mutant_count += 1
-    print(f'There are {unknown_mutant_count} mutants in unknown functions.')
+        new_supermutants[ii % len(new_supermutants)].append(mm)
+
+    print(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
+    supermutants.extend(new_supermutants)
     
     # assert that we got all mutants into exactly one supermutant
     all_mutations_in_supermutants = sorted(chain(*supermutants))
     assert all_mutations == all_mutations_in_supermutants
 
     print(f"Made {len(supermutants)} supermutants out of {len(all_mutations)} mutations, "
-        f"a reduction by {len(all_mutations) / len(supermutants):.2f} times with unknown mutations and "
-        f"{(len(all_mutations) - unknown_mutant_count) / len(supermutants):.2f} without.")
+        f"a reduction by {len(all_mutations) / len(supermutants):.2f} times with unreachable mutations and "
+        f"{(len(all_mutations) - len(supermutants_unreachable)) / (len(supermutants) - len(new_supermutants)):.2f} without.")
 
     return supermutants, graph_info
 
@@ -2435,17 +2467,18 @@ def prepare_mutation(core_to_use, data):
             raise RuntimeError(f"Failed to compile mutation") from exc
 
         try:
+            clang_args = [
+                "/usr/bin/clang++-11",
+                "-v",
+                "-o", str(mut_base_dir/"mut_base"),
+                "/workdir/tmp/lib/libdynamiclibrary.so",
+                str(prog_bc),
+                *shlex.split(compile_args),
+            ] 
             # compile the compare version of the mutated binary
-            clang_res = run_exec_in_container(testing, True, [
-                    "/usr/bin/clang++-11",
-                    "-v",
-                    "-o", str(mut_base_dir/"mut_base"),
-                    *shlex.split(compile_args),
-                    "/workdir/tmp/lib/libdynamiclibrary.so",
-                    str(prog_bc)
-            ] )
+            clang_res = run_exec_in_container(testing, True, clang_args)
         except Exception as exc:
-            raise RuntimeError(f"Failed to compile mutation:\nrun_mutation output:\n{run_mut_res}\n") from exc
+            raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
 
 
 class CpuCores():
@@ -2527,7 +2560,13 @@ def build_subject_docker_images(progs):
             "-f", f"subjects/Dockerfile.{name}",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc, "\n", str(proc.stdout))
+            try:
+                stdout = proc.stdout.decode()
+            except:
+                stdout = str(proc.stdout)
+            print(f"Could not build {tag} image.\n"
+                  f"{proc.args} -> {proc.returncode}\n"
+                  f"{stdout}")
             sys.exit(1)
         # extract sample files
         proc = subprocess.run(f"""
@@ -2562,8 +2601,8 @@ def build_subject_docker_images(progs):
                     'clang++' if prog_info['is_cpp'] else 'clang',
                     '-fsanitize=address' if WITH_ASAN else '-fsanitize=memory',
                     "-g", "-D_FORTIFY_SOURCE=0",
-                    *shlex.split(compile_args),
                     str(Path("/home/mutator", orig_bc)),
+                    *shlex.split(compile_args),
                     "-o", str(Path("/home/mutator").joinpath(orig_sanitizer_bin))
                 ])
 
@@ -2597,7 +2636,13 @@ def build_docker_images(fuzzers, progs):
             "-f", f"eval/{name}/Dockerfile",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            print(f"Could not build {tag} image.", proc)
+            try:
+                stdout = proc.stdout.decode()
+            except:
+                stdout = str(proc.stdout)
+            print(f"Could not build {tag} image.\n"
+                  f"{proc.args} -> {proc.returncode}\n"
+                  f"{stdout}")
             sys.exit(1)
 
     build_subject_docker_images(progs)
@@ -2842,8 +2887,8 @@ def seed_gathering_run(run_data, docker_image):
         docker_image, # the image
         [
             "/home/user/eval.sh",
-            str(compile_args),
             str(orig_bc),
+            str(compile_args),
             str(IN_DOCKER_WORKDIR/seeds),
         ], # the arguments
         environment={
@@ -3020,8 +3065,8 @@ def seed_checking_run(run_data, docker_image):
         docker_image, # the image
         [
             "/home/user/eval.sh",
-            str(compile_args),
             str(orig_bc),
+            str(compile_args),
             str(IN_DOCKER_WORKDIR/seeds),
         ], # the arguments
         environment={

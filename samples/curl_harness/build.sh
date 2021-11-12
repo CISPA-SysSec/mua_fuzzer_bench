@@ -63,10 +63,44 @@ do
   cp -v ${TARGET} $OUT/
 done
 
-# # Copy dictionary and options file to $OUT.
-# cp -v ossconfig/*.dict ossconfig/*.options $OUT/
+get-bc -b $OUT/lib/libcurl.a
 
-get-bc $OUT/curl_fuzzer
+$CXX $CXXFLAGS \
+  -DFUZZ_PROTOCOLS_ALL \
+  -c curl_fuzzer.cc \
+  -o $OUT/curl_fuzzer-entry
+get-bc -b $OUT/curl_fuzzer-entry
+
+$CXX $CXXFLAGS \
+  -c curl_fuzzer_tlv.cc \
+  -o $OUT/curl_fuzzer_tlv
+get-bc -b $OUT/curl_fuzzer_tlv
+
+$CXX $CXXFLAGS \
+  -c curl_fuzzer_callback.cc \
+  -o $OUT/curl_fuzzer_callback
+get-bc -b $OUT/curl_fuzzer_callback
+
+llvm-link \
+  -o $OUT/curl.bc \
+  $OUT/curl_fuzzer-entry.bc \
+  $OUT/curl_fuzzer_tlv.bc \
+  $OUT/curl_fuzzer_callback.bc \
+  $OUT/lib/libcurl.a.bc
+
+$CXX $CXXFLAGS \
+  -o $OUT/curl_fuzzer \
+  ../out/curl.bc \
+  /home/mutator/samples/common/main.cc \
+  -L../out/lib/ \
+  -lpthread \
+  -lidn2 \
+  -lz \
+  -lnghttp2
+
+
+# Copy dictionary and options file to $OUT.
+cp -v ossconfig/*.dict ossconfig/*.options $OUT/
 
 ls -la $OUT
 ls -la $WORK

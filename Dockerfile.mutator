@@ -20,6 +20,10 @@ RUN gradle clean && gradle build
 
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
+# For all subjects provide the path to the default main here. This is based on oss-fuzz convention.
+ENV LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc"
+ENV CC=gclang
+ENV CXX=gclang++ 
 
 # install common dependencies
 RUN apt-get update -y && \
@@ -32,7 +36,10 @@ RUN apt-get update -y && \
         libiberty-dev \
         libssl-dev \
         libelf-dev \
-        libdw-dev
+        libdw-dev \
+        libidn2-dev \
+        libidn2-0 \
+        idn2
 
 
 # install kcov
