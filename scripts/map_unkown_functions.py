@@ -11,6 +11,18 @@ from typing import Dict, List, Set, Tuple
 UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
 SPLITTER = " | "
 
+def build_scc_graph_pdf(location: str, uid_to_scc: Dict[int, str], forward_dag: Dict[int, Set[int]]):
+    tmp_uid_to_scc = dict()
+    for uid, scc in uid_to_scc.items():
+        tmp_uid_to_scc[uid] = tuple(scc)
+    graph_dict = dict()
+    for node, targets in forward_dag.items():
+        target_list = [str(tmp_uid_to_scc[target]) for target in targets if target != node]
+        graph_dict[str(tmp_uid_to_scc[node])] = target_list
+    # print(graph_dict)
+    build_graph_pdf(location, graph_dict)
+
+
 def build_graph_pdf(location: str, graph: Dict[str, List[str]]):
     """
     Takes a graph as dictionary and builds a pdf which shows the graph as generated from graphviz.
@@ -131,6 +143,7 @@ def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[s
         for neighbor in graph[vert]:
             vert_scc.add(sccs[neighbor])
 
+
     scc_backward_dag = {}
     for vert, uid in sccs.items():
         vert_scc = scc_backward_dag.setdefault(sccs[vert], set())
@@ -158,7 +171,7 @@ def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[s
             reachable.add(parent)
             parents.update({el for el in scc_backward_dag[parent] if el not in reachable})
         reachable_dict[uid].update(reachable)
-    return reachable_dict
+    return reachable_dict, scc_forward_dag
 
 
 def compute_non_reaching_scc_set_random(reachability_dict: Dict[int, Set[int]]):
@@ -218,7 +231,8 @@ def main(path: str):
     augmented_graph = augment_graph(orig_graph)
     build_graph_pdf(path + ".digraph", augmented_graph)
     sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
-    scc_reachability_mapping = build_scc_reachability_mapping(sccs, augmented_graph)
+    scc_reachability_mapping, scc_forward_dag = build_scc_reachability_mapping(sccs, augmented_graph)
+    build_scc_graph_pdf(path + ".scc.digraph", sccs_uid_to_vert, scc_forward_dag)
     exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
     final_list = []  # will contain a list of lists containing mutually exclusive
     for excl_set in exclusion_list:
