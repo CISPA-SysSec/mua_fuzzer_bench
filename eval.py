@@ -2344,9 +2344,9 @@ def has_result(mut_id, results, to_search):
     assert unhandled_search_types == set(), f'Unhandled search types: {unhandled_search_types}'
     unhandled_result_types = set(rr['result'] for rr in results) - HANDLED_RESULT_TYPES
     assert unhandled_result_types == set(), f'Unhandled result types: {unhandled_result_types}'
+
     for res in [rr for rr in results if rr['result'] in [*to_search]]:
-        assert len(res['mutation_ids']) == 1, f"res: {res}, results: {results}"
-        if mut_id == res['mutation_ids'][0]:
+        if mut_id in res['mutation_ids']:
             return res
     return None
 
@@ -2476,7 +2476,9 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                 # there can also be mutants that are killed but not part of a multi kill
                 # so just get every mutation that was killed and recheck all of them
-                killed_mutants = set(chain([rr['mutation_ids'] for rr in results if rr['result'] in ['killed']]))
+                killed_mutants = set(chain(tuple(sorted(rr['mutation_ids']))
+                                for rr in results
+                                if rr['result'] in ['killed']))
                 
                 # get the remaining mutations
                 cur_mutations = set(mut_data['mutation_ids'])
