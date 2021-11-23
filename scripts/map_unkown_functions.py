@@ -174,13 +174,14 @@ def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[s
     return reachable_dict, scc_forward_dag
 
 
-def compute_non_reaching_scc_set_random(reachability_dict: Dict[int, Set[int]]):
+def compute_non_reaching_set_random(reachability_dict: Dict[int, Set[int]]):
     """
     Takes a reachability dictionary and greedily grows unreachable sets of SCCs.
     :param reachability_dict:
     :return:
     """
-    to_compute = {el for el in range(len(reachability_dict))}
+    # to_compute = {el for el in range(len(reachability_dict))}
+    to_compute = set(reachability_dict.keys())
     exclusion_list = list()
     while to_compute:
         seed_value = to_compute.pop()
@@ -205,7 +206,7 @@ def compute_sccs(graph: Dict[str, List[str]]) -> Tuple[Dict[str, int], Dict[int,
     components = []
     preorders = {}
     compute_scc("main", graph, preorders, [], [], components, 0)
-    print(components, preorders)
+    # print(components, preorders)
 
     sccs = {}
     sccs_uid_to_name = {}
@@ -217,6 +218,86 @@ def compute_sccs(graph: Dict[str, List[str]]) -> Tuple[Dict[str, int], Dict[int,
         uid += 1
     return sccs, sccs_uid_to_name
 
+def read_mutation_locations(path: str):
+    """
+    Reads in the locations and maps them to the according functions and vice versa.
+    :param path:
+    :return:
+    """
+    with open(path, "r") as locations_file:
+        locations = json.load(locations_file)
+    location_function_mapping = dict()
+    function_location_mapping = dict()
+    for location in locations:
+        funname = location["funname"]
+        uid = location["UID"]
+        location_function_mapping[uid] = funname
+        uid_set = function_location_mapping.setdefault(funname, set())
+        uid_set.add(uid)
+    return location_function_mapping, function_location_mapping
+
+
+def build_supermutants(scc_reachability_mapping, sccs, sccs_uid_to_vert, location_function_mapping, function_location_mapping):
+    """
+    Builds a list of sets which represent the different supermutants that can be built.
+    :param scc_reachability_mapping:
+    :param sccs_uid_to_vert:
+    :param location_function_mapping:
+    :param function_location_mapping:
+    :return:
+    """
+    # first compute for each mutation the excluded mutations
+    excluding_mutations = dict()
+    for location, function in location_function_mapping.items():
+        if function in sccs:
+            reachable_mutations = set()
+            for scc_reachable in scc_reachability_mapping[sccs[function]]:
+                for scc_fun in sccs_uid_to_vert[scc_reachable]:
+                    if scc_fun in function_location_mapping:
+                        reachable_mutations |= function_location_mapping[scc_fun]
+            excluding_mutations[location] = reachable_mutations
+    supermutants = compute_non_reaching_set_random(excluding_mutations)
+    print(f"Reachable reduction rate: {sum(len(mutations) for mutations in supermutants) / len(supermutants)}")
+    unreachable_mutations: Dict[int, Set[int]] = dict()
+    for fun, locations in function_location_mapping.items():
+        if fun not in sccs:
+            unreachable_mutations[fun] = locations
+    # now fill the supermutants with unreachable mutations randomly
+    # prefer mutants with a smaller number of mutations
+    for mutant in sorted(supermutants, key=lambda x: len(x)):
+        for unreachable in set(unreachable_mutations.keys()):
+            unreachable_value = unreachable_mutations[unreachable]
+            if unreachable_value:
+                mutant.add(unreachable_value.pop())
+            if not unreachable_value:
+                unreachable_mutations.pop(unreachable)
+            if len(mutant) >= 100: # make sure that no more than 100 mutations are in the mutant set for compilation issues
+                break
+    # if there are even more unreachables, put them in additional mutants
+    if unreachable_mutations:
+        while unreachable_mutations:
+            mutant = set()
+            for unreachable in set(unreachable_mutations.keys()):
+                unreachable_value = unreachable_mutations[unreachable]
+                if unreachable_value:
+                    mutant.add(unreachable_value.pop())
+                if not unreachable_value:
+                    unreachable_mutations.pop(unreachable)
+                if len(mutant) >= 100: # make sure that no more than 100 mutations are in the mutant set for compilation issues
+                    break
+            supermutants.append(mutant)
+    print(f"Including unreachable reduction rate: {sum(len(mutations) for mutations in supermutants) / len(supermutants)}")
+    # check if the number of mutations matches with the number of locations
+    assert len(location_function_mapping) == sum(len(mutations) for mutations in supermutants)
+    # check that all mutations are assigned exactly once
+    for location in location_function_mapping:
+        found = False
+        for mutations in supermutants:
+            if location in mutations:
+                assert not found
+                found = True
+        assert found
+    return supermutants
 
 def main(path: str):
     """
@@ -233,17 +314,22 @@ def main(path: str):
     sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
     scc_reachability_mapping, scc_forward_dag = build_scc_reachability_mapping(sccs, augmented_graph)
     build_scc_graph_pdf(path + ".scc.digraph", sccs_uid_to_vert, scc_forward_dag)
-    exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
-    final_list = []  # will contain a list of lists containing mutually exclusive
-    for excl_set in exclusion_list:
-        tmp_exclusion_list = list()
-        for scc in excl_set:
-            tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
-        final_list.append(tmp_exclusion_list)
-    reachable_functions = set(sccs.keys())
-    unreachable_functions = set(augmented_graph) - reachable_functions
-    return final_list , unreachable_functions
+    location_function_mapping, function_location_mapping = read_mutation_locations(path.replace(".graph", ""))
+    supermutants = build_supermutants(scc_reachability_mapping, sccs, sccs_uid_to_vert, location_function_mapping, function_location_mapping)
+
+    return supermutants
+    # exclusion_list = compute_non_reaching_set_random(scc_reachability_mapping)
+    # final_list = []  # will contain a list of lists containing mutually exclusive
+    # for excl_set in exclusion_list:
+    #     tmp_exclusion_list = list()
+    #     for scc in excl_set:
+    #         tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
+    #     final_list.append(tmp_exclusion_list)
+    # reachable_functions = set(sccs.keys())
+    # unreachable_functions = set(augmented_graph) - reachable_functions
+    # return final_list , unreachable_functions
 
 
 if __name__ == "__main__":
-    print(main(sys.argv[1]))
+    # print(main(sys.argv[1]))
+    main(sys.argv[1])
