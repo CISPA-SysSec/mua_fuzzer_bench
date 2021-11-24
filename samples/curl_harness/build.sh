@@ -66,7 +66,7 @@ done
 get-bc -b $OUT/lib/libcurl.a
 
 $CXX $CXXFLAGS \
-  -DFUZZ_PROTOCOLS_HTTP \
+  -DFUZZ_PROTOCOLS_ALL \
   -c curl_fuzzer.cc \
   -o $OUT/curl_fuzzer-entry
 get-bc -b $OUT/curl_fuzzer-entry
