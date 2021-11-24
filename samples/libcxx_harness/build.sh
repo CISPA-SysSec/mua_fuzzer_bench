@@ -19,12 +19,18 @@ for test in libcxx/test/libcxx/fuzzing/*.pass.cpp; do
         -std=c++14 \
         -DLIBCPP_OSS_FUZZ \
         -D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS \
-        -nostdinc++ -cxx-isystem libcxx/include \
-        -lpthread -ldl \
-        -o "${OUT}/${exe}" \
-        ${test} \
-        ${LIB_FUZZING_ENGINE}
+        -nostdinc++ \
+        -I libcxx/include \
+        -c ${test} \
+        -o "${OUT}/${exe}.o"
+    get-bc -b "${OUT}/${exe}.o"
+
+    ${CXX} ${CXXFLAGS} -I libcxx/include -lpthread -ldl "${OUT}/${exe}.o.bc" ${LIB_FUZZING_ENGINE}
 done
+
+        # ${LIB_FUZZING_ENGINE}
+        # -lpthread -ldl
+        #  -cxx-isystem libcxx/include
 
 ls -la $OUT
 ls -la $WORK

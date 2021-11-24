@@ -6,12 +6,10 @@ WORKDIR /home/mutator/samples
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y meson pkg-config ragel gtk-doc-tools gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
 RUN git clone https://github.com/harfbuzz/harfbuzz.git
 WORKDIR /home/mutator/samples/harfbuzz
-RUN CC=gclang CXX=gclang++ meson fuzzbuild --default-library=static -Dexperimental_api=true
-RUN CC=gclang CXX=gclang++ ninja -v -Cfuzzbuild test/fuzzing/hb-subset-fuzzer # {shape,draw,subset,set}
-RUN cp fuzzbuild/test/fuzzing/hb-subset-fuzzer hb-subset-fuzzer
-RUN get-bc hb-subset-fuzzer
 COPY samples/harfbuzz_harness /home/mutator/samples/harfbuzz_harness
-# RUN gclang++ -static -Ifuzzbuild/src/ -Isrc/ fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.hb-subset-fuzzer.cc.o.bc fuzzbuild/test/fuzzing/5325d79\@\@hb-subset-fuzzer\@exe/.main.cc.o.bc fuzzbuild/src/libharfbuzz-subset.a -lpthread
-# WORKDIR /home/mutator/samples/harfbuzz/fuzzbuild/test/fuzzing
-# RUN cp -r *@@hb-subset-fuzzer@exe hb-subset-fuzzer-dir
+RUN CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/harfbuzz" \
+    WORK="/home/mutator/samples/harfbuzz/work" \
+    OUT="/home/mutator/samples/harfbuzz/out" \
+    ../harfbuzz_harness/build.sh
 

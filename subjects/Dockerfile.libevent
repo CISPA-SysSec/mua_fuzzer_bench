@@ -1,0 +1,19 @@
+FROM mutator_mutator
+
+################################################################################
+# eigen
+RUN apt-get install -y make autoconf automake libtool cmake pkg-config
+WORKDIR /home/mutator/samples
+WORKDIR /home/mutator/samples/libevent
+RUN git clone --depth 1 https://github.com/libevent/libevent.git libevent
+WORKDIR /home/mutator/samples/libevent/libevent
+RUN git checkout 0c217f4fe1af6efdb99321401da6f4048398065f
+
+WORKDIR /home/mutator/samples/libevent
+COPY samples/libevent_harness /home/mutator/samples/libevent_harness
+
+RUN CFLAGS="-g -O2" CXXFLAGS="-g -O2" \
+    SRC="/home/mutator/samples/libevent" \
+    WORK="/home/mutator/samples/libevent/work" \
+    OUT="/home/mutator/samples/libevent/out" \
+    /home/mutator/samples/libevent_harness/build.sh

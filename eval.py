@@ -86,13 +86,8 @@ MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 PROGRAMS = {
     "cares_parse_reply": {
         "bc_compile_args": [
-            # {'val': "-I", 'action': None},
-            # {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
-            # {'val': "-I", 'action': None},
-            # {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
         ],
         "bin_compile_args": [
-            # {'val': "tmp/samples/c-ares/out/ares-test-fuzz.o", 'action': 'prefix_workdir'},
         ],
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-parse-reply")),
@@ -103,13 +98,8 @@ PROGRAMS = {
     },
     "cares_name": {
         "bc_compile_args": [
-            # {'val': "-I", 'action': None},
-            # {'val': "tmp/samples/c-ares/include", 'action': 'prefix_workdir'},
-            # {'val': "-I", 'action': None},
-            # {'val': "tmp/samples/c-ares/src/lib", 'action': 'prefix_workdir'},
         ],
         "bin_compile_args": [
-            # {'val': "tmp/samples/c-ares/out/ares-test-fuzz-name.o", 'action': 'prefix_workdir'},
         ],
         "is_cpp": True,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-name")),
@@ -142,55 +132,21 @@ PROGRAMS = {
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
         "dict": None,
     },
-    # "objdump": {
-    #     "include": "",
-    #     "path": "binutil/binutil/",
-    #     "args": "--dwarf-check -C -g -f -dwarf -x @@",
-    # },
-    # "re2": {
-    #     "bc_compile_args": [
-    #         {'val': "-std=c++11", 'action': None},
-    #     ],
-    #     "bin_compile_args": [
-    #         {'val': "tmp/samples/re2_harness/harness.cc", 'action': 'prefix_workdir'},
-    #         {'val': "-lpthread", 'action': None},
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/re2-code/re2_fuzzer")),
-    #     "orig_bc": str(Path("tmp/samples/re2-code/re2_fuzzer.bc")),
-    #     "name": "re2",
-    #     "path": "samples/re2-code",
-    #     "dict": "tmp/samples/re2_harness/re2.dict",
-    #     "args": "@@",
-    # },
-    #  "freetype": {
-    #      "bc_compile_args": [
-    #      ],
-    #      "bin_compile_args": [
-    #      ],
-    #      "is_cpp": True,
-    #      "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
-    #      "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
-    #      "name": "freetype",
-    #      "path": "samples/ftfuzzer",
-    #      "dict": None,
-    #      "args": "@@",
-    #  },
-    # "aspell": {
-    #     "bc_compile_args": [
-    #         {'val': "-lpthread", 'action': None},
-    #         {'val': "-ldl", 'action': None},
-    #     ],
-    #     "bin_compile_args": [
-    #     ],
-    #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/aspell/out/aspell_fuzzer")),
-    #     "orig_bc": str(Path("tmp/samples/aspell/out/aspell_fuzzer.bc")),
-    #     "name": "aspell",
-    #     "path": "samples/aspell/",
-    #     "dict": None,
-    #     "args": "@@",
-    # },
+    "re2": {
+        "bc_compile_args": [
+            {'val': "-std=c++11", 'action': None},
+        ],
+        "bin_compile_args": [
+            # {'val': "tmp/samples/re2_harness/harness.cc", 'action': 'prefix_workdir'},
+            {'val': "-lpthread", 'action': None},
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/re2-code/out/re2_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/re2-code/out/re2.bc")),
+        "name": "re2",
+        "path": "samples/re2-code",
+        "dict": "tmp/samples/re2_harness/re2.dict",
+    },
      "bloaty": {
          "bc_compile_args": [
             {'val': "-L", 'action': None},
@@ -213,7 +169,6 @@ PROGRAMS = {
          "name": "bloaty",
          "path": "samples/bloaty/",
          "dict": None,
-         "args": "@@",
      },
      "curl": {
          "bc_compile_args": [
@@ -232,7 +187,6 @@ PROGRAMS = {
          "name": "curl",
          "path": "samples/curl/",
          "dict": None,
-         "args": "@@",
      },
     "guetzli": {
         "bc_compile_args": [
@@ -245,7 +199,18 @@ PROGRAMS = {
         "name": "guetzli",
         "path": "samples/guetzli/",
         "dict": "tmp/samples/guetzli_harness/guetzli.dict",
-        "args": "@@",
+    },
+    "libevent": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/libevent/out/parse_query_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/libevent/out/parse_query_fuzzer.bc")),
+        "name": "libevent",
+        "path": "samples/libevent/",
+        "dict": None,
     },
     #  "mjs": {
     #      "bc_compile_args": [
@@ -261,6 +226,32 @@ PROGRAMS = {
     #      "dict": None,
     #      "args": "@@",
     #  },
+    #  "freetype": {
+    #      "bc_compile_args": [
+    #      ],
+    #      "bin_compile_args": [
+    #      ],
+    #      "is_cpp": True,
+    #      "orig_bin": str(Path("tmp/samples/freetype/out/ftfuzzer")),
+    #      "orig_bc": str(Path("tmp/samples/freetype/out/ftfuzzer.bc")),
+    #      "name": "freetype",
+    #      "path": "samples/ftfuzzer",
+    #      "dict": None,
+    #  },
+    # "aspell": {
+    #     "bc_compile_args": [
+    #         {'val': "-lpthread", 'action': None},
+    #         {'val': "-ldl", 'action': None},
+    #     ],
+    #     "bin_compile_args": [
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/aspell/out/aspell_fuzzer")),
+    #     "orig_bc": str(Path("tmp/samples/aspell/out/aspell_fuzzer.bc")),
+    #     "name": "aspell",
+    #     "path": "samples/aspell/",
+    #     "dict": None,
+    # },
     # "vorbis": {
     #     "bc_compile_args": [
     #     ],
@@ -285,7 +276,6 @@ PROGRAMS = {
     #      "name": "harfbuzz",
     #      "path": "samples/harfbuzz/",
     #      "dict": None,
-    #      "args": "@@",
     #  },
     #  "file": {
     #      "bc_compile_args": [
@@ -307,8 +297,8 @@ PROGRAMS = {
     #     "bin_compile_args": [
     #     ],
     #     "is_cpp": True,
-    #     "orig_bin": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer")),
-    #     "orig_bc": str(Path("tmp/samples/libjpeg-turbo/libjpeg_turbo_fuzzer.bc")),
+    #     "orig_bin": str(Path("tmp/samples/libjpeg-turbo/out/libjpeg")),
+    #     "orig_bc": str(Path("tmp/samples/libjpeg-turbo/out/libjpeg.bc")),
     #     "name": "libjpeg",
     #     "path": "samples/libjpeg-turbo/",
     #     "dict": "tmp/samples/libjpeg-turbo_harness/libjpeg.dict",
@@ -329,6 +319,66 @@ PROGRAMS = {
     #      "dict": None,
     #      "args": "@@",
     #  },
+    # "libcxx": {
+    #     "bc_compile_args": [
+    #     ],
+    #     "bin_compile_args": [
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/libcxx/out/libjpeg")),
+    #     "orig_bc": str(Path("tmp/samples/libcxx/out/libjpeg.bc")),
+    #     "name": "libcxx",
+    #     "path": "samples/libcxx/",
+    #     "dict": "tmp/samples/libcxx/libjpeg.dict",
+    # },
+    # "openthread": {
+    #     "bc_compile_args": [
+    #     ],
+    #     "bin_compile_args": [
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/libcxx/out/libjpeg")),
+    #     "orig_bc": str(Path("tmp/samples/libcxx/out/libjpeg.bc")),
+    #     "name": "openthread",
+    #     "path": "samples/openthread/",
+    #     "dict": None,
+    # },
+    # "libarchive": {
+    #     "bc_compile_args": [
+    #         # {'val': "-Itmp/samples/libarchive/libarchive/libarchive", 'action': 'prefix_workdir'},
+    #         {'val': "-lcrypto", 'action': None},
+    #         {'val': "-lacl", 'action': None},
+    #         {'val': "-llzma", 'action': None},
+    #         {'val': "-llz4", 'action': None},
+    #         {'val': "-lbz2", 'action': None},
+    #         {'val': "-lz", 'action': None},
+    #         {'val': "-ldl", 'action': None},
+    #     ],
+    #     "bin_compile_args": [
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/libarchive/out/libarchive_fuzzer")),
+    #     "orig_bc": str(Path("tmp/samples/libarchive/out/libarchive.bc")),
+    #     "name": "libarchive",
+    #     "path": "samples/libarchive/",
+    #     "dict": None,
+    # },
+    # "spdk": {
+    #     "bc_compile_args": [
+    #         {'val': "-ldl", 'action': None},
+    #         {'val': "-lpthread", 'action': None},
+    #         {'val': "-lnuma", 'action': None},
+    #         {'val': "-luuid", 'action': None},
+    #     ],
+    #     "bin_compile_args": [
+    #     ],
+    #     "is_cpp": True,
+    #     "orig_bin": str(Path("tmp/samples/spdk/out/parse_json_fuzzer")),
+    #     "orig_bc": str(Path("tmp/samples/spdk/out/spdk.bc")),
+    #     "name": "spdk",
+    #     "path": "samples/spdk/",
+    #     "dict": None,
+    # },
 }
 
 
@@ -2101,7 +2151,7 @@ def get_supermutations(prog_info, mutations):
 
     print(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
     supermutants.extend(new_supermutants)
-    
+
     # assert that we got all mutants into exactly one supermutant
     all_mutations_in_supermutants = sorted(chain(*supermutants))
     assert all_mutations == all_mutations_in_supermutants
@@ -2506,13 +2556,13 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                 # there can also be mutants that are killed but not part of a multi kill
                 # so just get every mutation that was killed and recheck all of them
-                killed_mutants = set(chain(tuple(sorted(rr['mutation_ids']))
+                killed_mutants = set(chain(*[rr['mutation_ids']
                                 for rr in results
-                                if rr['result'] in ['killed']))
+                                if rr['result'] in ['killed']]))
                 
                 # get the remaining mutations
                 cur_mutations = set(mut_data['mutation_ids'])
-                assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
+                assert len(cur_mutations & killed_mutants) == len(killed_mutants), f"Killed mutations not in supermutant: {cur_mutations}, {killed_mutants}"
                 remaining_mutations = cur_mutations - killed_mutants
 
                 print(f"! multi, killed {len(killed_mutants)} remaining {len(remaining_mutations)}")

@@ -1,0 +1,20 @@
+FROM mutator_mutator
+
+################################################################################
+RUN apt-get install -y make curl yasm autoconf libtool meson nasm
+WORKDIR /home/mutator/samples
+
+# clone
+RUN git clone --depth 1 https://github.com/spdk/spdk && \
+    cd spdk && \
+    git submodule update --init
+WORKDIR spdk
+RUN git checkout 1fa4d590d829703af88722ff9424c2c51bc7957b
+
+# build
+COPY samples/spdk_harness /home/mutator/samples/spdk_harness
+RUN CFLAGS="" CXXFLAGS="" \
+    SRC="/home/mutator/samples/spdk" \
+    WORK="/home/mutator/samples/spdk/work" \
+    OUT="/home/mutator/samples/spdk/out" \
+    ../spdk_harness/build.sh

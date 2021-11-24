@@ -5,6 +5,9 @@ set -Eeuxo pipefail
 # based on:
 # https://github.com/google/oss-fuzz/blob/c447cfedf46682dbabc05668e446419d47e22964/projects/re2/build.sh
 
+mkdir -p $OUT
+mkdir -p $WORK
+
 # First, build RE2.
 # N.B., we don't follow the standard incantation for building RE2
 # (i.e., `make && make test && make install && make testinstall`),
@@ -17,23 +20,24 @@ CXXFLAGS="$CXXFLAGS -g -O2"
 make clean
 make -j obj/libre2.a
 
+get-bc -b obj/libre2.a
+
 cp obj/libre2.a re2_fuzzer.a
 
 # Second, build the fuzzer (distributed with RE2).
-LIB_FUZZING_ENGINE="../re2_harness/harness.cc"
 $CXX $CXXFLAGS -std=c++11 -static -c -I. \
-    -o re2_fuzzer.o \
-    re2/fuzzing/re2_fuzzer.cc \
-    re2_fuzzer.a
+    -c re2/fuzzing/re2_fuzzer.cc \
+    -o re2_fuzzer
+get-bc re2_fuzzer
 
-llvm-ar r re2_fuzzer.a re2_fuzzer.o
-get-bc -b re2_fuzzer.a
-mv re2_fuzzer.a.bc re2_fuzzer.bc
+llvm-link \
+    re2_fuzzer.bc \
+    obj/libre2.a.bc \
+    -o $OUT/re2.bc
 
-LIB_FUZZING_ENGINE="../re2_harness/harness.cc"
 $CXX $CXXFLAGS -std=c++11 \
     $LIB_FUZZING_ENGINE \
-    re2_fuzzer.bc \
+    $OUT/re2.bc \
     -lpthread \
-    -o re2_fuzzer
+    -o $OUT/re2_fuzzer
 

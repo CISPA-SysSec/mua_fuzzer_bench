@@ -17,4 +17,3 @@ RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
     SANITIZER="undefined" \
     LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../libcxx_harness/build.sh
-

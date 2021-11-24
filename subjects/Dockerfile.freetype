@@ -12,10 +12,9 @@ RUN git checkout ca6201f250316e6efd445a7fd92c4d82950e4cb0
 
 # build
 COPY samples/freetype_harness /home/mutator/samples/freetype_harness
-RUN CC=gclang CXX=gclang++ CFLAGS="" CXXFLAGS="" \
+RUN CFLAGS="" CXXFLAGS="" \
     SRC="/home/mutator/samples/freetype" \
     WORK="/home/mutator/samples/freetype/work" \
     OUT="/home/mutator/samples/freetype/out" \
-    LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc" \
     ../freetype_harness/build.sh
 
