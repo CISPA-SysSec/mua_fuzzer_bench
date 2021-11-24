@@ -5,9 +5,9 @@ FROM mutator_mutator
 RUN apt-get install -y make autoconf automake libtool cmake pkg-config
 WORKDIR /home/mutator/samples
 WORKDIR /home/mutator/samples/libevent
-RUN git clone --depth 1 https://github.com/libevent/libevent.git libevent
+RUN git clone https://github.com/libevent/libevent.git libevent
 WORKDIR /home/mutator/samples/libevent/libevent
-RUN git checkout 0c217f4fe1af6efdb99321401da6f4048398065f
+RUN git checkout 5df3037d10556bfcb675bc73e516978b75fc7bc7 # release-2.1.12-stable
 
 WORKDIR /home/mutator/samples/libevent
 COPY samples/libevent_harness /home/mutator/samples/libevent_harness
