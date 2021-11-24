@@ -17,7 +17,6 @@ samples/**/mutations/*
 
 # custom exclude since this is on my machine for testing -- BM
 /samples/mjs_local/
-/samples/*_harness
 cov/*/*
 cov/log_*
 
