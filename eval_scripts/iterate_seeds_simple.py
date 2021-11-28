@@ -13,10 +13,14 @@ MAX_RUN_EXEC_IN_CONTAINER_TIME = 30
 
 
 def run_cmd(cmd):
-    return subprocess.run(cmd,
+    proc = subprocess.Popen(cmd,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
         close_fds=True)
+    try:
+        proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
+    except subprocess.TimeoutExpired:
+        pass
+    return proc
 
 
 def run_seeds(seeds, binary, args, workdir):

@@ -212,6 +212,19 @@ PROGRAMS = {
         "path": "samples/libevent/",
         "dict": None,
     },
+    "mjs": {
+        "bc_compile_args": [
+            {'val': "-ldl", 'action': None},
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/mjs/out/mjs_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/mjs/out/mjs.bc")),
+        "name": "mjs",
+        "path": "samples/mjs/",
+        "dict": None,
+    },
     #  "mjs": {
     #      "bc_compile_args": [
     #      ],
@@ -398,7 +411,6 @@ def hash_file(file_path):
 def collect_honggfuzz(path):
     found = path.glob("output/*")
     crashes = list(path.glob("crashes/*"))
-    dbg(crashes)
     return list(found) + list(crashes)
 
 
@@ -411,7 +423,6 @@ def collect_afl(path):
 def collect_libfuzzer(path):
     found = path.glob("seeds/*")
     crashes = list(path.glob("artifacts/*"))
-    dbg(crashes)
     return list(found) + list(crashes)
 
 
@@ -1402,8 +1413,11 @@ def update_results(results, new_results, start_time):
 
     for nr in new_results:
         res = nr['result']
-        m_ids = tuple(sorted(set(nr['mutation_ids'])))
-        key = (res, m_ids)
+        if res == 'orig_crash':
+            key = (res, None)
+        else:
+            m_ids = tuple(sorted(set(nr['mutation_ids'])))
+            key = (res, m_ids)
         if key not in results:
             results[key] = nr
 
@@ -2416,7 +2430,7 @@ HANDLED_RESULT_TYPES = set([
     'covered', 'covered_by_seed',
     'killed', 'killed_by_seed',
     'timeout', 'timeout_by_seed',
-    'orig_timeout',
+    'orig_timeout', 'orig_crash',
 ])
 
 def has_result(mut_id, results, to_search):
@@ -2444,7 +2458,10 @@ def copy_fuzzer_inputs(data):
 def record_supermutant_multi(stats, mut_data, results):
     multies = set()
     for rr in results:
-        mut_ids = tuple(sorted(rr['mutation_ids']))
+        try:
+            mut_ids = tuple(sorted(rr['mutation_ids']))
+        except KeyError:
+            continue
         result = rr['result']
         entry = (result, mut_ids)
         if len(mut_ids) > 1 and entry not in multies:
@@ -3745,10 +3762,12 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
         assert len(all_runs) == 0 or should_run is False
 
-    print("Copying seeds to target dir and measuring coverage...")
+    print("Copying seeds to target dir ...")
     all_runs_dir = destination_dir/"all_runs"
     seed_runs = []
-    for seed_source in seed_coverage_base_shm_dir.glob("*"):
+    coverage_dirs = list(seed_coverage_base_shm_dir.glob("*"))
+    for ii, seed_source in enumerate(coverage_dirs):
+        print(f"{ii+1} / {len(coverage_dirs)}\r", end='', flush=True)
         if not seed_source.is_dir():
             continue
 
@@ -3782,7 +3801,9 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     shutil.rmtree(minimize_shm_dir, ignore_errors=True, onerror=lambda *x: print(x))
     minimize_shm_dir.mkdir(parents=True, exist_ok=True)
 
-    for sr in seed_runs:
+    print("Minimizing seeds ...")
+    for ii, sr in enumerate(seed_runs):
+        print(f"{ii+1} / {len(seed_runs)}\r", end='', flush=True)
         sr_fuzzer = sr['fuzzer']
         sr_prog = sr['prog']
         sr_seed_dir = Path(sr['dir'])
@@ -3793,7 +3814,9 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
 
     with start_mutation_container(None, 60*60) as mutator:
+        print("Instrumenting progs ...")
         for prog in set(sr['prog'] for sr in seed_runs):
+            print(prog)
             prog_info = PROGRAMS[prog]
             instrument_prog(mutator, prog_info)
 
@@ -3805,22 +3828,16 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
         seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
-        for sr in seed_runs:
+        print("Measuring coverage ...")
+        for ii, sr in enumerate(seed_runs):
+            print(f"{ii+1} / {len(seed_runs)}\r", end='', flush=True)
             prog = sr['prog']
             sr_seed_dir = sr['dir']
             covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
             sr['covered_mutations'] = covered_mutations
 
-            kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
-            get_kcov(prog, sr_seed_dir, kcov_res_path)
-            with open(kcov_res_path) as f:
-                kcov_res = json.load(f)
-            sr['kcov_res'] = kcov_res
             print(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
                   f"created {sr['num_seeds']} seeds inputs covering {len(covered_mutations)} mutations")
-
-    with open(destination_dir/'info.json', 'wt') as f:
-        json.dump(seed_runs, f)
 
     runs_by_prog_fuzzer = defaultdict(list)
     for sr in seed_runs:
@@ -3829,7 +3846,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     median_runs_base_dir = destination_dir/'median_runs'
     median_runs_base_dir.mkdir()
 
-    print(f"Copying median runs to: {str(median_runs_base_dir)}")
+    print(f"Copying median runs to: {str(median_runs_base_dir)} and measuring them using kcov")
     for rr in runs_by_prog_fuzzer.values():
         sorted_runs = sorted(rr, key=lambda x: len(x['covered_mutations']))
         mr = sorted_runs[int(len(sorted_runs) / 2)]
@@ -3838,6 +3855,15 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
         for si in Path(mr['minimized_dir']).glob("*"):
             shutil.copyfile(si, median_run_dir/si.name)
+
+        kcov_res_path = kcov_res_dir/f"{mr['prog']}_{mr['fuzzer']}_{mr['instance']}.json"
+        get_kcov(prog, sr_seed_dir, kcov_res_path)
+        with open(kcov_res_path) as f:
+            kcov_res = json.load(f)
+        mr['kcov_res'] = kcov_res
+
+    with open(destination_dir/'info.json', 'wt') as f:
+        json.dump(seed_runs, f)
 
 
 def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances):
@@ -4573,7 +4599,7 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
     with tempfile.TemporaryDirectory(dir=HOST_TMP_PATH) as trigger_folder:
         in_docker_trigger_folder = Path('/home/mutator/tmp/').joinpath(Path(trigger_folder).relative_to(HOST_TMP_PATH))
         # start detector and run through all seed files
-        run_exec_in_container(mutator.name, True,
+        run = run_exec_in_container(mutator.name, False,
             [
                 '/home/mutator/iterate_seeds_simple.py',
                 '--seeds', seed_dir,
@@ -4583,6 +4609,8 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
             timeout=60*15)
+        if run['returncode'] != 0:
+            print(run['out'])
         # get a list of all mutation ids from triggered folder
         mutation_ids = list(pp.stem for pp in Path(trigger_folder).glob("**/*"))
         return mutation_ids
@@ -4697,7 +4725,6 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
         for ff in in_path.glob("*"):
             if ff.is_dir():
                 raise ValueError("Did not expect any directories in the seed path, something is wrong.")
-            print(ff, seed_in_tmp_dir)
             shutil.copy2(ff, seed_in_tmp_dir)
 
         # Compile arguments
@@ -4728,8 +4755,6 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
 
             # start the fuzzer in seed minimization mode on the prog
         eval_func(run_data, seed_minimization_run)
-
-        print(f"copying results to: {seed_out_tmp_dir}")
 
         # move minimized seeds to result path
         for ff in seed_out_tmp_dir.glob("*"):
