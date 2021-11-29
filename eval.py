@@ -892,7 +892,7 @@ class Stats():
         # c.execute('UPDATE execution SET total_time = ? where exec_id = ?',
         c.execute('UPDATE progs SET supermutant_graph_info = ? where exec_id = ? and prog = ?',
             (
-                graph_info,
+                json.dumps(graph_info),
                 exec_id,
                 prog,
             )
@@ -1853,39 +1853,144 @@ def instrument_prog(container, prog_info):
     run_exec_in_container(container.name, True, args)
 
 
+# Find functions that are reachable from fnA
+def find_reachable(call_g, fnA, reachable_keys=None, found_so_far=None):
+    if reachable_keys is None: reachable_keys = {}
+    if found_so_far is None: found_so_far = set()
+
+    for fnB in call_g[fnA]:
+        if fnB in found_so_far: continue
+        found_so_far.add(fnB)
+        if fnB not in call_g: continue
+        if fnB in reachable_keys:
+            for k in reachable_keys[fnB]:
+                found_so_far.add(k)
+        else:
+            keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
+    return found_so_far
+
+
+# Produce reachability dictionary given the call graph.
+# For each function, we have functions that are reachable from it.
+def reachable_dict(call_g):
+    reachable = {}
+    for fnA in call_g:
+        keys = find_reachable(call_g, fnA, reachable)
+        reachable[fnA] = keys
+    return reachable
+
+
+# Given the call graph, produce the reachability matrix with 1 for reachability
+# and 0 for non reachability. The rows and columns are locations
+def reachability_matrix(call_g):
+    reachability = reachable_dict(call_g)
+    rows = list(reachability.keys())
+    columns = list(reachability.keys())
+    matrix = []
+    for i in rows:
+        matrix_row = []
+        for j in columns:
+            matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
+            #matrix_row.append(1 if i in reachability[j] or i == j else 0)
+        matrix.append(matrix_row)
+    return matrix, columns
+
+
+MAX_MUTATIONS_PER_FUNCTION = 10_000
+
+
+def location_mutation_mapping(mutations):
+    loc_mut_map = defaultdict(list)
+    for mut in mutations:
+        mut_id = mut[0]
+        fn = mut[3][int(mut_id)]['funname']
+        loc_mut_map[fn].append(mut_id)
+
+    # If a function has more than 10000 mutations, ignore that function.
+    for fn, muts in loc_mut_map.items():
+        if len(muts) > MAX_MUTATIONS_PER_FUNCTION:
+            print(f"WARN: got a function: ({fn}) with more than {MAX_MUTATIONS_PER_FUNCTION} mutations, skipping it.")
+            del loc_mut_map[fn]
+
+    return {**loc_mut_map}
+
+
+def load_call_graph(callgraph, mutants):
+    my_g = {}
+    called = {}
+
+    for fn_a, fn_b in callgraph:
+        if fn_a not in my_g: my_g[fn_a] = []
+        my_g[fn_a].append(fn_b)
+        called[fn_b] = True
+
+    # now, populate leaf functions
+    for b in called:
+        if b not in my_g: my_g[b] = []
+
+    unknown_funcs = [uf for uf in mutants.keys() if uf not in my_g]
+    # add unknown functions to callgraph
+    for uf in unknown_funcs:
+        my_g[uf] = []
+
+    # mark all unknown functions as reachable by all
+    for reachable in my_g.values():
+        reachable.extend(unknown_funcs)
+    return my_g
+
+
+def pop_mutant(mutants, eligible, has_mutants, indices, matrix, keys):
+    """
+    Get a single mutant id, choice is made from the eligible locations and the corresponding
+    index of has_mutants is set to false if no mutants are remaining for that location.
+    """
+    chosen_idx = np.random.choice(indices[eligible])
+    chosen = keys[chosen_idx]
+    possible_mutants = mutants[str(chosen)]
+    mut = int(possible_mutants.pop())
+    if len(possible_mutants) == 0:
+        has_mutants[chosen_idx] = False
+    # Remove locations reachable by the chosen location from the eligible list
+    eligible &= np.invert(matrix[chosen_idx])
+    # Remove location that can reach the chosen location from the eligible list
+    eligible &= np.invert(matrix[:, chosen_idx])
+    return mut
+
+def find_supermutants(matrix, keys, mutants):
+    indices = np.arange(len(matrix))
+    # for each index a boolean value if there are any mutants remaining
+    has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
+
+    # the selected supermutants, each entry contains a list of mutants that are a supermutant
+    supermutants = []
+
+    while True:
+        # continue while there are more mutants remaining
+        available = np.array(has_mutants, copy=True)
+        if not np.any(available):
+            break
+
+        # mutants selected for the current supermutant
+        selected_mutants = []
+
+        # while more mutants can be added to the supermutants
+        while np.any(available):
+            mutant = pop_mutant(
+                # these arguments are changed in the called function
+                mutants, available, has_mutants,
+                # these are not
+                indices, matrix, keys)
+            selected_mutants.append(mutant)
+            if len(selected_mutants) >= MAX_SUPERMUTANT_SIZE:
+                break
+
+        supermutants.append(selected_mutants)
+    return supermutants
+
+
 UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
 SPLITTER = " | "
 ENTRY = "LLVMFuzzerTestOneInput"
-
-
-def build_scc_graph_pdf(location: str, uid_to_scc: Dict[int, str], forward_dag: Dict[int, Set[int]]):
-    tmp_uid_to_scc = dict()
-    for uid, scc in uid_to_scc.items():
-        tmp_uid_to_scc[uid] = tuple(scc)
-    graph_dict = dict()
-    for node, targets in forward_dag.items():
-        target_list = [str(tmp_uid_to_scc[target]) for target in targets if target != node]
-        graph_dict[str(tmp_uid_to_scc[node])] = target_list
-    # print(graph_dict)
-    build_graph_pdf(location, graph_dict)
-
-
-def build_graph_pdf(location: str, graph: Dict[str, List[str]]):
-    """
-    Takes a graph as dictionary and builds a pdf which shows the graph as generated from graphviz.
-    :param location: file to save the graph to
-    :param graph: the graph as dictionary
-    :return:
-    """
-    import graphviz
-    dot = graphviz.Digraph()
-    for node in graph.keys():
-        dot.node(node, label=node)
-    for node, targets in graph.items():
-        for target in targets:
-            dot.edge(node, target)
-    dot.render(location)
-
 
 def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
     """
@@ -1923,238 +2028,59 @@ def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
     return result
 
 
-def has_component(vertex: str, components: List[Set[str]]):
-    """
-    Checks if the given vertex is in any SCC.
-    :param vertex:
-    :param components:
-    :return:
-    """
-    for comp in components:
-        if vertex in comp:
-            return True
-    return False
+def flatten_callgraph(call_graph):
+    caller_callee = []
+    for caller, callees in call_graph.items():
+        for callee in callees:
+            caller_callee.append((caller, callee))
+    return caller_callee
 
 
-def compute_scc(
-        vertex: str,
-        graph: Dict[str, List[str]],
-        preorder: Dict[str, int],
-        stack_s: List[str],
-        stack_p: List[str],
-        components: List[Set[str]],
-        preorder_number: int):
-    """
-    Recursively builds strongly connected components.
-    :param vertex:
-    :param graph:
-    :param preorder:
-    :param stack_s:
-    :param stack_p:
-    :param components:
-    :param preorder_number:
-    :return:
-    """
-    stack_s.append(vertex)
-    stack_p.append(vertex)
-    preorder[vertex] = preorder_number
-    preorder_number += 1
-    for neighbor in graph.get(vertex, []):
-        if neighbor not in preorder:
-            compute_scc(neighbor, graph, preorder, stack_s, stack_p, components, preorder_number)
-        elif not has_component(neighbor, components):
-            neighbor_preorder_number = preorder[neighbor]
-            while preorder[stack_p[-1]] > neighbor_preorder_number:
-                stack_p.pop()
-    if stack_p[-1] == vertex:
-        popped = stack_s.pop()
-        new_component = set()
-        while popped != vertex:
-            new_component.add(popped)
-            popped = stack_s.pop()
-        new_component.add(popped)
-        stack_p.pop()
-        components.append(new_component)
-
-
-def build_scc_reachability_mapping(sccs: Dict[str, int], graph: Dict[str, List[str]]):
-    """
-    Takes the sccs and builds a mapping showing which scc can be reached or can reach any other SCC.
-    :param sccs:
-    :return:
-    """
-    # build the scc DAG
-    scc_forward_dag = {}
-    for vert, uid in sccs.items():
-        vert_scc = scc_forward_dag.setdefault(sccs[vert], set())
-        vert_scc.add(uid)
-        for neighbor in graph[vert]:
-            vert_scc.add(sccs[neighbor])
-
-    scc_backward_dag = {}
-    for vert, uid in sccs.items():
-        vert_scc = scc_backward_dag.setdefault(sccs[vert], set())
-        vert_scc.add(uid)
-        for neighbor in graph[vert]:
-            child_scc = scc_backward_dag.setdefault(sccs[neighbor], set())
-            child_scc.add(sccs[vert])
-
-    # compute for any scc the reachable scc's
-    reachable_dict = {}
-    for uid in scc_forward_dag:
-        reachable = {uid}
-        children: Set[int] = set(scc_forward_dag[uid])
-        while children:
-            child = children.pop()
-            reachable.add(child)
-            children.update({el for el in scc_forward_dag[child] if el not in reachable})
-        reachable_dict[uid] = reachable
-
-    for uid in scc_backward_dag:
-        reachable = {uid}
-        parents: Set[int] = set(scc_backward_dag[uid])
-        while parents:
-            parent = parents.pop()
-            reachable.add(parent)
-            parents.update({el for el in scc_backward_dag[parent] if el not in reachable})
-        reachable_dict[uid].update(reachable)
-    return reachable_dict, scc_forward_dag
-
-
-def compute_non_reaching_scc_set_random(reachability_dict: Dict[int, Set[int]]):
-    """
-    Takes a reachability dictionary and greedily grows unreachable sets of SCCs.
-    :param reachability_dict:
-    :return:
-    """
-    to_compute = {el for el in range(len(reachability_dict))}
-    exclusion_list = list()
-    while to_compute:
-        seed_value = to_compute.pop()
-        tmp_exclusion_set = {seed_value}
-        tmp_reachability_set = set(reachability_dict[seed_value])
-        for el in to_compute:
-            if el not in tmp_reachability_set:
-                tmp_exclusion_set.add(el)
-                tmp_reachability_set.update(reachability_dict[el])
-        to_compute.difference_update(tmp_exclusion_set)
-        exclusion_list.append(tmp_exclusion_set)
-    return exclusion_list
-
-
-def compute_sccs(graph: Dict[str, List[str]]) -> Tuple[Dict[str, int], Dict[int, str]]:
-    """
-    Computing Strongly Connected Components with Dijkstra algorithm (linear in edges+nodes).
-    :param graph:
-    :return:
-    """
-    # use Dijkstra's SCC algorithm: https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm
-    components = []
-    preorders = {}
-    compute_scc(ENTRY, graph, preorders, [], [], components, 0)
-
-    sccs = {}
-    sccs_uid_to_name = {}
-    uid = 0
-    for comp in components:
-        sccs_uid_to_name[uid] = comp
-        for vert in comp:
-            sccs[vert] = uid
-        uid += 1
-    return sccs, sccs_uid_to_name
-
-
-def load_graph(path: str):
-    """
-    Takes a path to a graph file and returns a list of lists of mutually exclusive function sets.
-    That is: pick any list from the root list, then pick from every function set at most one function.
-    The picked functions are not reachable by each other.
-    :param path:
-    :return: The list of mutually exclusive functions plus a list of functions that is unreachable
-    from the main function.
-    """
-    with open(path, "r") as graph_file:
-        orig_graph = json.load(graph_file)
-    augmented_graph = augment_graph(orig_graph)
-    sccs, sccs_uid_to_vert = compute_sccs(augmented_graph)
-    scc_reachability_mapping, scc_forward_dag = build_scc_reachability_mapping(sccs, augmented_graph)
-    build_scc_graph_pdf(str(path) + ".scc.digraph", sccs_uid_to_vert, scc_forward_dag)
-    exclusion_list = compute_non_reaching_scc_set_random(scc_reachability_mapping)
-    final_list = []  # will contain a list of lists containing mutually exclusive
-    for excl_set in exclusion_list:
-        tmp_exclusion_list = list()
-        for scc in excl_set:
-            tmp_exclusion_list.append(set(sccs_uid_to_vert[scc]))
-        final_list.append(tmp_exclusion_list)
-    reachable_functions = set(sccs.keys())
-    unreachable_functions = set(augmented_graph) - reachable_functions
-    return final_list, unreachable_functions, augmented_graph
-
-
-def location_mutation_mapping(mutations):
-    loc_mut_map = defaultdict(list)
-    for mut in mutations:
-        mut_id = int(mut[0])
-        fn = mut[3][mut_id]['funname']
-        loc_mut_map[fn].append(mut_id)
-
-    # # If a function has more than 10000 mutations, ignore that function.
-    # for fn, muts in loc_mut_map.items():
-    #     if len(muts) > 10_000:
-    #         del loc_mut_map[fn]
-
-    return {**loc_mut_map}
+def get_callgraph(prog_info, graph_info):
+    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+        call_graph = json.load(f)
+    graph_info['call_graph_raw'] = call_graph
+    call_graph = augment_graph(call_graph)
+    graph_info['call_graph_augmented'] = call_graph
+    return flatten_callgraph(call_graph)
 
 
 def get_supermutations(prog_info, mutations):
-    # associate mutations with their respective functions
-    mutations = location_mutation_mapping(mutations)
+    graph_info = {}
+    callgraph = get_callgraph(prog_info, graph_info)
 
-    # check that there are no duplicate mutation ids
-    all_mutations = sorted(chain(*mutations.values()))
-    assert all_mutations == sorted(set(all_mutations))
+    loc_mut_map = location_mutation_mapping(mutations)
+    callgraph = load_call_graph(callgraph, loc_mut_map)
 
-    # load the set of disjunct functions for the subect
-    callgraph, unreachable_functions, graph = load_graph(mutation_locations_graph_path(prog_info))
-    graph_info = json.dumps({
-        'graph': graph,
-        'disjunct': callgraph,
-        'unreachable': unreachable_functions,
-    }, cls=CustomJSONEncoder)
+    total_mutants =  sum([len(loc_mut_map[loc]) for loc in loc_mut_map])
 
-    dbg(callgraph)
+    matrix, keys = reachability_matrix(callgraph)
+    entry_idx = keys.index(ENTRY)
+    assert entry_idx is not None
+    matrix = np.array(matrix, dtype=bool)
+    reachable_mask = matrix[entry_idx]
 
-    supermutants = []
-    while callgraph:
-        supermutant = []
-        # do not let supermutants grow above 100 mutations
-        # choose one of the disjunct function sets
-        disj_func_sets_idx = choice(range(len(callgraph)))
-        disj_func_sets = callgraph[disj_func_sets_idx]
-        # for each set of disjunct functions choose a mutation
-        for dfs_idx in reversed(range(len(disj_func_sets))):
-            if len(supermutant) >= MAX_SUPERMUTANT_SIZE:
-                break
-            dfs = disj_func_sets[dfs_idx]
-            chosen_func = choice(list(dfs))
-            try:
-                chosen_mut = mutations[chosen_func].pop()
-            except (IndexError, KeyError):
-                dfs.remove(chosen_func)
-                if len(dfs) == 0:
-                    del disj_func_sets[dfs_idx]
-                    if len(disj_func_sets) == 0:
-                        del callgraph[disj_func_sets_idx]
-                continue
-            supermutant.append(chosen_mut)
-        if supermutant:
-            supermutants.append(supermutant)
+    # only get reachable functions
+    matrix = matrix[reachable_mask][:,reachable_mask]
+    keys = np.array(keys)
+    unreachable_functions = list(keys[~reachable_mask])
+    keys = keys[reachable_mask]
 
-    # assign all remaining unreachable mutations to existing supermutants
-    # they should never be covered so have no influence
-    # alternatively all these mutations could be assigned to a single supermutant but that creates an extreme
-    # outlier of a supermutant due to a usually large number of mutations
-    supermutants_unreachable = [(ff, mm) for ff, muts in mutations.items() for mm in muts]
+
+    # assert that everything has the right dimensions
+    assert len(matrix) == len(matrix[0]) == len(keys)
+    print(f'Computed reachability, there are {len(callgraph)} functions, {len(keys)} reachable.')
+
+    supermutants = find_supermutants(matrix, keys, loc_mut_map)
+
+    sum_reachable = sum((len(sm) for sm in supermutants))
+    min_reachable = min((len(sm) for sm in supermutants))
+    max_reachable = max((len(sm) for sm in supermutants))
+    avg_reachable = sum_reachable / len(supermutants)
+    print(f"Supermutants for reachable {len(supermutants)} (reduction: {sum_reachable / len(supermutants):.2f}) containing mutations:\n"
+          f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
+
+    supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
     new_supermutants = []
     for ii in range(len(supermutants_unreachable)//(MAX_SUPERMUTANT_SIZE-1)):
         new_supermutants.append([])
@@ -2166,14 +2092,10 @@ def get_supermutations(prog_info, mutations):
     print(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
     supermutants.extend(new_supermutants)
 
-    # assert that we got all mutants into exactly one supermutant
-    all_mutations_in_supermutants = sorted(chain(*supermutants))
-    assert all_mutations == all_mutations_in_supermutants
-
-    print(f"Made {len(supermutants)} supermutants out of {len(all_mutations)} mutations, "
-        f"a reduction by {len(all_mutations) / len(supermutants):.2f} times with unreachable mutations and "
-        f"{(len(all_mutations) - len(supermutants_unreachable)) / (len(supermutants) - len(new_supermutants)):.2f} without.")
-
+    # assert that all mutants have been assigned
+    assert total_mutants == sum((len(sm) for sm in supermutants)), f"{total_mutants} == {sum((len(sm) for sm in supermutants))}"
+    print(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
+          f"a reduction by {total_mutants / len(supermutants):.2f} times.")
     return supermutants, graph_info
 
 
@@ -2195,6 +2117,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
             print(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
             sys.exit(1)
         start = time.time()
+        print("="*50)
         print(f"Compiling base and locating mutations for {prog}")
 
         # Run the seeds through the mutation detector
