@@ -3759,6 +3759,12 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
             sr['covered_mutations'] = covered_mutations
 
+            kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
+            get_kcov(prog, sr_seed_dir, kcov_res_path)
+            with open(kcov_res_path) as f:
+                kcov_res = json.load(f)
+            sr['kcov_res'] = kcov_res
+
             print(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
                   f"created {sr['num_seeds']} seeds inputs covering {len(covered_mutations)} mutations")
 
@@ -3769,7 +3775,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     median_runs_base_dir = destination_dir/'median_runs'
     median_runs_base_dir.mkdir()
 
-    print(f"Copying median runs to: {str(median_runs_base_dir)} and measuring them using kcov")
+    print(f"Copying median runs to: {str(median_runs_base_dir)}")
     for rr in runs_by_prog_fuzzer.values():
         sorted_runs = sorted(rr, key=lambda x: len(x['covered_mutations']))
         mr = sorted_runs[int(len(sorted_runs) / 2)]
@@ -3778,12 +3784,6 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
         for si in Path(mr['minimized_dir']).glob("*"):
             shutil.copyfile(si, median_run_dir/si.name)
-
-        kcov_res_path = kcov_res_dir/f"{mr['prog']}_{mr['fuzzer']}_{mr['instance']}.json"
-        get_kcov(prog, sr_seed_dir, kcov_res_path)
-        with open(kcov_res_path) as f:
-            kcov_res = json.load(f)
-        mr['kcov_res'] = kcov_res
 
     with open(destination_dir/'info.json', 'wt') as f:
         json.dump(seed_runs, f)
