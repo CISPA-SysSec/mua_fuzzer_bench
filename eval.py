@@ -3736,7 +3736,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         minimize_seeds_one(minimize_shm_dir, sr_prog, sr_fuzzer, sr_seed_dir, sr_minimized_dir)
 
 
-    with start_mutation_container(None, 60*60) as mutator:
+    with start_mutation_container(None, None) as mutator:
         print("Instrumenting progs ...")
         for prog in set(sr['prog'] for sr in seed_runs):
             print(prog)
