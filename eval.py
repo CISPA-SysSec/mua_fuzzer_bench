@@ -1186,7 +1186,7 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
     # Start and run the container
     container = docker_client.containers.run(
         "mutator_mutator", # the image
-        ["sleep", str(timeout)], # the arguments, give a max uptime for containers
+        ["sleep", str(timeout) if timeout is not None else 'infinity'], # the arguments, give a max uptime for containers
         init=True,
         ipc_mode="host",
         auto_remove=True,
