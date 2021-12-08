@@ -72,7 +72,7 @@ RUN rm -rf /var/cache/apt/archives/*
 USER user
 WORKDIR /home/user
 
-RUN wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0-rc1/compiler-rt-11.1.0rc1.src.tar.xz -O compiler-rt.tar.xz && ls -lah && tar xfv compiler-rt.tar.xz
+RUN wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/compiler-rt-11.1.0.src.tar.xz -O compiler-rt.tar.xz && ls -lah && tar xfv compiler-rt.tar.xz
 
 RUN cd ~; git clone https://github.com/google/fuzzer-test-suite.git fuzzer-test-suite
 COPY --chown=user:user eval/system/build.sh /home/user/fuzzer-test-suite/
