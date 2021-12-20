@@ -1364,7 +1364,7 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
             testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
     except subprocess.TimeoutExpired:
         return {
-            'result': 'timeout',
+            'result': 'timeout_check_crashing',
             'total_time': cur_time,
             'covered_file_seen': None,
             'timed_out': True,
@@ -1421,18 +1421,28 @@ def update_results(results, new_results, start_time):
         if key not in results:
             results[key] = nr
 
+        known_result_type = False
         if res == "multiple":
             has_multiple = True
+            known_result_type = True
         if res == "killed_by_seed":
             has_killed_by_seed = True
+            known_result_type = True
         if res == "timeout_by_seed":
             has_timeout_by_seed = True
+            known_result_type = True
         if res == "orig_timeout_by_seed":
             has_orig_timeout_by_seed = True
+            known_result_type = True
         if res == "killed":
             has_killed = True
+            known_result_type = True
         if res == "timeout":
             has_timeout = True
+            known_result_type = True
+
+        if not known_result_type:
+            raise ValueError(f"Unhandled result: {res}")
 
     if has_multiple:
         return {
@@ -2529,7 +2539,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     # the other mutations are tried again
                     killed = has_result(mut_id, results, ['killed'])
                     timeout = has_result(mut_id, results, ['timeout'])
-                    if not killed and not timeout:
+                    if not (killed or timeout):
                         continue
 
                     killed_mutants.add(mut_id)
@@ -2838,7 +2848,7 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                     '--workdir', IN_DOCKER_WORKDIR,
                     '--results', str(result_dir),
                 ],
-                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=60*5*10)
+                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=60*60)
 
     return proc['returncode'], proc['out']
 
