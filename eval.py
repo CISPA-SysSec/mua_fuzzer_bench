@@ -1440,9 +1440,11 @@ def update_results(results, new_results, start_time):
         if res == "timeout":
             has_timeout = True
             known_result_type = True
+        if res in HANDLED_RESULT_TYPES:
+            known_result_type = True
 
         if not known_result_type:
-            raise ValueError(f"Unhandled result: {res}")
+            raise ValueError(f"Unhandled result: {res} {new_results}")
 
     if has_multiple:
         return {
