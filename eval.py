@@ -2629,17 +2629,23 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
 
                 if not killed_mutants:
-                    raise ValueError(f"Killed run result but no killed mutations found:\n{results}")
-
-                # find and start the new supermutant with the remaining mutations
-                cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
-                assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
-
-                remaining_mutations = cur_mutations - killed_mutants
-                if len(remaining_mutations) > 0:
-                    recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
+                    try:
+                        raise ValueError(f"Killed run result but no killed mutations found:\n{results}")
+                    except Exception as e:
+                        trace = traceback.format_exc()
+                        for mut_id in mut_data['mutation_ids']:
+                            stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
+                            print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
                 else:
-                    print(f"! no more mutations")
+                    # find and start the new supermutant with the remaining mutations
+                    cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
+                    assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
+
+                    remaining_mutations = cur_mutations - killed_mutants
+                    if len(remaining_mutations) > 0:
+                        recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
+                    else:
+                        print(f"! no more mutations")
             
         elif result_type == 'completed':
             if run_result['unexpected_completion_time']:
