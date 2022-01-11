@@ -2508,12 +2508,12 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                 # there can also be mutants that are killed but not part of a multi kill
                 # so just get every mutation that was killed and recheck all of them
-                killed_mutants = set(chain(*[rr['mutation_ids']
+                killed_mutants: set[int] = set(chain(*[rr['mutation_ids']
                                 for rr in results
                                 if rr['result'] in ['killed']]))
                 
                 # get the remaining mutations
-                cur_mutations = set(mut_data['mutation_ids'])
+                cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
                 assert len(cur_mutations & killed_mutants) == len(killed_mutants), f"Killed mutations not in supermutant: {cur_mutations}, {killed_mutants}"
                 remaining_mutations = cur_mutations - killed_mutants
 
@@ -2618,7 +2618,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     raise ValueError(f"Killed run result but no killed mutations found:\n{results}")
 
                 # find and start the new supermutant with the remaining mutations
-                cur_mutations = set(mut_data['mutation_ids'])
+                cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
                 assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
 
                 remaining_mutations = cur_mutations - killed_mutants
