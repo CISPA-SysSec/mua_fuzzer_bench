@@ -95,6 +95,7 @@ PROGRAMS = {
         "name": "cares",
         "path": "samples/c-ares",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "cares_name": {
         "bc_compile_args": [
@@ -107,6 +108,7 @@ PROGRAMS = {
         "name": "cares",
         "path": "samples/c-ares",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "woff2_base": {
         "bc_compile_args": [
@@ -119,6 +121,7 @@ PROGRAMS = {
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "woff2_new": {
         "bc_compile_args": [
@@ -131,6 +134,7 @@ PROGRAMS = {
         "name": "woff2",
         "path": "samples/woff2/out/convert_woff2ttf_fuzzer_new_entry",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "re2": {
         "bc_compile_args": [
@@ -146,6 +150,7 @@ PROGRAMS = {
         "name": "re2",
         "path": "samples/re2-code",
         "dict": "tmp/samples/re2_harness/re2.dict",
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
      "bloaty": {
          "bc_compile_args": [
@@ -169,6 +174,7 @@ PROGRAMS = {
          "name": "bloaty",
          "path": "samples/bloaty/",
          "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
      },
      "curl": {
          "bc_compile_args": [
@@ -187,6 +193,7 @@ PROGRAMS = {
          "name": "curl",
          "path": "samples/curl/",
          "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
      },
     "guetzli": {
         "bc_compile_args": [
@@ -199,6 +206,7 @@ PROGRAMS = {
         "name": "guetzli",
         "path": "samples/guetzli/",
         "dict": "tmp/samples/guetzli_harness/guetzli.dict",
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "libevent": {
         "bc_compile_args": [
@@ -211,6 +219,7 @@ PROGRAMS = {
         "name": "libevent",
         "path": "samples/libevent/",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     "mjs": {
         "bc_compile_args": [
@@ -224,6 +233,7 @@ PROGRAMS = {
         "name": "mjs",
         "path": "samples/mjs/",
         "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
     #  "mjs": {
     #      "bc_compile_args": [
@@ -2156,6 +2166,10 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
             filtered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
 
         mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
+
+        # Remove mutations for functions that should not be mutated
+        omit_functions = prog_info['omit_functions']
+        mutations = [mm for mm in mutations if mm[3][int(mm[0])]['funname'] not in omit_functions]
 
         # If rerun_mutations is specified, collect those mutations
         if rerun_mutations is not None:
