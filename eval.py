@@ -4516,7 +4516,8 @@ def merge_dbs(out_path, in_paths):
         inserts = "\n".join((
                 f"insert into {table} select * from to_merge.{table};"
                 for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 'aflpp_runs',
-                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_mutation_preparation', 'run_crashed', 'super_mutants']))
+                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_mutation_preparation', 'run_crashed',
+                              'initial_super_mutants', 'started_super_mutants']))
         command = f'''sqlite3 {out_db_path} "
 attach '{in_db}' as to_merge;
 BEGIN;
