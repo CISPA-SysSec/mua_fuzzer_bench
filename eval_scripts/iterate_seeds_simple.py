@@ -42,7 +42,7 @@ def run_seeds(seeds, binary, args, workdir):
             if orig_returncode != 0:
                 print("orig bin returncode != 0, crashing base bin:")
                 print("args:", orig_cmd, "returncode:", orig_returncode)
-                print(orig_res)
+                print(orig_res.read())
                 sys.exit(2)
 
 

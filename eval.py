@@ -451,6 +451,12 @@ class CustomJSONEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
+class CoverageException(Exception):
+    def __init__(self, run):
+        super().__init__(run)
+        self.run = run
+
+
 def dbg(*args, **kwargs):
     caller = getframeinfo(stack()[1][0])
     print(f"{caller.filename}:{caller.lineno}:", *args, **kwargs, flush=True)
@@ -3299,11 +3305,14 @@ def handle_seed_run_result(run_future, run_data, all_runs):
     try:
         # if there was no exception get the data
         run_result = run_future.result()
-    except Exception:
+    except Exception as e:
         # if there was an exception record it
         trace = traceback.format_exc()
-        print(trace)
-        print(f"= run ###: Failed for {workdir}")
+        workdir_exception_file = f'{workdir}/exception'
+        print(f"= run ###: Failed for {workdir}, writing exception message to {workdir_exception_file}")
+        with open(workdir_exception_file, 'wt') as f:
+            f.write(str(e))
+            f.write(str(trace))
     else:
         errored_file = run_result.get('file_error')
         should_restart = run_result.get('restart')
@@ -3788,7 +3797,13 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             print(f"{ii+1} / {len(seed_runs)}\r", end='', flush=True)
             prog = sr['prog']
             sr_seed_dir = sr['dir']
-            covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
+            try:
+                covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
+            except CoverageException as e:
+                exception_path = kcov_res_dir/f"exception_{sr['prog']}_{sr['fuzzer']}_{sr['instance']}"
+                with open(exception_path, 'wt') as f:
+                    f.write(str(e))
+
             sr['covered_mutations'] = covered_mutations
 
             kcov_res_path = kcov_res_dir/f"{sr['prog']}_{sr['fuzzer']}_{sr['instance']}.json"
@@ -4566,7 +4581,8 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
             timeout=60*15)
         if run['returncode'] != 0:
-            print(run['out'])
+            print(f"Got returncode != 0: {run['returncode']}")
+            raise CoverageException(run)
         # get a list of all mutation ids from triggered folder
         mutation_ids = list(pp.stem for pp in Path(trigger_folder).glob("**/*"))
         return mutation_ids
