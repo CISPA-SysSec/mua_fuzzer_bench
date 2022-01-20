@@ -1,7 +1,6 @@
 FROM mutator_mutator
 
 ################################################################################
-# eigen
 RUN apt-get install -y make autoconf automake libtool cmake pkg-config
 WORKDIR /home/mutator/samples
 WORKDIR /home/mutator/samples/libevent

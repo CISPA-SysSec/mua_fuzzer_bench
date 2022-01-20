@@ -235,6 +235,19 @@ PROGRAMS = {
         "dict": None,
         "omit_functions": ["LLVMFuzzerTestOneInput"],
     },
+    "jsoncpp": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": True,
+        "orig_bin": str(Path("tmp/samples/jsoncpp/out/jsoncpp-orig")),
+        "orig_bc": str(Path("tmp/samples/jsoncpp/out/jsoncpp.bc")),
+        "name": "jsoncpp",
+        "path": "samples/jsoncpp/",
+        "dict": "tmp/samples/jsoncpp_harness/fuzz.dict",
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
+    },
     #  "mjs": {
     #      "bc_compile_args": [
     #      ],
@@ -1327,7 +1340,7 @@ def get_seed_dir(seed_base_dir, prog, fuzzer):
 
     # Has no content
     else:
-        raise ValueError("Seed dir has not content.")
+        raise ValueError(f"Seed dir has not content. {prog_seed_dir}")
 
 
 # returns true if a crashing input is found that only triggers for the
@@ -1432,7 +1445,10 @@ def update_results(results, new_results, start_time):
         if res == 'orig_crash':
             key = (res, None)
         else:
-            m_ids = tuple(sorted(set(nr['mutation_ids'])))
+            try:
+                m_ids = tuple(sorted(set(nr['mutation_ids'])))
+            except KeyError as e:
+                raise ValueError(f"{e} {nr}")
             key = (res, m_ids)
         if key not in results:
             results[key] = nr
@@ -1534,7 +1550,7 @@ def stop_container(container):
             container.stop()
             print(f"! Container still alive {container.name}, keep killing it.")
             time.sleep(1)
-    except docker.errors.NotFound:
+    except (docker.errors.NotFound, docker.errors.APIError):
         # container is dead
         pass
 
@@ -2511,8 +2527,10 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             record_supermutant_multi(stats, mut_data, results)
 
-            all_mutation_ids = mut_data['mutation_ids']
+            all_mutation_ids = set(int(mm) for mm in mut_data['mutation_ids'])
             assert len(all_mutation_ids) > 0
+            result_ids = set(int(mm) for rr in results for mm in rr['mutation_ids'])
+            assert len(result_ids - set(all_mutation_ids)) == 0, f"{sorted(result_ids)}\n{sorted(all_mutation_ids)}"
 
             # check if there are multi covered kills
             multi_kills = []
@@ -2636,7 +2654,8 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                 if not killed_mutants:
                     try:
-                        raise ValueError(f"Killed run result but no killed mutations found:\n{results}")
+                        results_str = '\n'.join(str(rr) for rr in results)
+                        raise ValueError(f"Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}")
                     except Exception as e:
                         trace = traceback.format_exc()
                         for mut_id in mut_data['mutation_ids']:
@@ -2657,17 +2676,27 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             if run_result['unexpected_completion_time']:
                 logs = ''.join([ll for ll in run_result['all_logs'] if ll])
 
-                # if there was an exception record it
-                trace = traceback.format_exc()
-                for mut_id in mut_data['mutation_ids']:
-                    stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], logs)
-
                 times = run_result['unexpected_completion_time']
                 actual_time = times[0]
                 expected_time = times[1]
 
-                print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
-                      f"unexpected completion time: {actual_time}, expected: {expected_time}")
+                # if there are multiple mutation ids start a separate run for each of them
+                # else mark the mutation as as crashing
+                mutation_ids = mut_data['mutation_ids']
+                assert len(mutation_ids) >= 1
+                if len(mutation_ids) > 1:
+                    print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
+                        f"rerunning individually (unexpected completion time: {actual_time}, expected: {expected_time})")
+
+                    for mut_id in mutation_ids:
+                        recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), [mut_id])
+                else:
+                    mut_id = mutation_ids[0]
+                    stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'],
+                    f"unexpected completion time\n\n{logs}")
+
+                    print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
+                        f"unexpected completion time: {actual_time}, expected: {expected_time}")
             else:
                 print(f"= run [+]:      {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
                 total_time = run_result['total_time']
