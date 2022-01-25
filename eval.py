@@ -1593,7 +1593,7 @@ def base_eval(run_data, docker_image):
 
         new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container)
         # add suffix to identify seed results
-        for res in new_results['results']:
+        for res in new_results.get('results', []):
             res['result'] += '_by_seed'
 
         res = update_results(results, new_results, start_time)
