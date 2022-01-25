@@ -2838,7 +2838,8 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     except Exception:
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
-            chunk_left, chunk_right = mutation_ids[:len(mutation_ids)//2], mutation_ids[len(mutation_ids)//2:]
+            m_ids = [int(mm) for mm in mutation_ids]
+            chunk_left, chunk_right = m_ids[:len(m_ids)//2], m_ids[len(m_ids)//2:]
             print(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_left)}, {len(chunk_right)}")
 
