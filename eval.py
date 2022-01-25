@@ -2839,7 +2839,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
             chunk_left, chunk_right = mutation_ids[:len(mutation_ids)//2], mutation_ids[len(mutation_ids)//2:]
-            print(f"= muation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
+            print(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_left)}, {len(chunk_right)}")
 
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_left)
