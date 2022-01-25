@@ -2833,15 +2833,24 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     mutation_ids = mut_data['mutation_ids']
 
     try:
-        # If there was no exception get the data.
-        task_result = task_future.result()
+        # Check if there was an exception.
+        _ = task_future.result()
     except Exception:
-        # If there was an exception record it.
-        trace = traceback.format_exc()
-        for mutation_id in mutation_ids:
-            stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
-        print(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
-        print(trace)
+        if len(mutation_ids) > 1:
+            # If there was an exception for multiple mutations, retry with less.
+            chunk_left, chunk_right = mutation_ids[:len(mutation_ids)//2], mutation_ids[len(mutation_ids)//2:]
+            print(f"= muation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
+                  f"rerunning in two chunks with len: {len(chunk_left)}, {len(chunk_right)}")
+
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_left)
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_right)
+        else:
+            # Else record it.
+            trace = traceback.format_exc()
+            for mutation_id in mutation_ids:
+                stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
+            print(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
+            print(trace)
 
         # Nothing more to do.
         return
@@ -2849,7 +2858,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     print(f"= mutation [+]: {prog}:{printable_m_id(mut_data)}")
 
     if mut_data.get('check_run'):
-        # remove flag that specifies the mutation should be used for a check run
+        # remove flag that specifies the mutation should be used for a check run and start as check run
         mut_data['check_run'] = False
         for fr in fuzzer_runs:
             prepared_runs.put_nowait({'type': 'check', 'data': fr})
