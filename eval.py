@@ -2813,6 +2813,28 @@ def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
     prepared_runs.put_nowait({'type': 'mut', 'data': (mut_data, [data])})
 
 
+def recompile_and_run_from_mutation(prepared_runs, mut_data, fuzzer_runs, new_supermutand_id, mutations):
+    old_supermutant_id = mut_data['supermutant_id']
+    mut_data = copy.deepcopy(mut_data)
+    mut_data['mutation_ids'] = list(mutations)
+    mut_data['supermutant_id'] = new_supermutand_id
+
+    if 'previous_supermutant_ids' in mut_data:
+        mut_data['previous_supermutant_ids'].append(old_supermutant_id)
+    else:
+        mut_data['previous_supermutant_ids'] = [old_supermutant_id]
+
+    fuzzer_runs = copy.deepcopy(fuzzer_runs)
+    for fr in fuzzer_runs:
+        workdir = Path("/dev/shm/mutator/")/mut_data['prog']/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
+        workdir.mkdir(parents=True)
+        fr['workdir'] = workdir
+
+    print(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    prepared_runs.put_nowait({'type': 'mut', 'data': (mut_data, fuzzer_runs)})
+
+
+
 def start_check_run(prepared_runs, data, new_supermutand_id, mutations, input_dir):
     data = copy.deepcopy(data)
     mut_data = data['mut_data']
@@ -2838,13 +2860,21 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     except Exception:
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
+            # Split mutations, so that those with close numbers are split up into different supermutants.
+            # This is to increase "distance" between the mutations so that they might interfere less.
             m_ids = [int(mm) for mm in mutation_ids]
-            chunk_left, chunk_right = m_ids[:len(m_ids)//2], m_ids[len(m_ids)//2:]
-            print(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
-                  f"rerunning in two chunks with len: {len(chunk_left)}, {len(chunk_right)}")
+            chunk_1, chunk_2 = [], []
+            for ii, m_id in enumerate(sorted(m_ids)):
+                if ii % 2 == 0:
+                    chunk_1.append(m_id)
+                else:
+                    chunk_2.append(m_id)
 
-            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_left)
-            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_right)
+            print(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
+                  f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
+
+            recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_1)
+            recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_2)
         else:
             # Else record it.
             trace = traceback.format_exc()
