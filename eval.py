@@ -2397,6 +2397,18 @@ def split_up_supermutant(multi, all_muts):
     return mut_chunks
 
 
+def split_up_supermutant_by_distance(mutation_ids: List[int]) -> Tuple[List[int], List[int]]:
+    m_ids = [int(mm) for mm in mutation_ids]
+    chunk_1, chunk_2 = [], []
+    for ii, m_id in enumerate(sorted(m_ids)):
+        if ii % 2 == 0:
+            chunk_1.append(m_id)
+        else:
+            chunk_2.append(m_id)
+
+    return chunk_1, chunk_2
+
+
 HANDLED_RESULT_TYPES = set([
     'covered', 'covered_by_seed',
     'killed', 'killed_by_seed',
@@ -2686,10 +2698,11 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                 assert len(mutation_ids) >= 1
                 if len(mutation_ids) > 1:
                     print(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n"
-                        f"rerunning individually (unexpected completion time: {actual_time}, expected: {expected_time})")
+                        f"rerunning in chunks (unexpected completion time: {actual_time}, expected: {expected_time})")
 
-                    for mut_id in mutation_ids:
-                        recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), [mut_id])
+                    chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
+                    recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
+                    recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
                 else:
                     mut_id = mutation_ids[0]
                     stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'],
@@ -2862,13 +2875,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
             # If there was an exception for multiple mutations, retry with less.
             # Split mutations, so that those with close numbers are split up into different supermutants.
             # This is to increase "distance" between the mutations so that they might interfere less.
-            m_ids = [int(mm) for mm in mutation_ids]
-            chunk_1, chunk_2 = [], []
-            for ii, m_id in enumerate(sorted(m_ids)):
-                if ii % 2 == 0:
-                    chunk_1.append(m_id)
-                else:
-                    chunk_2.append(m_id)
+            chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
 
             print(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
