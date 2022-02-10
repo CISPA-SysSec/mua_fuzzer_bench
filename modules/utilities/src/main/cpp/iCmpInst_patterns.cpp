@@ -27,12 +27,12 @@ Value* ICmpInstPattern::insertMutationFunctionCall(Value* toMutate, IRBuilder<> 
 }
 
 std::vector<std::string>
-SignedLessThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+SignedLessThanEqualToPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
                                    Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_SLE, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SIGNED_LESS_THAN_EQUALTO));
     }
     return results;
 }
@@ -144,11 +144,12 @@ bool SignedLessThanEqualToPattern::mutate(
 //}
 
 std::vector<std::string>
-SignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+SignedLessThanPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                            Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_SLT, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_LESS_THAN));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SIGNED_LESS_THAN));
     }
     return results;
 }
@@ -259,12 +260,12 @@ bool SignedLessThanPattern::mutate(
 //}
 
 std::vector<std::string>
-UnsignedLessThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+UnsignedLessThanEqualToPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
                                      Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_ULE, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, UNSIGNED_LESS_THAN_EQUALTO));
     }
     return results;
 }
@@ -377,11 +378,12 @@ bool UnsignedLessThanEqualToPattern::mutate(
 
 
 std::vector<std::string>
-UnsignedLessThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+UnsignedLessThanPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                              Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_ULT, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_LESS_THAN));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, UNSIGNED_LESS_THAN));
     }
     return results;
 }
@@ -497,11 +499,12 @@ bool UnsignedLessThanPattern::mutate(
 
 
 std::vector<std::string>
-SignedGreaterThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+SignedGreaterThanPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                               Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_SGT, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SIGNED_GREATER_THAN));
     }
     return results;
 }
@@ -654,12 +657,12 @@ bool SignedGreaterThanPattern::mutate(
 //}
 
 std::vector<std::string>
-SignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
+SignedGreaterThanEqualToPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
                                       Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_SGE, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_GREATER_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SIGNED_GREATER_THAN_EQUALTO));
     }
     return results;
 }
@@ -814,11 +817,12 @@ bool SignedGreaterThanEqualToPattern::mutate(
 //}
 
 std::vector<std::string>
-UnsignedGreaterThanPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+UnsignedGreaterThanPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                                 Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_UGT, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, UNSIGNED_GREATER_THAN));
     }
     return results;
 }
@@ -971,12 +975,12 @@ bool UnsignedGreaterThanPattern::mutate(
 //}
 
 std::vector<std::string>
-UnsignedGreaterThanEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex,
-                                        Module &M) {
+UnsignedGreaterThanEqualToPattern::find(const Instruction *instr, int id, IRBuilder<> *builder,
+                                        std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (isMutateable(CmpInst::Predicate::ICMP_UGE, instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_GREATER_THAN_EQUALTO));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, UNSIGNED_GREATER_THAN_EQUALTO));
     }
     return results;
 }
@@ -1131,12 +1135,12 @@ bool UnsignedGreaterThanEqualToPattern::mutate(
 //}
 
 std::vector<std::string>
-SignedToUnsigned::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+SignedToUnsigned::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_SGT || predicate == CmpInst::Predicate::ICMP_SGE
     || predicate == CmpInst::Predicate::ICMP_SLT || predicate == CmpInst::Predicate::ICMP_SLE) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SIGNED_TO_UNSIGNED));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SIGNED_TO_UNSIGNED));
     }
     return results;
 }
@@ -1192,12 +1196,12 @@ bool SignedToUnsigned::mutate(
 
 
 std::vector<std::string>
-UnsignedToSigned::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+UnsignedToSigned::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getpredicate(instr);
     if (predicate == CmpInst::Predicate::ICMP_UGT || predicate == CmpInst::Predicate::ICMP_UGE
         || predicate == CmpInst::Predicate::ICMP_ULT || predicate == CmpInst::Predicate::ICMP_ULE) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, UNSIGNED_TO_SIGNED));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, UNSIGNED_TO_SIGNED));
     }
     return results;
 }

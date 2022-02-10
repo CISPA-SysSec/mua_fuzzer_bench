@@ -19,11 +19,11 @@ std::string CallInstPattern::demangle(const Instruction *instr)
 }
 
 std::vector<std::string>
-MallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+MallocPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.str() == "malloc" || funNameString.str() == "\01_malloc") {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, MALLOC));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, MALLOC));
     }
     return results;
 }
@@ -58,11 +58,11 @@ bool MallocPattern::mutate(
 }
 
 std::vector<std::string>
-FGetsPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+FGetsPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.str() == "fgets" || funNameString.str() == "\01_fgets") {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, FGETS_MATCH_BUFFER_SIZE));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, FGETS_MATCH_BUFFER_SIZE));
     }
     return results;
 }
@@ -100,7 +100,7 @@ bool FGetsPattern::mutate(
 }
 
 std::vector<std::string>
-PThreadPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+PThreadPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     const std::string &funNameStdString = instr->getFunction()->getName().str();
@@ -111,7 +111,7 @@ PThreadPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex 
         pthreadFoundFunctions.insert(funNameStdString);
         json j;
         j["funname"] = funNameStdString;
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, PTHREAD_MUTEX, j));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, PTHREAD_MUTEX, j));
     }
     return results;
 }
@@ -151,11 +151,11 @@ bool PThreadPattern::mutate(
 
 
 std::vector<std::string>
-CallocPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+CallocPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     if (funNameString.str() == "calloc" || funNameString.str() == "\01_calloc") {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, CALLOC));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, CALLOC));
     }
     return results;
 }
@@ -190,12 +190,12 @@ bool CallocPattern::mutate(
 }
 
 std::vector<std::string>
-NewArrayPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+NewArrayPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     getfunNameString(instr);
     std::string demangled_instr_name = demangle(instr);
     if (demangled_instr_name.find("operator new[]") != std::string::npos) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, NEW_ARRAY));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, NEW_ARRAY));
     }
     return results;
 }
@@ -229,11 +229,12 @@ bool NewArrayPattern::mutate(
 
 
 std::vector<std::string>
-DeleteCallInstructionPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+DeleteCallInstructionPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                                   Module &M) {
     std::vector<std::string> results;
     if (auto callInst = dyn_cast<CallInst>(instr)) {
         if (callInst->user_empty()) {
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_CALL_INSTRUCTION_PATTERN));
+            results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, DELETE_CALL_INSTRUCTION_PATTERN));
         }
     }
     return results;

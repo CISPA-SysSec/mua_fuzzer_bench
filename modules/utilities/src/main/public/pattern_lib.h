@@ -10,6 +10,7 @@
 std::vector<std::string> look_for_pattern(IRBuilder<>* builder,
                                           IRBuilder<>* nextInstructionBuilder,
                                           Instruction* instr,
+                                          int id,
                                           std::mutex& builderMutex,
                                           Module& M);
 

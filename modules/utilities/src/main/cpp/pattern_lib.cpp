@@ -11,25 +11,25 @@ using json = nlohmann::json;
 
 int Pattern::PatternIDCounter = 0;
 
-std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type){
+std::string Pattern::getIdentifierString(const Instruction *instr, int id, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type){
     json j;
-    return getIdentifierString(instr, builder, builderMutex, M, type, j);
+    return getIdentifierString(instr, id, builder, builderMutex, M, type, j);
 }
 
-std::string Pattern::getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo){
+std::string Pattern::getIdentifierString(const Instruction *instr, int id, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo){
     // currently the whole finder is locked
 //    builderMutex.lock();
     addMutationFoundSignal(builder, M, PatternIDCounter);
 //    builderMutex.unlock();
-    return getIdentifierString_unsignaled(instr, type, additionalInfo);
+    return getIdentifierString_unsignaled(instr, id, type, additionalInfo);
 }
 
-std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int type){
+std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int id, int type){
     json j;
-    return getIdentifierString_unsignaled(instr, type, j);
+    return getIdentifierString_unsignaled(instr, id, type, j);
 }
 
-std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo) {
+std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int id, int type, const json &additionalInfo) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     json j;
     if (debugInfo) {
@@ -55,6 +55,7 @@ std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, in
     instr->print(os);
     j["instr"] = os.str();
     j["UID"] = PatternIDCounter++;
+    j["fid"] = id;
     j["additionalInfo"] = additionalInfo;
     return j.dump(4);
 }
@@ -81,6 +82,7 @@ std::vector<std::string> look_for_pattern(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
+        int id,
         std::mutex& builderMutex,
         Module& M
         )
@@ -90,7 +92,7 @@ std::vector<std::string> look_for_pattern(
         auto calledFun = callinst->getCalledFunction();
         if (calledFun) {
             for (auto &patternobject : CallInstPatterns){
-                for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
+                for (auto &pattern : patternobject->find(instr, id, builder, builderMutex, M)){
                     results.push_back(pattern);
                 }
             }
@@ -98,14 +100,14 @@ std::vector<std::string> look_for_pattern(
     }
     else if (dyn_cast<ICmpInst>(instr)){
         for (auto &patternobject : ICmpInstPatterns){
-            for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
+            for (auto &pattern : patternobject->find(instr, id, builder, builderMutex, M)){
                 results.push_back(pattern);
             }
         }
     }
     else{
         for (auto &patternobject : MiscInstPatterns){
-            for (auto &pattern : patternobject->find(instr, builder, builderMutex, M)){
+            for (auto &pattern : patternobject->find(instr, id, builder, builderMutex, M)){
                 results.push_back(pattern);
             }
         }

@@ -41,7 +41,7 @@ public:
             Module& M) = 0;
 
     virtual std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) = 0;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) = 0;
     virtual ~Pattern() = default;
     static int PatternIDCounter;
 
@@ -52,7 +52,7 @@ protected:
     static bool isMutationLocation(Instruction* instr, json *seglist, int type);
     static bool isMutationLocation(Instruction* instr, json *seglist, const std::vector<int>* types);
 
-    static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type);
+    static std::string getIdentifierString(const Instruction *instr, int id, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type);
     /**
      * Does not add the mutation found signal at this position.
      * @param instr
@@ -62,8 +62,8 @@ protected:
      * @param type
      * @return
      */
-    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type);
-    static std::string getIdentifierString(const Instruction *instr, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo);
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int id, int type);
+    static std::string getIdentifierString(const Instruction *instr, int id, IRBuilder<>* builder, std::mutex& builderMutex, Module& M, int type, json& additionalInfo);
     /**
      * Does not add the mutation found signal at this position.
      * @param instr
@@ -74,7 +74,7 @@ protected:
      * @param additionalInfo
      * @return
      */
-    static std::string getIdentifierString_unsignaled(const Instruction *instr, int type, const json &additionalInfo);
+    static std::string getIdentifierString_unsignaled(const Instruction *instr, int id, int type, const json &additionalInfo);
 
     static void addMutationFoundSignal(IRBuilder<>* builder, Module& M, int UID);
 
@@ -128,7 +128,7 @@ protected:
      * @param funName: the function name to find
      * @return
      */
-    std::vector<std::string> findConcreteFunction(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID);
+    std::vector<std::string> findConcreteFunction(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID);
 
     /**
      * Handles the concrete mutation for each libc function we want to fail
@@ -159,7 +159,7 @@ class MallocPattern: public CallInstPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -173,7 +173,7 @@ class CallocPattern: public CallInstPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -187,7 +187,7 @@ class FGetsPattern: public CallInstPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -201,7 +201,7 @@ class PThreadPattern: public CallInstPattern, public ThreadingPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -215,7 +215,7 @@ class NewArrayPattern: public CallInstPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -230,7 +230,7 @@ class SignedLessThanEqualToPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -258,7 +258,7 @@ class SignedLessThanPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -286,7 +286,7 @@ class UnsignedLessThanEqualToPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -314,7 +314,7 @@ class UnsignedLessThanPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -342,7 +342,7 @@ class SignedGreaterThanEqualToPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -384,7 +384,7 @@ class SignedGreaterThanPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -426,7 +426,7 @@ class UnsignedGreaterThanEqualToPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -468,7 +468,7 @@ class UnsignedGreaterThanPattern: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -512,7 +512,7 @@ class SignedToUnsigned: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -527,7 +527,7 @@ class UnsignedToSigned: public ICmpInstPattern{
 public:
     using ICmpInstPattern::ICmpInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -542,7 +542,7 @@ class FreeArgumentReturnPattern: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -556,7 +556,7 @@ class CMPXCHGPattern: public ThreadingPattern{
 public:
     using ThreadingPattern::ThreadingPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -572,7 +572,7 @@ class ATOMICRMWPattern: public ThreadingPattern{
 public:
     using ThreadingPattern::ThreadingPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -594,7 +594,7 @@ class ShiftSwitch: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -608,7 +608,7 @@ class SwitchPlusMinus: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -623,7 +623,7 @@ class RedirectBranch: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -637,7 +637,7 @@ class UnInitLocalVariables: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -662,7 +662,7 @@ class CompareEqualToPattern: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -676,7 +676,7 @@ class DeleteArgumentReturnPattern: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -690,7 +690,7 @@ class DeleteStorePattern: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -704,7 +704,7 @@ class DeleteCallInstructionPattern: public CallInstPattern{
 public:
     using CallInstPattern::CallInstPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -718,7 +718,7 @@ class INetAddrFailPattern: public LibCFailPattern{
 public:
     using LibCFailPattern::LibCFailPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -733,7 +733,7 @@ class PrintfPattern: public LibCFailPattern{
 public:
     using LibCFailPattern::LibCFailPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -747,7 +747,7 @@ class SPrintfPattern: public LibCFailPattern{
 public:
     using LibCFailPattern::LibCFailPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -761,7 +761,7 @@ class SNPrintfPattern: public LibCFailPattern{
 public:
     using LibCFailPattern::LibCFailPattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,
@@ -775,7 +775,7 @@ class ReassignStoreInstructionPattern: public Pattern{
 public:
     using Pattern::Pattern;
     std::vector<std::string>
-    find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
+    find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) override;
     bool mutate (
             IRBuilder<>* builder,
             IRBuilder<>* nextInstructionBuilder,

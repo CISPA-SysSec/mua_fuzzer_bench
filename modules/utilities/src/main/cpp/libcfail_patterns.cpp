@@ -2,14 +2,14 @@
 #include "mutations.h"
 #include "pattern_declarations.h"
 
-std::vector<std::string> LibCFailPattern::findConcreteFunction(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID) {
+std::vector<std::string> LibCFailPattern::findConcreteFunction(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module& M, const std::string& funName, int patternID) {
     std::vector<std::string> results;
     getfunNameString(instr);
     // TODO in some cases the function name is different from the C-code function name, e.g. we might have 01_inet_addr instead of inet_addr in the code
     //  in that case the function might not be found and we need to be more generous when looking for it
     // do an equals check here as for functions like printf there might be functions that are similarly named (e.g. snprintf)
     if (funNameString.str() == funName) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, patternID));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, patternID));
     }
     return results;
 }
@@ -78,13 +78,13 @@ bool INetAddrFailPattern::mutate(
 
 
 std::vector<std::string>
-INetAddrFailPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
-    return findConcreteFunction(instr, builder, builderMutex, M, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
+INetAddrFailPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, id, builder, builderMutex, M, "inet_addr", INET_ADDR_FAIL_WITHOUTCHECK);
 }
 
 std::vector<std::string>
-PrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
-    return findConcreteFunction(instr, builder, builderMutex, M, "printf", PRINTF);
+PrintfPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, id, builder, builderMutex, M, "printf", PRINTF);
 }
 
 bool PrintfPattern::mutate(
@@ -116,8 +116,8 @@ bool PrintfPattern::mutate(
 }
 
 std::vector<std::string>
-SPrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
-    return findConcreteFunction(instr, builder, builderMutex, M, "sprintf", SPRINTF);
+SPrintfPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, id, builder, builderMutex, M, "sprintf", SPRINTF);
 }
 
 bool SPrintfPattern::mutate(
@@ -150,8 +150,8 @@ bool SPrintfPattern::mutate(
 
 
 std::vector<std::string>
-SNPrintfPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
-    return findConcreteFunction(instr, builder, builderMutex, M, "snprintf", SNPRINTF);
+SNPrintfPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+    return findConcreteFunction(instr, id, builder, builderMutex, M, "snprintf", SNPRINTF);
 }
 
 bool SNPrintfPattern::mutate(

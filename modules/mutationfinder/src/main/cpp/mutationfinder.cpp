@@ -80,7 +80,7 @@ public:
      * @param builder
      * @param nextInstructionBuilder
      */
-    void handInstructionToPatternMatchers(Instruction* instr)
+    void handInstructionToPatternMatchers(Instruction* instr, int id)
     {
         // Handle call instructions with function call pattern analyzer
         if (auto* callinst = dyn_cast<CallInst>(instr))
@@ -99,7 +99,7 @@ public:
         BasicBlock::iterator itr_bb(instr);
         IRBuilder<> builder(instr->getParent(), itr_bb);
         IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
-        auto patternLocations = look_for_pattern(&builder, &nextInstructionBuilder, instr, builderMutex, M);
+        auto patternLocations = look_for_pattern(&builder, &nextInstructionBuilder, instr, id, builderMutex, M);
         builderMutex.unlock();
         for (const auto& loc: patternLocations) {
             if (!loc.empty()) {
@@ -121,6 +121,8 @@ public:
     bool findPatternInFunction(Function& F)
     {
         std::vector<Instruction*> toInstrument;
+        std::vector<int> fID;
+        int counter = 0;
         for (BasicBlock& bb : F)
         {
             auto first_insertion_point = bb.getFirstInsertionPt();
@@ -128,10 +130,12 @@ public:
             for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb)
             {
                 toInstrument.push_back(&*itr_bb);
+                fID.push_back(counter++);
             }
         }
 
         auto funNameArray = json::array();
+        counter = 0;
         for (Instruction* instr : toInstrument)
         {
             auto* callinst = dyn_cast<CallBase>(instr);
@@ -168,7 +172,7 @@ public:
                     funNameArray.push_back(result);
                 }
             }
-            handInstructionToPatternMatchers(instr);
+            handInstructionToPatternMatchers(instr, fID[counter++]);
         }
 
         builderMutex.lock();

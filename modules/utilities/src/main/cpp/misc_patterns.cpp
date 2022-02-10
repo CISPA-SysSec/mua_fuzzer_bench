@@ -3,7 +3,8 @@
 #include "pattern_declarations.h"
 
 std::vector<std::string>
-FreeArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+FreeArgumentReturnPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                                Module &M) {
     std::vector<std::string> results;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
@@ -11,7 +12,7 @@ FreeArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder, 
             if (op->getType()->isPointerTy()) {
                 json j;
                 j["argnumber"] = op->getArgNo();
-                results.push_back(getIdentifierString(instr, builder, builderMutex, M, FREE_FUNCTION_ARGUMENT, j));
+                results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, FREE_FUNCTION_ARGUMENT, j));
             }
         }
     }
@@ -58,7 +59,7 @@ bool FreeArgumentReturnPattern::mutate(
 
 
 std::vector<std::string>
-CMPXCHGPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+CMPXCHGPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (dyn_cast<AtomicCmpXchgInst>(instr)){
         const std::string &funNameStdString = instr->getFunction()->getName().str();
@@ -66,7 +67,7 @@ CMPXCHGPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex 
             pthreadFoundFunctions.insert(funNameStdString);
             json j;
             j["funname"] = funNameStdString;
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, ATOMIC_CMP_XCHG, j));
+            results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, ATOMIC_CMP_XCHG, j));
         }
     }
     return results;
@@ -104,11 +105,11 @@ bool CMPXCHGPattern::mutate(
 
 
 std::vector<std::string>
-ATOMICRMWPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+ATOMICRMWPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (!foundAtomicRMW) { // atomicrmw was not found yet
         if (dyn_cast<AtomicRMWInst>(instr)) {
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, ATOMICRMW_REPLACE));
+            results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, ATOMICRMW_REPLACE));
             foundAtomicRMW = true;
         }
     }
@@ -213,10 +214,10 @@ bool ATOMICRMWPattern::convertAtomicBinOpToBinOp(AtomicRMWInst* instr, json *seg
 
 
 std::vector<std::string>
-ShiftSwitch::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+ShiftSwitch::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (dyn_cast<LShrOperator>(instr) || dyn_cast<AShrOperator>(instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SWITCH_SHIFT));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SWITCH_SHIFT));
     }
     return results;
 }
@@ -259,14 +260,14 @@ bool ShiftSwitch::mutate(
 }
 
 std::vector<std::string>
-SwitchPlusMinus::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+SwitchPlusMinus::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     // TODO currently leaves out nuw/nsw versions of add/sub.
     if (dyn_cast<AddOperator>(instr) ||
             dyn_cast<SubOperator>(instr) ||
                     instr->getOpcode() == BinaryOperator::FAdd ||
                     instr->getOpcode() == BinaryOperator::FSub) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, SWITCH_PLUS_MINUS));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, SWITCH_PLUS_MINUS));
     }
     return results;
 }
@@ -328,12 +329,12 @@ bool SwitchPlusMinus::mutate(
 }
 
 std::vector<std::string>
-RedirectBranch::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+RedirectBranch::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     // TODO currently leaves out nuw/nsw versions of add/sub.
     if (auto br = dyn_cast<BranchInst>(instr)) {
         if (br->isConditional()) {
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, REDIRECT_BRANCH));
+            results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, REDIRECT_BRANCH));
         }
     }
     return results;
@@ -370,7 +371,8 @@ bool RedirectBranch::mutate(
 
 
 std::vector<std::string>
-UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+UnInitLocalVariables::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                           Module &M) {
     std::vector<std::string> results;
     if (auto allocation_instr = dyn_cast<AllocaInst>(instr)) {
         // We only store the location if the allocation is not a array type,
@@ -383,7 +385,7 @@ UnInitLocalVariables::find(const Instruction *instr, IRBuilder<> *builder, std::
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
             j["instr"] = os.str();
-            results.push_back(getIdentifierString_unsignaled(instr, DELETE_LOCAL_STORE, j));
+            results.push_back(getIdentifierString_unsignaled(instr, id, DELETE_LOCAL_STORE, j));
             std::vector<const User*> users;
             for(auto user : instr->users()){ // user is of type User*
                 users.push_back(user);
@@ -466,7 +468,8 @@ bool UnInitLocalVariables::mutate(
  * second operand is also a load instruction)
  */
 std::vector<std::string>
-CompareEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+CompareEqualToPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                            Module &M) {
     std::vector<std::string> results;
     if (auto loadInstr = dyn_cast<LoadInst>(instr)) {
         for(auto user : loadInstr->users()){  // user is of type User*
@@ -480,7 +483,7 @@ CompareEqualToPattern::find(const Instruction *instr, IRBuilder<> *builder, std:
                     llvm::raw_string_ostream os(instructionString);
                     iCmpInstr->print(os);
                     j["ICmpinstr"] = os.str();
-                    results.push_back(getIdentifierString(instr,  builder, builderMutex, M, COMPARE_EQUAL_TO, j));
+                    results.push_back(getIdentifierString(instr, id,  builder, builderMutex, M, COMPARE_EQUAL_TO, j));
                 }
             }
         }
@@ -535,7 +538,8 @@ bool CompareEqualToPattern::mutate(
 }
 
 std::vector<std::string>
-DeleteArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+DeleteArgumentReturnPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                                  Module &M) {
     std::vector<std::string> results;
     if (auto returnInst = dyn_cast<ReturnInst>(instr)) {
         const Function *outerFunction = returnInst->getFunction();
@@ -543,7 +547,7 @@ DeleteArgumentReturnPattern::find(const Instruction *instr, IRBuilder<> *builder
             if (op->getType()->isPointerTy()) {
                 json j;
                 j["argnumber"] = op->getArgNo();
-                results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_FUNCTION_ARGUMENT, j));
+                results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, DELETE_FUNCTION_ARGUMENT, j));
             }
         }
     }
@@ -587,10 +591,10 @@ bool DeleteArgumentReturnPattern::mutate(
 
 
 std::vector<std::string>
-DeleteStorePattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+DeleteStorePattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
     std::vector<std::string> results;
     if (dyn_cast<StoreInst>(instr)) {
-        results.push_back(getIdentifierString(instr, builder, builderMutex, M, DELETE_STORE_PATTERN));
+        results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, DELETE_STORE_PATTERN));
     }
     return results;
 }
@@ -638,13 +642,14 @@ ReassignStoreInstructionPattern::getPrevStore(const Instruction *current, Type* 
 }
 
 std::vector<std::string>
-ReassignStoreInstructionPattern::find(const Instruction *instr, IRBuilder<> *builder, std::mutex &builderMutex, Module &M) {
+ReassignStoreInstructionPattern::find(const Instruction *instr, int id, IRBuilder<> *builder, std::mutex &builderMutex,
+                                      Module &M) {
     std::vector<std::string> results;
     if (auto origStore = dyn_cast<StoreInst>(instr)) {
         auto prev = instr->getPrevNonDebugInstruction();
         auto prevStore = getPrevStore(prev, origStore->getOperand(1)->getType());
         if (prevStore) {
-            results.push_back(getIdentifierString(instr, builder, builderMutex, M, REASSIGN_STORE_INSTRUCTION));
+            results.push_back(getIdentifierString(instr, id, builder, builderMutex, M, REASSIGN_STORE_INSTRUCTION));
         }
 //        for (int i = 0; i < 10; i++) {
 //            if (!prev) {
