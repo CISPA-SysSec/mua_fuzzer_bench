@@ -79,7 +79,7 @@ namespace {
          * @param builder
          * @param nextInstructionBuilder
          */
-        void handInstructionToPatternMatchers(Instruction *instr, IRBuilder<> *builder,
+        void handInstructionToPatternMatchers(Instruction *instr, int id, IRBuilder<> *builder,
                                               IRBuilder<> *nextInstructionBuilder) {
             // Call instructions are handled differently
             if (auto *callinst = dyn_cast<CallInst>(instr)) {
@@ -98,7 +98,7 @@ namespace {
 //            instr->print(os);
             // NEVER delete any instruction other than the one we are currently working on, this may result in undef behavior!
             // If at all do a look-back and change things in already touched instructions.
-            if (mutatePattern(builder, nextInstructionBuilder, instr, builderMutex, M)) {
+            if (mutatePattern(builder, nextInstructionBuilder, instr, id, builderMutex, M)) {
 //                std::string instructionString;
 //                llvm::raw_string_ostream os(instructionString);
 //                instr->print(os);
@@ -114,21 +114,24 @@ namespace {
          */
         bool findPatternInFunction(Function &F) {
             std::vector<Instruction *> toInstrument;
+            std::vector<int> fID;
+            int counter = 0;
             for (BasicBlock &bb : F) {
                 auto first_insertion_point = bb.getFirstInsertionPt();
 
                 for (BasicBlock::iterator itr_bb = first_insertion_point; itr_bb != bb.end(); ++itr_bb) {
                     toInstrument.push_back(&*itr_bb);
+                    fID.push_back(counter++);
                 }
             }
-
+            counter = 0;
             for (Instruction *instr : toInstrument) {
                 BasicBlock::iterator itr_bb(instr);
                 builderMutex.lock();
                 IRBuilder<> builder(instr->getParent(), itr_bb);
                 IRBuilder<> nextInstructionBuilder(instr->getParent(), std::next(itr_bb, 1));
                 builderMutex.unlock();
-                handInstructionToPatternMatchers(instr, &builder, &nextInstructionBuilder);
+                handInstructionToPatternMatchers(instr, fID[counter++], &builder, &nextInstructionBuilder);
             }
 
             return true;

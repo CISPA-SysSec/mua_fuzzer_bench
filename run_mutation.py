@@ -106,7 +106,7 @@ def main():
     if args.mutate != -2 and not any([args.bitcode, args.bitcode_human_readable, args.binary]):
         parser.error('Need at least one of the arguments [-bc, -ll, -bn] to get resulting files.')
 
-    if args.mutate != -2 and not args.mutatelist:
+    if args.mutate != -2 and args.mutatelist:
         parser.error("Either mutate or mutatelist can be activated, not both.")
 
     run_mutation(args)

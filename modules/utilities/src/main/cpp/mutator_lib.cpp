@@ -6,6 +6,7 @@
 #include "../public/mutator_lib.h"
 #include "pattern_list.h"
 
+int instructionID = 0;
 
 bool Pattern::isMutationLocation(Instruction* instr, json *seglist, int type) {
     auto segref = *seglist;
@@ -29,6 +30,9 @@ bool Pattern::isMutationLocation(Instruction* instr, json *seglist, const std::v
 
 bool Pattern::isMutationDebugLoc(const Instruction *instr, const json &segref) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
+    if (segref["fid"] != instructionID) {
+        return false;
+    }
     if (debugInfo) {
         //
         auto surroundingFunction = instr->getFunction()->getName().str();
@@ -88,11 +92,13 @@ bool mutatePattern(
         IRBuilder<>* builder,
         IRBuilder<>* nextInstructionBuilder,
         Instruction* instr,
+        int id,
         std::mutex& builderMutex,
         Module& M
 )
 {
     auto mutated = false;
+    instructionID = id;
 //    std::string instructionString;
 //    llvm::raw_string_ostream os(instructionString);
 //    instr->print(os);
