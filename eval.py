@@ -2924,6 +2924,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         # Check if there was an exception.
         _ = task_future.result()
     except Exception:
+        trace = traceback.format_exc()
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
             # Split mutations, so that those with close numbers are split up into different supermutants.
@@ -2932,16 +2933,16 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
 
             logger.info(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
+            logger.debug(trace)
 
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_1)
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_2)
         else:
             # Else record it.
-            trace = traceback.format_exc()
             for mutation_id in mutation_ids:
                 stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
             logger.info(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
-            logger.info(trace)
+            logger.debug(trace)
 
         # Nothing more to do.
         return
@@ -3020,7 +3021,9 @@ def prepare_mutation(core_to_use, data):
     mut_base_dir.mkdir(parents=True, exist_ok=True)
 
     prog_bc_name = (Path(data['orig_bc']).with_suffix(f".ll.mut.bc").name)
+    prog_ll_name = (Path(data['orig_bc']).with_suffix(f".ll.mut.ll").name)
     prog_bc = mut_base_dir/prog_bc_name
+    prog_ll = mut_base_dir/prog_ll_name
     data['prog_bc'] = prog_bc
 
     prog_bc.parent.mkdir(parents=True, exist_ok=True)
@@ -3041,7 +3044,7 @@ def prepare_mutation(core_to_use, data):
         try:
             run_mut_res = run_exec_in_container(mutator.name, True, [
                     "./run_mutation.py",
-                    "-bc",
+                    "-ll", "-bc",
                     *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
                     *["-ml", *[str(mid) for mid in data['mutation_ids']]],
                     "--out-dir", str(mut_base_dir),
@@ -3049,6 +3052,11 @@ def prepare_mutation(core_to_use, data):
             ])
         except Exception as exc:
             raise RuntimeError(f"Failed to compile mutation") from exc
+
+        with open(prog_ll, 'rt') as f:
+            ll_data = f.read()
+            for mid in data['mutation_ids']:
+                assert ll_data.find(f"signal_triggered_mutation(i64 {mid})") != -1, f"Did not find \"signal_triggered_mutation(i64 {mid})\" in {prog_ll}. All expected mutation ids: {data['mutation_ids']}"
 
         try:
             clang_args = [
