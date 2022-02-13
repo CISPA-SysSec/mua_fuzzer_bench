@@ -7,6 +7,7 @@ import json
 import multiprocessing.pool
 import os
 import sys
+from typing import Dict, Any
 
 
 def find_duplicates(args):
@@ -16,10 +17,21 @@ def find_duplicates(args):
     result = [(arg_key, el_key) for el_key, el_value in locs[arg_value["funname"]].items() if el_value == arg_value]
     # if len(result) != 1 or (len(result) == 1 and result[0][0] == result[0][1]):
     if len(result) != 1:
+        if len(result) > 1:
+            print(f"More than one found: {result}")
+        elif len(result) == 0:
+            print(f"None found: {arg_key} \n {arg_value} \n\n")
+
         # print(result)
         return result
     # else:
     #     print(result)
+
+def replace_funnames(el: Dict[str, Any]):
+    if "." in el["funname"]:
+        el["funname"] = el["funname"].split(".")[0]
+    if el["additionalInfo"] and "funname" in el["additionalInfo"] and "." in el["additionalInfo"]["funname"]:
+        el["additionalInfo"]["funname"] = el["additionalInfo"]["funname"].split(".")[0]
 
 
 def main(mutationlocations_filepath1: str, mutationlocations_filepath2: str):
@@ -28,7 +40,12 @@ def main(mutationlocations_filepath1: str, mutationlocations_filepath2: str):
     with open(mutationlocations_filepath1, "r") as ml1_file:
         with open(mutationlocations_filepath2, "r") as ml2_file:
             locations1 = json.load(ml1_file)
+            for loc in locations1:
+                replace_funnames(loc)
             locations2 = json.load(ml2_file)
+            for loc in locations2:
+                replace_funnames(loc)
+
             for loc in locations1:
                 funloc = new_locs1.setdefault(loc["funname"], dict())
                 funloc[loc["UID"]] = loc
@@ -45,7 +62,8 @@ def main(mutationlocations_filepath1: str, mutationlocations_filepath2: str):
 
 if __name__ == "__main__":
     counter = 1
-    while os.path.exists(f"woff2{counter}.mutationlocations"):
-        main(f"woff21.mutationlocations", f"woff2{counter}.mutationlocations")
-        print(f"woff2{counter}.mutationlocations")
-        counter += 1
+    main("ares-name-local.ll.mutationlocations", "ares-name-server.ll.mutationlocations")
+    # while os.path.exists(f"woff2{counter}.mutationlocations"):
+    #     main(f"woff21.mutationlocations", f"woff2{counter}.mutationlocations")
+    #     print(f"woff2{counter}.mutationlocations")
+    #     counter += 1
