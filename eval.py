@@ -785,11 +785,19 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE crashing_supermutation_preparation (
+            exec_id,
+            prog,
+            supermutant_id INTEGER,
+            crash_trace
+        )''')
+
+        c.execute('''
         CREATE TABLE crashing_mutation_preparation (
             exec_id,
             prog,
-            mutation_id INTEGER,
-            crash_trace
+            supermutant_id INTEGER,
+            mutation_id INTEGER
         )''')
 
         c.execute('''
@@ -1109,13 +1117,25 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def mutation_preparation_crashed(self, c, exec_id, prog, mutation_id, trace):
+    def supermutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, trace):
+        c.execute('INSERT INTO crashing_supermutation_preparation VALUES (?, ?, ?, ?)',
+            (
+                exec_id,
+                prog,
+                supermutant_id,
+                trace,
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def mutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, mutation_id):
         c.execute('INSERT INTO crashing_mutation_preparation VALUES (?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
+                supermutant_id,
                 mutation_id,
-                trace,
             )
         )
         self.conn.commit()
@@ -2925,6 +2945,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         _ = task_future.result()
     except Exception:
         trace = traceback.format_exc()
+        supermutant_id = mut_data['supermutant_id']
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
             # Split mutations, so that those with close numbers are split up into different supermutants.
@@ -2934,15 +2955,17 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
             logger.info(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
             logger.debug(trace)
+            stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
 
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_1)
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_2)
         else:
             # Else record it.
-            for mutation_id in mutation_ids:
-                stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
             logger.info(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
             logger.debug(trace)
+            stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
+            for mutation_id in mutation_ids:
+                stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id)
 
         # Nothing more to do.
         return
@@ -4668,7 +4691,7 @@ def merge_dbs(out_path, in_paths):
         inserts = "\n".join((
                 f"insert into {table} select * from to_merge.{table};"
                 for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 'aflpp_runs',
-                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_mutation_preparation', 'run_crashed',
+                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_supermutation_preparation', 'crashing_mutation_preparation', 'run_crashed',
                               'initial_super_mutants', 'started_super_mutants']))
         command = f'''sqlite3 {out_db_path} "
 attach '{in_db}' as to_merge;
