@@ -4681,7 +4681,7 @@ def generate_plots(db_path, to_disk):
 
 
 def merge_dbs(out_path, in_paths):
-    logger.info(out_path, in_paths)
+    logger.info(f"{out_path}, {in_paths}")
 
     out_db_path = Path(out_path)
     if out_db_path.is_file():
