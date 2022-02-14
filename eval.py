@@ -2195,13 +2195,27 @@ def get_supermutations(prog_info, mutations):
           f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
 
     supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
+
+    # split up unreachable mutations making sure that no
+    # mutations in the same function are in the same supermutant
+    func_to_mutants = defaultdict(list)
+    for ff, mm in supermutants_unreachable:
+        func_to_mutants[ff].append(mm)
+
+    highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
     new_supermutants = []
-    for ii in range(len(supermutants_unreachable)//(MAX_SUPERMUTANT_SIZE-1)):
+    for ii in range(highest_mut_func_count):
         new_supermutants.append([])
 
-    for ii, (ff, mm) in enumerate(supermutants_unreachable):
-        assert ff in unreachable_functions
-        new_supermutants[ii % len(new_supermutants)].append(mm)
+    ii = 0
+    for ii in range(highest_mut_func_count):
+        for ff, mm_in_ff in func_to_mutants.items():
+            try:
+                mm = mm_in_ff.pop(0)
+            except IndexError:
+                continue
+            assert ff in unreachable_functions
+            new_supermutants[ii].append(mm)
 
     logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
     supermutants.extend(new_supermutants)
@@ -2947,8 +2961,6 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         supermutant_id = mut_data['supermutant_id']
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
-            # Split mutations, so that those with close numbers are split up into different supermutants.
-            # This is to increase "distance" between the mutations so that they might interfere less.
             chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
 
             logger.info(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
