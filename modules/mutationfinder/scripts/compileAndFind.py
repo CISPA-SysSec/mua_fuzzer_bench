@@ -84,7 +84,10 @@ def compile_and_find(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Script to find patterns.")
-    parser.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ instead of clang for compilation.")
+    compiler = parser.add_mutually_exclusive_group(required=True)
+    compiler.add_argument('-cc', "--cc", action='store_true', help="Uses clang for compilation.")
+    compiler.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ for compilation.")
+
     parser.add_argument("--bc-args", default="",
                         help="Compiler arguments that should be used for compilation for all artifacts.")
     parser.add_argument("--bin-args", default="",

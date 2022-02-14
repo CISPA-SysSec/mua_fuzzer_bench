@@ -385,11 +385,11 @@ UnInitLocalVariables::find(const Instruction *instr, int id, IRBuilder<> *builde
             llvm::raw_string_ostream os(instructionString);
             instr->print(os);
             j["instr"] = os.str();
-            results.push_back(getIdentifierString_unsignaled(instr, id, DELETE_LOCAL_STORE, j));
             std::vector<const User*> users;
             for(auto user : instr->users()){ // user is of type User*
                 users.push_back(user);
             }
+            bool found = false;
             // using the c++11 vector range iterator does not stop for some reason, so we use iteration by index
             for(std::vector<const User*>::size_type i = 0; i != users.size(); i++){  // user is of type User*
                 auto user = users[i];
@@ -400,6 +400,11 @@ UnInitLocalVariables::find(const Instruction *instr, int id, IRBuilder<> *builde
                         IRBuilder<> userBuilder(instrUser->getParent(), itr_bb);
                           //PatterIDCounter - 1 since it was already increased in getIdentifierString_unsignaled
                         addMutationFoundSignal(&userBuilder, M, PatternIDCounter - 1);
+                        if (!found) {
+                            // there must be at least one store user before we can put the mutation into the results
+                            results.push_back(getIdentifierString_unsignaled(instr, id, DELETE_LOCAL_STORE, j));
+                            found = true;
+                        }
                     }
                 }
             }

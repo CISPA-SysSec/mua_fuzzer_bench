@@ -119,7 +119,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-parse-reply")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/ares-parse-reply.bc")),
         "name": "cares",
@@ -132,7 +132,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-name")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/ares-name.bc")),
         "name": "cares",
@@ -217,7 +217,7 @@ PROGRAMS = {
          ],
          "bin_compile_args": [
          ],
-         "is_cpp": True,
+         "is_cpp": False,
          "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
          "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
          "name": "curl",
@@ -243,7 +243,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/libevent/out/parse_query_fuzzer")),
         "orig_bc": str(Path("tmp/samples/libevent/out/parse_query_fuzzer.bc")),
         "name": "libevent",
@@ -257,7 +257,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/mjs/out/mjs_fuzzer")),
         "orig_bc": str(Path("tmp/samples/mjs/out/mjs.bc")),
         "name": "mjs",
@@ -785,11 +785,19 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE crashing_supermutation_preparation (
+            exec_id,
+            prog,
+            supermutant_id INTEGER,
+            crash_trace
+        )''')
+
+        c.execute('''
         CREATE TABLE crashing_mutation_preparation (
             exec_id,
             prog,
-            mutation_id INTEGER,
-            crash_trace
+            supermutant_id INTEGER,
+            mutation_id INTEGER
         )''')
 
         c.execute('''
@@ -814,7 +822,6 @@ class Stats():
 
     @connection
     def new_execution(self, c, exec_id, hostname, git_status, rerun, start_time):
-        logger.debug(rerun)
         c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -1109,13 +1116,25 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def mutation_preparation_crashed(self, c, exec_id, prog, mutation_id, trace):
+    def supermutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, trace):
+        c.execute('INSERT INTO crashing_supermutation_preparation VALUES (?, ?, ?, ?)',
+            (
+                exec_id,
+                prog,
+                supermutant_id,
+                trace,
+            )
+        )
+        self.conn.commit()
+
+    @connection
+    def mutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, mutation_id):
         c.execute('INSERT INTO crashing_mutation_preparation VALUES (?, ?, ?, ?)',
             (
                 exec_id,
                 prog,
+                supermutant_id,
                 mutation_id,
-                trace,
             )
         )
         self.conn.commit()
@@ -1942,7 +1961,7 @@ def instrument_prog(container, prog_info):
     # Compile the mutation location detector for the prog.
     args = ["./run_mutation.py",
             "-bc", prog_info['orig_bc'],
-            *(["-cpp"] if prog_info['is_cpp'] else []),  # conditionally add cpp flag
+            *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
             "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info['bin_compile_args']), '/home/mutator')]
     run_exec_in_container(container.name, True, args)
@@ -2176,13 +2195,27 @@ def get_supermutations(prog_info, mutations):
           f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
 
     supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
+
+    # split up unreachable mutations making sure that no
+    # mutations in the same function are in the same supermutant
+    func_to_mutants = defaultdict(list)
+    for ff, mm in supermutants_unreachable:
+        func_to_mutants[ff].append(mm)
+
+    highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
     new_supermutants = []
-    for ii in range(len(supermutants_unreachable)//(MAX_SUPERMUTANT_SIZE-1)):
+    for ii in range(highest_mut_func_count):
         new_supermutants.append([])
 
-    for ii, (ff, mm) in enumerate(supermutants_unreachable):
-        assert ff in unreachable_functions
-        new_supermutants[ii % len(new_supermutants)].append(mm)
+    ii = 0
+    for ii in range(highest_mut_func_count):
+        for ff, mm_in_ff in func_to_mutants.items():
+            try:
+                mm = mm_in_ff.pop(0)
+            except IndexError:
+                continue
+            assert ff in unreachable_functions
+            new_supermutants[ii].append(mm)
 
     logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
     supermutants.extend(new_supermutants)
@@ -2924,24 +2957,26 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
         # Check if there was an exception.
         _ = task_future.result()
     except Exception:
+        trace = traceback.format_exc()
+        supermutant_id = mut_data['supermutant_id']
         if len(mutation_ids) > 1:
             # If there was an exception for multiple mutations, retry with less.
-            # Split mutations, so that those with close numbers are split up into different supermutants.
-            # This is to increase "distance" between the mutations so that they might interfere less.
             chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
 
             logger.info(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
                   f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
+            logger.debug(trace)
+            stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
 
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_1)
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_2)
         else:
             # Else record it.
-            trace = traceback.format_exc()
-            for mutation_id in mutation_ids:
-                stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id, trace)
             logger.info(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
-            logger.info(trace)
+            logger.debug(trace)
+            stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
+            for mutation_id in mutation_ids:
+                stats.mutation_preparation_crashed(EXEC_ID, prog, supermutant_id, mutation_id)
 
         # Nothing more to do.
         return
@@ -3020,7 +3055,9 @@ def prepare_mutation(core_to_use, data):
     mut_base_dir.mkdir(parents=True, exist_ok=True)
 
     prog_bc_name = (Path(data['orig_bc']).with_suffix(f".ll.mut.bc").name)
+    prog_ll_name = (Path(data['orig_bc']).with_suffix(f".ll.mut.ll").name)
     prog_bc = mut_base_dir/prog_bc_name
+    prog_ll = mut_base_dir/prog_ll_name
     data['prog_bc'] = prog_bc
 
     prog_bc.parent.mkdir(parents=True, exist_ok=True)
@@ -3041,14 +3078,19 @@ def prepare_mutation(core_to_use, data):
         try:
             run_mut_res = run_exec_in_container(mutator.name, True, [
                     "./run_mutation.py",
-                    "-bc",
-                    *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
+                    "-ll", "-bc",
+                    *(["-cpp"] if data['is_cpp'] else ['-cc']),  # conditionally add cpp flag
                     *["-ml", *[str(mid) for mid in data['mutation_ids']]],
                     "--out-dir", str(mut_base_dir),
                     data['orig_bc']
             ])
         except Exception as exc:
             raise RuntimeError(f"Failed to compile mutation") from exc
+
+        with open(prog_ll, 'rt') as f:
+            ll_data = f.read()
+            for mid in data['mutation_ids']:
+                assert ll_data.find(f"signal_triggered_mutation(i64 {mid})") != -1, f"Did not find \"signal_triggered_mutation(i64 {mid})\" in {prog_ll}. All expected mutation ids: {data['mutation_ids']}"
 
         try:
             clang_args = [
@@ -4660,7 +4702,7 @@ def merge_dbs(out_path, in_paths):
         inserts = "\n".join((
                 f"insert into {table} select * from to_merge.{table};"
                 for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 'aflpp_runs',
-                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_mutation_preparation', 'run_crashed',
+                              'seed_crashing_inputs', 'crashing_inputs', 'crashing_supermutation_preparation', 'crashing_mutation_preparation', 'run_crashed',
                               'initial_super_mutants', 'started_super_mutants']))
         command = f'''sqlite3 {out_db_path} "
 attach '{in_db}' as to_merge;
