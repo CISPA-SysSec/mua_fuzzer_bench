@@ -42,6 +42,8 @@ def run_mutation(args):
     # only run the find algorithm if no mutation should be done
     if args.mutate == -2 and not args.mutatelist:
         arguments = ["python3", "build/install/LLVM_Mutation_Tool/bin/compileAndFind.py", mutate]
+        if args.cc:
+            arguments.append("-cc")
         if args.cpp:
             arguments.append("-cpp")
         arguments.append("--bc-args=" + args.bc_args)
@@ -57,6 +59,8 @@ def run_mutation(args):
             arguments.append("-ll")
         if args.binary:
             arguments.append("-bn")
+        if args.cc:
+            arguments.append("-cc")
         if args.cpp:
             arguments.append("-cpp")
         # mutation(s) to apply
@@ -87,8 +91,11 @@ def main():
                         help="Keeps the mutated bitcode files as human readable files.")
     parser.add_argument('-bn', "--binary", action='store_true',
                         help="Creates mutated runnable binaries.")
-    parser.add_argument('-cpp', "--cpp", action='store_true',
-                        help="Uses clang++ instead of clang for compilation.")
+
+    compiler = parser.add_mutually_exclusive_group(required=True)
+    compiler.add_argument('-cc', "--cc", action='store_true', help="Uses clang for compilation.")
+    compiler.add_argument('-cpp', "--cpp", action='store_true', help="Uses clang++ for compilation.")
+    
     parser.add_argument("-m", "--mutate", type=int, default=-2,
                         help="Defines which mutation should be applied, -1 if all should be applied.")
     parser.add_argument("-ml", "--mutatelist", type=int, nargs="*", default=[],

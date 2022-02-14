@@ -119,7 +119,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-parse-reply")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/ares-parse-reply.bc")),
         "name": "cares",
@@ -132,7 +132,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/c-ares/out/ares-name")),
         "orig_bc": str(Path("tmp/samples/c-ares/out/ares-name.bc")),
         "name": "cares",
@@ -217,7 +217,7 @@ PROGRAMS = {
          ],
          "bin_compile_args": [
          ],
-         "is_cpp": True,
+         "is_cpp": False,
          "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
          "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
          "name": "curl",
@@ -243,7 +243,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/libevent/out/parse_query_fuzzer")),
         "orig_bc": str(Path("tmp/samples/libevent/out/parse_query_fuzzer.bc")),
         "name": "libevent",
@@ -257,7 +257,7 @@ PROGRAMS = {
         ],
         "bin_compile_args": [
         ],
-        "is_cpp": True,
+        "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/mjs/out/mjs_fuzzer")),
         "orig_bc": str(Path("tmp/samples/mjs/out/mjs.bc")),
         "name": "mjs",
@@ -822,7 +822,6 @@ class Stats():
 
     @connection
     def new_execution(self, c, exec_id, hostname, git_status, rerun, start_time):
-        logger.debug(rerun)
         c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -1962,7 +1961,7 @@ def instrument_prog(container, prog_info):
     # Compile the mutation location detector for the prog.
     args = ["./run_mutation.py",
             "-bc", prog_info['orig_bc'],
-            *(["-cpp"] if prog_info['is_cpp'] else []),  # conditionally add cpp flag
+            *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
             "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info['bin_compile_args']), '/home/mutator')]
     run_exec_in_container(container.name, True, args)
@@ -2965,7 +2964,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
             logger.debug(trace)
             stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
             for mutation_id in mutation_ids:
-                stats.mutation_preparation_crashed(EXEC_ID, prog, mutation_id)
+                stats.mutation_preparation_crashed(EXEC_ID, prog, supermutant_id, mutation_id)
 
         # Nothing more to do.
         return
@@ -3068,7 +3067,7 @@ def prepare_mutation(core_to_use, data):
             run_mut_res = run_exec_in_container(mutator.name, True, [
                     "./run_mutation.py",
                     "-ll", "-bc",
-                    *(["-cpp"] if data['is_cpp'] else []),  # conditionally add cpp flag
+                    *(["-cpp"] if data['is_cpp'] else ['-cc']),  # conditionally add cpp flag
                     *["-ml", *[str(mid) for mid in data['mutation_ids']]],
                     "--out-dir", str(mut_base_dir),
                     data['orig_bc']
