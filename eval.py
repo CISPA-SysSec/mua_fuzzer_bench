@@ -4175,6 +4175,15 @@ def fuzzer_stats(con):
     res += stats.to_html()
     return res
 
+def fuzzer_prog_stats(con):
+    import pandas as pd
+    stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
+    logger.info(stats)
+    # logger.info(stats[['fuzzer', 'total', 'done', 'found', 'f_by_f', 'avg_run_min', 'cpu_days']].to_latex())
+    res = "<h2>Fuzzer by Program Stats</h2>"
+    res += stats.to_html()
+    return res
+
 def mut_stats(con):
     import pandas as pd
     stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
@@ -4631,6 +4640,8 @@ def generate_plots(db_path, to_disk):
     res += error_stats(con)
     logger.info("fuzzer stats")
     res += fuzzer_stats(con)
+    logger.info("fuzzer prog stats")
+    res += fuzzer_prog_stats(con)
     logger.info("mut stats")
     res += mut_stats(con)
     logger.info("prog stats")
@@ -4713,7 +4724,7 @@ detach to_merge;"'''
         logger.info(command)
         proc = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
-            logger.info("Failed to copy the first db.", proc)
+            logger.info(f"Failed to copy the first db. {proc}")
             sys.exit(1)
 
 

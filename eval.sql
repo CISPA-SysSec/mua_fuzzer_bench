@@ -249,6 +249,7 @@ select fuzzer,
 	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
 	sum(c_by_f) as c_by_f,
+	sum(found) as found,
 	sum(f_by_seed) as f_by_seed,
 	sum(f_by_f) as f_by_f,
 	sum(interesting) as interesting,
@@ -289,15 +290,15 @@ as
 select prog, fuzzer,
 	sum(total) as total,
 	sum(done) as done,
-	sum(covered) as covered,
 	sum(c_by_seed) as c_by_seed,
 	sum(c_by_f) as c_by_f,
-	sum(found) as avg_found,
-	sum(f_by_seed) as f_by_seed,
-	sum(f_by_one) - sum(f_by_seed) as f_by_one,
-	sum(f_by_f) as f_by_f,
-	sum(f_by_all) - sum(f_by_seed) as f_by_all,
+	sum(covered) as covered,
 	sum(interesting) as interesting,
+	sum(f_by_seed) as f_by_seed,
+	sum(f_by_f) as f_by_f,
+	sum(found) as found,
+	sum(f_by_one) as f_by_one,
+	sum(f_by_all) as f_by_all,
 	sum(seed_timeout) as seed_timeout,
 	sum(crashed) as crashed,
 	round(avg(avg_run_min), 2) as avg_run_min,
@@ -475,7 +476,7 @@ CREATE VIEW covered_by_seed_but_not_fuzzer
 as
 select executed_seeds.covered_file_seen is not null as s_covered, executed_runs.covered_file_seen is not null as f_covered, *
 from executed_seeds
-join executed_runs using (exec_id, prog, mutation_id)
+join executed_runs using (exec_id, prog, fuzzer, mutation_id)
 where s_covered is 1 and f_covered is 0;
 
 DROP VIEW IF EXISTS percentage_found_over_time;
