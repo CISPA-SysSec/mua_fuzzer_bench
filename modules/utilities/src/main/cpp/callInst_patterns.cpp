@@ -256,6 +256,10 @@ bool DeleteCallInstructionPattern::mutate(
 
             builderMutex.lock();
             addMutationFoundSignal(builder, M, segref["UID"]);
+            // in this case when replacing all users, those can only be users that are llvm internal, no real users
+            // i.e. llvm.dbg.value might use it, but not a real instruction like add or as a function argument in a call
+            // hence we can safely replace it with an undef value, as the value should never be used in the real code/in execution
+            callInst->replaceAllUsesWith(UndefValue::get(callInst->getType()));
             callInst->removeFromParent(); // we do not need to care about any users as there are none, we checked this in the find procedure
             builderMutex.unlock();
 
