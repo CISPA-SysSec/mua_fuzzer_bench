@@ -1754,15 +1754,10 @@ def base_eval(run_data, docker_image):
 
         total_fuzz_time = time.time() - fuzz_start_time
 
-        # Check if covered file is seen, one final time
-        for new_covered, at_time in covered.check().items():
-            update_results(results, {
-                'result': 'covered',
-                'results': [{
-                    'result': 'covered',
-                    'mutation_ids': [new_covered],
-                    'time': at_time,
-            }]}, start_time)
+        # as a sanity check make sure that at least the fuzzing time has passed, if not log the results
+        unexpected_completion_time = None
+        if total_fuzz_time < timeout or timeout + 60 < total_fuzz_time:
+            unexpected_completion_time = (total_fuzz_time, timeout)
 
         # Also collect all remaining crashing outputs
         new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
@@ -1772,10 +1767,15 @@ def base_eval(run_data, docker_image):
             res['all_logs'] = get_logs(logs_queue)
             return res
 
-        # as a sanity check make sure that at least the fuzzing time has passed, if not show a warning
-        unexpected_completion_time = None
-        if total_fuzz_time < timeout or timeout + 60 < total_fuzz_time:
-            unexpected_completion_time = (total_fuzz_time, timeout)
+        # Check if covered file is seen, one final time
+        for new_covered, at_time in covered.check().items():
+            update_results(results, {
+                'result': 'covered',
+                'results': [{
+                    'result': 'covered',
+                    'mutation_ids': [new_covered],
+                    'time': at_time,
+            }]}, start_time)
 
         all_logs = get_logs(logs_queue)
 
@@ -2693,7 +2693,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         data['fuzzer'],
                         seed_covered,
                         seed_timeout,
-                        total_time)
+                        None)
 
                     # record covered
                     covered_time = has_result(mut_id, results, ['covered', 'killed'])
@@ -2823,7 +2823,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         data['fuzzer'],
                         seed_covered,
                         seed_timeout_time,
-                        total_time)
+                        None)
 
                     # record covered
                     covered_time = has_result(mut_id, results, ['covered'])
