@@ -64,7 +64,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(orig_cmd)
-                orig_res = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
+                orig_res, _ = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
@@ -91,7 +91,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(mut_cmd)
-                mut_res = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
+                mut_res, _ = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
