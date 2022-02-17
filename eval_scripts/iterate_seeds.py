@@ -15,10 +15,12 @@ MAX_RUN_EXEC_IN_CONTAINER_TIME = 2
 
 
 def run_cmd(cmd):
-    return subprocess.run(cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME,
-        close_fds=True)
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        close_fds=True
+    )
 
 
 def record_covered(result_dir, triggered_folder, covered, path):
@@ -62,9 +64,10 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(orig_cmd)
+                proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                proc.communicate()
+                proc.wait()
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
                     json.dump({
                         'result': 'orig_timeout',
@@ -89,9 +92,10 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(mut_cmd)
+                proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                proc.communicate()
+                proc.wait()
                 covered = record_covered(result_dir, triggered_folder, covered, path)
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
                     json.dump({
