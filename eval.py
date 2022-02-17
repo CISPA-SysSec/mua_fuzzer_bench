@@ -2628,146 +2628,145 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             result_ids = set(int(mm) for rr in results for mm in rr['mutation_ids'])
             assert len(result_ids - set(all_mutation_ids)) == 0, f"{sorted(result_ids)}\n{sorted(all_mutation_ids)}"
 
-
-            for res in [rr for rr in results if rr['result'] in ['orig_crash', 'orig_timeout']]:
+            if any([rr for rr in results if rr['result'] in ['orig_crash', 'orig_timeout']]):
                 logger.warning('Original binary crashed or timed out, retrying. If this problem persists, check the setup.')
                 recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), all_mutation_ids)
-
-            # check if there are multi covered kills
-            multi_kills = []
-            for res in [rr for rr in results if rr['result'] in ['killed']]:
-                mut_ids = res['mutation_ids']
-                if len(mut_ids) > 1:
-                    multi_kills.append(res)
-
-            if multi_kills:
-                # there is at at least one input that causes a crash where multiple mutations are involved
-                # to make sure that fuzzers correctly kill mutations, recheck the inputs on those mutations
-                # individually
-
-                # there can also be mutants that are killed but not part of a multi kill
-                # so just get every mutation that was killed and recheck all of them
-                killed_mutants: set[int] = set(chain(*[rr['mutation_ids']
-                                for rr in results
-                                if rr['result'] in ['killed']]))
-                
-                # get the remaining mutations
-                cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
-                assert len(cur_mutations & killed_mutants) == len(killed_mutants), f"Killed mutations not in supermutant: {cur_mutations}, {killed_mutants}"
-                remaining_mutations = cur_mutations - killed_mutants
-
-                logger.info(f"! multi, killed {len(killed_mutants)} remaining {len(remaining_mutations)}")
-
-                # start check run for each killed mutation
-                for km in killed_mutants:
-                    tmp_dir = copy_fuzzer_inputs(data)
-                    start_check_run(prepared_runs, data, stats.next_supermutant_id(), [km], tmp_dir)
-
-                # start a new run for a supermutant containing all remaining mutations
-                if len(remaining_mutations) > 0:
-                    recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
-                else:
-                    logger.info(f"! no more mutations")
-
             else:
-                killed_mutants = set()
-                for mut_id in all_mutation_ids:
-                    # no mutation should have been killed by seeds or there is a bug
-                    if has_result(mut_id, results, ['killed_by_seed']):
-                        raise ValueError("killed_by_seed result in killed run result.")
+                # check if there are multi covered kills
+                multi_kills = []
+                for res in [rr for rr in results if rr['result'] in ['killed']]:
+                    mut_ids = res['mutation_ids']
+                    if len(mut_ids) > 1:
+                        multi_kills.append(res)
 
-                    # here we are only interested in the mutations that have been killed
-                    # the other mutations are tried again
-                    killed = has_result(mut_id, results, ['killed'])
-                    timeout = has_result(mut_id, results, ['timeout'])
-                    if not (killed or timeout):
-                        continue
+                if multi_kills:
+                    # there is at at least one input that causes a crash where multiple mutations are involved
+                    # to make sure that fuzzers correctly kill mutations, recheck the inputs on those mutations
+                    # individually
 
-                    killed_mutants.add(mut_id)
-
-                    # record covered by seed 
-                    seed_covered = has_result(mut_id, results, ['covered_by_seed'])
-                    if seed_covered:
-                        seed_covered = seed_covered.get('time', None)
-                    seed_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
-                    stats.new_seeds_executed(
-                        EXEC_ID,
-                        prog,
-                        mut_id,
-                        data['run_ctr'],
-                        data['fuzzer'],
-                        seed_covered,
-                        seed_timeout,
-                        None)
-
-                    # record covered
-                    covered_time = has_result(mut_id, results, ['covered', 'killed'])
-                    if covered_time:
-                        covered_time = covered_time.get('time', None)
-                    stats.new_run_executed(
-                        plot_data,
-                        EXEC_ID,
-                        data['run_ctr'],
-                        prog,
-                        mut_id,
-                        data['fuzzer'],
-                        covered_time,
-                        total_time)
-
-                    # record killed or timeout
-                    if killed:
-                        killed['orig_timeout'] = None
-                        killed['timeout'] = None
-                        stats.new_crashing_inputs(
-                            [killed],
-                            EXEC_ID,
-                            prog,
-                            mut_id,
-                            data['run_ctr'],
-                            data['fuzzer'])
-                    elif timeout:
-                        timeout['result'] = 'killed'
-                        timeout['orig_returncode'] = None
-                        timeout['mut_returncode'] = None
-                        if 'orig_cmd' not in timeout:
-                            timeout['orig_cmd'] = []
-                        if 'mut_cmd' not in timeout:
-                            timeout['mut_cmd'] = []
-                        timeout['orig_res'] = None
-                        timeout['mut_res'] = None
-                        timeout['orig_timeout'] = None
-                        timeout['timeout'] = 1
-                        stats.new_crashing_inputs(
-                            [timeout],
-                            EXEC_ID,
-                            prog,
-                            mut_id,
-                            data['run_ctr'],
-                            data['fuzzer'])
-                        
-                    result_types = set(rr['result'] for rr in results)
-                    unknown_result_types = result_types - HANDLED_RESULT_TYPES
-                    assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
-
-                if not killed_mutants:
-                    try:
-                        results_str = '\n'.join(str(rr) for rr in results)
-                        raise ValueError(f"Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}")
-                    except Exception as e:
-                        trace = traceback.format_exc()
-                        for mut_id in mut_data['mutation_ids']:
-                            stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
-                            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
-                else:
-                    # find and start the new supermutant with the remaining mutations
+                    # there can also be mutants that are killed but not part of a multi kill
+                    # so just get every mutation that was killed and recheck all of them
+                    killed_mutants: set[int] = set(chain(*[rr['mutation_ids']
+                                    for rr in results
+                                    if rr['result'] in ['killed']]))
+                    
+                    # get the remaining mutations
                     cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
-                    assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
-
+                    assert len(cur_mutations & killed_mutants) == len(killed_mutants), f"Killed mutations not in supermutant: {cur_mutations}, {killed_mutants}"
                     remaining_mutations = cur_mutations - killed_mutants
+
+                    logger.info(f"! multi, killed {len(killed_mutants)} remaining {len(remaining_mutations)}")
+
+                    # start check run for each killed mutation
+                    for km in killed_mutants:
+                        tmp_dir = copy_fuzzer_inputs(data)
+                        start_check_run(prepared_runs, data, stats.next_supermutant_id(), [km], tmp_dir)
+
+                    # start a new run for a supermutant containing all remaining mutations
                     if len(remaining_mutations) > 0:
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
                     else:
                         logger.info(f"! no more mutations")
+
+                else:
+                    killed_mutants = set()
+                    for mut_id in all_mutation_ids:
+                        # no mutation should have been killed by seeds or there is a bug
+                        if has_result(mut_id, results, ['killed_by_seed']):
+                            raise ValueError("killed_by_seed result in killed run result.")
+
+                        # here we are only interested in the mutations that have been killed
+                        # the other mutations are tried again
+                        killed = has_result(mut_id, results, ['killed'])
+                        timeout = has_result(mut_id, results, ['timeout'])
+                        if not (killed or timeout):
+                            continue
+
+                        killed_mutants.add(mut_id)
+
+                        # record covered by seed 
+                        seed_covered = has_result(mut_id, results, ['covered_by_seed'])
+                        if seed_covered:
+                            seed_covered = seed_covered.get('time', None)
+                        seed_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+                        stats.new_seeds_executed(
+                            EXEC_ID,
+                            prog,
+                            mut_id,
+                            data['run_ctr'],
+                            data['fuzzer'],
+                            seed_covered,
+                            seed_timeout,
+                            None)
+
+                        # record covered
+                        covered_time = has_result(mut_id, results, ['covered', 'killed'])
+                        if covered_time:
+                            covered_time = covered_time.get('time', None)
+                        stats.new_run_executed(
+                            plot_data,
+                            EXEC_ID,
+                            data['run_ctr'],
+                            prog,
+                            mut_id,
+                            data['fuzzer'],
+                            covered_time,
+                            total_time)
+
+                        # record killed or timeout
+                        if killed:
+                            killed['orig_timeout'] = None
+                            killed['timeout'] = None
+                            stats.new_crashing_inputs(
+                                [killed],
+                                EXEC_ID,
+                                prog,
+                                mut_id,
+                                data['run_ctr'],
+                                data['fuzzer'])
+                        elif timeout:
+                            timeout['result'] = 'killed'
+                            timeout['orig_returncode'] = None
+                            timeout['mut_returncode'] = None
+                            if 'orig_cmd' not in timeout:
+                                timeout['orig_cmd'] = []
+                            if 'mut_cmd' not in timeout:
+                                timeout['mut_cmd'] = []
+                            timeout['orig_res'] = None
+                            timeout['mut_res'] = None
+                            timeout['orig_timeout'] = None
+                            timeout['timeout'] = 1
+                            stats.new_crashing_inputs(
+                                [timeout],
+                                EXEC_ID,
+                                prog,
+                                mut_id,
+                                data['run_ctr'],
+                                data['fuzzer'])
+                            
+                        result_types = set(rr['result'] for rr in results)
+                        unknown_result_types = result_types - HANDLED_RESULT_TYPES
+                        assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
+
+                    if not killed_mutants:
+                        try:
+                            results_str = '\n'.join(str(rr) for rr in results)
+                            raise ValueError(f"Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}")
+                        except Exception as e:
+                            trace = traceback.format_exc()
+                            for mut_id in mut_data['mutation_ids']:
+                                stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
+                                logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
+                    else:
+                        # find and start the new supermutant with the remaining mutations
+                        cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
+                        assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
+
+                        remaining_mutations = cur_mutations - killed_mutants
+                        if len(remaining_mutations) > 0:
+                            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
+                        else:
+                            logger.info(f"! no more mutations")
             
         elif result_type == 'completed':
             if run_result['unexpected_completion_time']:

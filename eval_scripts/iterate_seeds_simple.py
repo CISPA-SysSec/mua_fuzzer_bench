@@ -19,7 +19,8 @@ def run_cmd(cmd):
     try:
         proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
     except subprocess.TimeoutExpired:
-        pass
+        proc.kill()
+        proc.wait()
     return proc
 
 
