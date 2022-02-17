@@ -1512,7 +1512,7 @@ def update_results(results, new_results, start_time):
 
     for nr in new_results:
         res = nr['result']
-        if res == 'orig_crash':
+        if res in ['orig_crash', 'orig_timeout']:
             key = (res, None)
         else:
             try:
@@ -2628,6 +2628,11 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             result_ids = set(int(mm) for rr in results for mm in rr['mutation_ids'])
             assert len(result_ids - set(all_mutation_ids)) == 0, f"{sorted(result_ids)}\n{sorted(all_mutation_ids)}"
 
+
+            for res in [rr for rr in results if rr['result'] in ['orig_crash', 'orig_timeout']]:
+                logger.warning('Original binary crashed or timed out, retrying. If this problem persists, check the setup.')
+                recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), all_mutation_ids)
+
             # check if there are multi covered kills
             multi_kills = []
             for res in [rr for rr in results if rr['result'] in ['killed']]:
@@ -2708,10 +2713,6 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         data['fuzzer'],
                         covered_time,
                         total_time)
-
-                    orig_timeout = has_result(mut_id, results, ['orig_timeout'])
-                    if orig_timeout:
-                        raise ValueError('Original binary timed out, fix it!')
 
                     # record killed or timeout
                     if killed:
