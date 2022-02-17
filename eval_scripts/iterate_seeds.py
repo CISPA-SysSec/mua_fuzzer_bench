@@ -64,7 +64,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             orig_cmd = ["/run_bin.sh", str(orig_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(orig_cmd)
-                proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
+                orig_res = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
@@ -76,7 +76,6 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
                     }, f)
                 break
 
-            orig_res = proc.stdout
             orig_returncode = proc.returncode
             if orig_returncode != 0:
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
@@ -92,7 +91,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             mut_cmd = ["/run_bin.sh", str(mut_bin)] + shlex.split(input_args)
             try:
                 proc = run_cmd(mut_cmd)
-                proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
+                mut_res = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
@@ -107,9 +106,7 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             else:
                 covered = record_covered(result_dir, triggered_folder, covered, path)
 
-                mut_res = proc.stdout
                 mut_res = mut_res.replace(TRIGGERED_STR, b"")
-                mut_res = mut_res
                 mut_returncode = proc.returncode
 
                 if (orig_returncode != mut_returncode):
