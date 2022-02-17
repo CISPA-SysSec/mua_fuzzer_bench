@@ -63,6 +63,8 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             try:
                 proc = run_cmd(orig_cmd)
             except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
                     json.dump({
                         'result': 'orig_timeout',
@@ -88,6 +90,8 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
             try:
                 proc = run_cmd(mut_cmd)
             except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
                 covered = record_covered(result_dir, triggered_folder, covered, path)
                 with tempfile.NamedTemporaryFile(mode="wt", dir=result_dir, suffix=".json", delete=False) as f:
                     json.dump({
