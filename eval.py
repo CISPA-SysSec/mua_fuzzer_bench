@@ -2885,12 +2885,15 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     pass
         except Exception as err:
             logger.info(err)
-        try:
-            # Also remove parent if it doesn't contain anything anymore.
-            # That is all runs for this mutation are done.
-            workdir.parent.rmdir()
-        except Exception:
-            pass
+
+        parent_dirs = workdir.parents
+        for parent_dir in parent_dirs:
+            try:
+                # Also remove parents if it doesn't contain anything anymore.
+                # That is all runs for this mutation are done.
+                parent_dir.rmdir()
+            except Exception:
+                break
 
 
 def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
