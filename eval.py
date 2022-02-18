@@ -1444,7 +1444,10 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
                 if sub_res.get('path') is not None:
                     sub_res['path'] = Path(sub_res['path']).resolve()
 
-    logger.debug(f"Check crashing inputs took: {time.time() - check_start_time}")
+    total_check_time = time.time() - check_start_time
+    if total_check_time > 1:
+        # log when crashing check takes more than one second
+        logger.debug(f"Check crashing inputs took: {total_check_time:.2f}")
 
     return res
 
