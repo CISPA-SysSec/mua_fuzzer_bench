@@ -2804,6 +2804,9 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                                 record_seed_result(seed_covered, seed_timeout,
                                     prog, data['fuzzer'], data['run_ctr'], mut_id)
 
+                                covered_time = has_result(mut_id, results, ['covered', 'killed'])
+                                if covered_time:
+                                    covered_time = covered_time.get('time', None)
                                 record_run_done(plot_data, covered_time, total_time,
                                     prog, data['fuzzer'], data['run_ctr'], mut_id)
 
