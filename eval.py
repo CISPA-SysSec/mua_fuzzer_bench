@@ -1429,6 +1429,7 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
             tmp_in_dir = Path(tmp_in_dir)
             assert tmp_in_dir.is_dir()
             for path in new_files:
+                # mark path as seen
                 crashing_inputs[path] = {}
 
                 sym_path = tmp_in_dir/str(file_ctr)
@@ -1439,7 +1440,8 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
                 assert str(sym_path.resolve()) == path_full
 
             res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container)
-            new_res = []
+            
+            # update from the symlink paths to the actual file paths
             for sub_res in res.get('results', []):
                 if sub_res.get('path') is not None:
                     sub_res['path'] = Path(sub_res['path']).resolve()
@@ -1447,7 +1449,7 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
     total_check_time = time.time() - check_start_time
     if total_check_time > 1:
         # log when crashing check takes more than one second
-        logger.debug(f"Check crashing inputs took: {total_check_time:.2f}")
+        logger.debug(f"Check crashing inputs ({new_files}) took: {total_check_time:.2f}")
 
     return res
 
@@ -1461,8 +1463,6 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
     result_dir = Path(workdir)/'crash_check'
     result_dir.mkdir(parents=True, exist_ok=True)
     for rf in result_dir.glob("*"):
-        if rf.name == 'seen_seeds.json':
-            continue
         rf.unlink()
 
     # do an initial check to see if the seed files are already crashing
@@ -1487,8 +1487,6 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
     results = []
     multi = []
     for rf in result_dir.glob("*"):
-        if rf.name == 'seen_seeds.json':
-            continue
         with open(rf, "rt") as f:
             res = json.load(f)
         res['time'] = cur_time
@@ -3094,7 +3092,7 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                     '--workdir', IN_DOCKER_WORKDIR,
                     '--results', str(result_dir),
                 ],
-                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=60*60)
+                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=5*60)
 
     return proc['returncode'], proc['out']
 
