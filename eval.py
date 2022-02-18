@@ -2818,7 +2818,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                                 logger.debug(msg)
                         else:
                             # Multiple mutations, split up and try again
-                            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace} Killed run result but no killed mutations found, retrying ...")
+                            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Killed run result but no killed mutations found, retrying ...")
                             chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
