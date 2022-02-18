@@ -2868,49 +2868,50 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                 record_supermutant_multi(stats, mut_data, results)
 
-                all_mutation_ids = mut_data['mutation_ids']
-                assert len(all_mutation_ids) > 0
+                orig_timeout = any(rr['result'] == 'orig_timeout' for rr in results)
+                if orig_timeout:
+                    logger.warning(f"Original binary timed out, retrying... Consider fixing the subject.")
+                    recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data['mutation_ids'])
+                else:
+                    all_mutation_ids = mut_data['mutation_ids']
+                    assert len(all_mutation_ids) > 0
 
-                for mut_id in all_mutation_ids:
-                    # no mutation should have been killed or there is a bug
-                    if has_result(mut_id, results, ['killed', 'killed_by_seed', 'timeout', 'timeout_by_seed']):
-                        raise ValueError("Killed result in completed run.", results)
-                    # record covered by seed
-                    seed_covered = has_result(mut_id, results, ['covered_by_seed'])
-                    if seed_covered:
-                        seed_covered = seed_covered.get('time', None)
-                    seed_timeout_time = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
-                    stats.new_seeds_executed(
-                        EXEC_ID,
-                        prog,
-                        mut_id,
-                        data['run_ctr'],
-                        data['fuzzer'],
-                        seed_covered,
-                        seed_timeout_time,
-                        None)
+                    for mut_id in all_mutation_ids:
+                        # no mutation should have been killed or there is a bug
+                        if has_result(mut_id, results, ['killed', 'killed_by_seed', 'timeout', 'timeout_by_seed']):
+                            raise ValueError("Killed result in completed run.", results)
+                        # record covered by seed
+                        seed_covered = has_result(mut_id, results, ['covered_by_seed'])
+                        if seed_covered:
+                            seed_covered = seed_covered.get('time', None)
+                        seed_timeout_time = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+                        stats.new_seeds_executed(
+                            EXEC_ID,
+                            prog,
+                            mut_id,
+                            data['run_ctr'],
+                            data['fuzzer'],
+                            seed_covered,
+                            seed_timeout_time,
+                            None)
 
-                    # record covered
-                    covered_time = has_result(mut_id, results, ['covered'])
-                    if covered_time:
-                        covered_time = covered_time.get('time', None)
-                    stats.new_run_executed(
-                        plot_data,
-                        EXEC_ID,
-                        data['run_ctr'],
-                        prog,
-                        mut_id,
-                        data['fuzzer'],
-                        covered_time,
-                        total_time)
+                        # record covered
+                        covered_time = has_result(mut_id, results, ['covered'])
+                        if covered_time:
+                            covered_time = covered_time.get('time', None)
+                        stats.new_run_executed(
+                            plot_data,
+                            EXEC_ID,
+                            data['run_ctr'],
+                            prog,
+                            mut_id,
+                            data['fuzzer'],
+                            covered_time,
+                            total_time)
 
-                    orig_timeout = has_result(mut_id, results, ['orig_timeout'])
-                    if orig_timeout:
-                        raise ValueError('Original binary timed out!')
-
-                    result_types = set(rr['result'] for rr in results)
-                    unknown_result_types = result_types - HANDLED_RESULT_TYPES
-                    assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
+                        result_types = set(rr['result'] for rr in results)
+                        unknown_result_types = result_types - HANDLED_RESULT_TYPES
+                        assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
         else:
             raise ValueError(f"Unknown run result type: {result_type}")
         active_mutants[prog_bc]['killed'] = True
