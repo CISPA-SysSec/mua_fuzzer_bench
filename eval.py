@@ -1332,25 +1332,25 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         container_name = container.name
 
     sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
-    proc = subprocess.run(sub_cmd,
+    proc = subprocess.Popen(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout,
             close_fds=True,
             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-    if raise_on_error and proc.returncode != 0:
-        # logger.info("process error: =======================",
-        #         proc.args,
-        #         proc.stdout.decode(),
-        #         sep="\n")
-        try:
-            stdout = proc.stdout.decode()
-        except UnicodeDecodeError:
-            stdout = str(proc.stdout)
-        raise ValueError(f"exec_in_docker failed\nexec_code: {proc.returncode}\n{stdout}")
     try:
-        stdout = proc.stdout.decode()
+        stdout, _ = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, _ = proc.communicate()
+        
+    try:
+        stdout = stdout.decode()
     except UnicodeDecodeError:
-        stdout = proc.stdout
+        stdout = str(stdout)
+
+    if raise_on_error and proc.returncode != 0:
+        logger.debug(f"process error:", proc.args, stdout)
+        raise ValueError(f"exec_in_docker failed\nexec_code: {proc.returncode}\n{stdout}")
+    
     return {'returncode': proc.returncode, 'out': stdout}
         ##################
         # alternative version using docker lib, this errors with lots of docker containers
@@ -1469,7 +1469,7 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
             'total_time': cur_time,
             'covered_file_seen': None,
             'timed_out': True,
-            'all_logs': []
+            'all_logs': out
         }
     if returncode != 0:
         return {
@@ -2617,6 +2617,49 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             else:
                 logger.info(f"! no more mutations")
         elif result_type == 'killed':
+            def record_seed_result(seed_covered, seed_timeout, prog, fuzzer, run_ctr, mut_id):
+                stats.new_seeds_executed(
+                    EXEC_ID,
+                    prog,
+                    mut_id,
+                    run_ctr,
+                    fuzzer,
+                    seed_covered,
+                    seed_timeout,
+                    None)
+
+            def record_run_done(plot_data, covered_time, total_time, prog, fuzzer, run_ctr, mut_id):
+                stats.new_run_executed(
+                    plot_data,
+                    EXEC_ID,
+                    run_ctr,
+                    prog,
+                    mut_id,
+                    fuzzer,
+                    covered_time,
+                    total_time)
+
+            def record_run_timeout(time, path, orig_cmd, mut_cmd, prog, fuzzer, run_ctr, mut_id):
+                data = {
+                    'time': time,
+                    'path': path,
+                    'orig_returncode': None,
+                    'mut_returncode': None,
+                    'orig_cmd': orig_cmd,
+                    'mut_cmd': mut_cmd,
+                    'orig_res': None,
+                    'mut_res': None,
+                    'orig_timeout': None,
+                    'timeout': 1
+                }
+                stats.new_crashing_inputs(
+                    [data],
+                    EXEC_ID,
+                    prog,
+                    mut_id,
+                    run_ctr,
+                    fuzzer)
+
             logger.info(f"= run (killed): {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
             # killed by the fuzzer (but not already by seeds)
             # but the run is not completed, filter out the killed mutations and try again with remaining
@@ -2693,32 +2736,17 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         if seed_covered:
                             seed_covered = seed_covered.get('time', None)
                         seed_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
-                        stats.new_seeds_executed(
-                            EXEC_ID,
-                            prog,
-                            mut_id,
-                            data['run_ctr'],
-                            data['fuzzer'],
-                            seed_covered,
-                            seed_timeout,
-                            None)
+                        record_seed_result(seed_covered, seed_timeout, prog, data['fuzzer'], data['run_ctr'], mut_id)
 
                         # record covered
                         covered_time = has_result(mut_id, results, ['covered', 'killed'])
                         if covered_time:
                             covered_time = covered_time.get('time', None)
-                        stats.new_run_executed(
-                            plot_data,
-                            EXEC_ID,
-                            data['run_ctr'],
-                            prog,
-                            mut_id,
-                            data['fuzzer'],
-                            covered_time,
-                            total_time)
+                        record_run_done(plot_data, covered_time, total_time, prog, data['fuzzer'], data['run_ctr'], mut_id)
 
                         # record killed or timeout
                         if killed:
+                            killed = copy.deepcopy(killed)
                             killed['orig_timeout'] = None
                             killed['timeout'] = None
                             stats.new_crashing_inputs(
@@ -2729,38 +2757,50 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                                 data['run_ctr'],
                                 data['fuzzer'])
                         elif timeout:
-                            timeout['result'] = 'killed'
-                            timeout['orig_returncode'] = None
-                            timeout['mut_returncode'] = None
-                            if 'orig_cmd' not in timeout:
-                                timeout['orig_cmd'] = []
-                            if 'mut_cmd' not in timeout:
-                                timeout['mut_cmd'] = []
-                            timeout['orig_res'] = None
-                            timeout['mut_res'] = None
-                            timeout['orig_timeout'] = None
-                            timeout['timeout'] = 1
-                            stats.new_crashing_inputs(
-                                [timeout],
-                                EXEC_ID,
-                                prog,
-                                mut_id,
-                                data['run_ctr'],
-                                data['fuzzer'])
+                            record_run_timeout(timeout['time'], timeout['path'], [], timeout['args'],
+                            prog, data['fuzzer'], data['run_ctr'], mut_id)
                             
                         result_types = set(rr['result'] for rr in results)
                         unknown_result_types = result_types - HANDLED_RESULT_TYPES
                         assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
 
                     if not killed_mutants:
-                        try:
-                            results_str = '\n'.join(str(rr) for rr in results)
-                            raise ValueError(f"Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}")
-                        except Exception as e:
-                            trace = traceback.format_exc()
-                            for mut_id in mut_data['mutation_ids']:
-                                stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
-                                logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
+                        if len(all_mutation_ids) == 1:
+                            # There is only one mutation that could have been found.
+                            # If there is a timeout result mark that mutation as killed, we just didn't get the triggered file.
+                            timeout = None
+                            for rr in results:
+                                if rr['result'] == 'timeout':
+                                    timeout = rr
+                                    break
+                            if timeout:
+                                mut_id = all_mutation_ids[0]
+                                
+                                seed_covered = has_result(mut_id, results, ['covered_by_seed'])
+                                if seed_covered:
+                                    seed_covered = seed_covered.get('time', None)
+                                seed_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+                                record_seed_result(seed_covered, seed_timeout,
+                                    prog, data['fuzzer'], data['run_ctr'], mut_id)
+
+                                record_run_done(plot_data, covered_time, total_time,
+                                    prog, data['fuzzer'], data['run_ctr'], mut_id)
+
+                                record_run_timeout(timeout['time'], timeout['path'], [], timeout['args'],
+                                    prog, data['fuzzer'], data['run_ctr'], mut_id)
+                            else:
+                                # No timeout seen, mark run as crashed
+                                results_str = '\n'.join(str(rr) for rr in results)
+                                msg = f'Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}'
+                                stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], msg)
+                                logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Killed run result but no killed mutations found.")
+                                logger.debug(msg)
+                        else:
+                            # Multiple mutations, split up and try again
+                            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace} Killed run result but no killed mutations found, retrying ...")
+                            chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
+                            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
+                            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
                     else:
                         # find and start the new supermutant with the remaining mutations
                         cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
