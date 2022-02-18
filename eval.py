@@ -2225,6 +2225,23 @@ def get_supermutations(prog_info, mutations):
             assert ff in unreachable_functions
             new_supermutants[ii].append(mm)
 
+    # if the number of mutants per supermutant is too large, split them up
+    MAX_ACCEPTABLE_SUPERMUTANT_SIZE = 200
+    found_too_large = True
+    while found_too_large:
+        found_too_large = False
+        for ii in range(len(new_supermutants)):
+            ns = new_supermutants[ii]
+            if len(ns) > MAX_ACCEPTABLE_SUPERMUTANT_SIZE:
+                found_too_large = True
+                chunk_0 = ns[:len(ns)//2]
+                chunk_1 = ns[len(ns)//2:]
+                new_supermutants[ii] = chunk_0
+                new_supermutants.append(chunk_1)
+    
+    for ns in new_supermutants:
+        assert len(ns) <= MAX_ACCEPTABLE_SUPERMUTANT_SIZE
+
     logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
     supermutants.extend(new_supermutants)
 
