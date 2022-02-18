@@ -1419,6 +1419,7 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
                           workdir, cur_time):
     if not crash_dir.is_dir():
         return { 'result': 'check_done', 'results': [] }
+    check_start_time = time.time()
 
     res = {'result': 'check_done', 'results': []}
     file_ctr = 0
@@ -1442,6 +1443,8 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
             for sub_res in res.get('results', []):
                 if sub_res.get('path') is not None:
                     sub_res['path'] = Path(sub_res['path']).resolve()
+
+    logger.debug(f"Check crashing inputs took: {time.time() - check_start_time}")
 
     return res
 
@@ -2774,7 +2777,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                                     timeout = rr
                                     break
                             if timeout:
-                                mut_id = all_mutation_ids[0]
+                                mut_id = list(all_mutation_ids)[0]
                                 
                                 seed_covered = has_result(mut_id, results, ['covered_by_seed'])
                                 if seed_covered:
