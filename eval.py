@@ -1455,6 +1455,8 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
     result_dir = Path(workdir)/'crash_check'
     result_dir.mkdir(parents=True, exist_ok=True)
     for rf in result_dir.glob("*"):
+        if rf.name == 'seen_seeds.json':
+            continue
         rf.unlink()
 
     # do an initial check to see if the seed files are already crashing
@@ -1479,6 +1481,8 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
     results = []
     multi = []
     for rf in result_dir.glob("*"):
+        if rf.name == 'seen_seeds.json':
+            continue
         with open(rf, "rt") as f:
             res = json.load(f)
         res['time'] = cur_time

@@ -49,8 +49,18 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
     covered = set()
     killed = set()
     seeds = Path(seeds)
+
+    seen_seeds_file = Path(result_dir).joinpath('seen_seeds.json')
+    try:
+        seen_seeds = set(json.loads(seen_seeds_file.read_text()))
+    except FileNotFoundError:
+        seen_seeds_file.touch()
+        seen_seeds = set()
+    
     for path in list(str(pp) for pp in seeds.glob("**/*")):
         path = Path(path)
+        if str(path) in seen_seeds:
+            continue
         if path.is_file():
             # clean up triggered folder dir
             for tf in triggered_folder.glob("*"):
@@ -128,6 +138,8 @@ def run_seeds(seeds, orig_bin, mut_bin, args, workdir, result_dir):
                                     'mut_res': str(mut_res),
                                     'num_triggered': len(covered),
                                 }, f)
+        seen_seeds.add(str(path))
+    seen_seeds_file.write_text(json.dumps(list(seen_seeds)))
 
 
 def main():
