@@ -3121,7 +3121,7 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                     '--workdir', IN_DOCKER_WORKDIR,
                     '--results', str(result_dir),
                 ],
-                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=5*60)
+                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=120*60)
 
     return proc['returncode'], proc['out'], proc['timed_out']
 
