@@ -1331,6 +1331,7 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
     else:
         container_name = container.name
 
+    timed_out = False
     sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
     proc = subprocess.Popen(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -1341,6 +1342,7 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
     except subprocess.TimeoutExpired:
         proc.kill()
         stdout, _ = proc.communicate()
+        timed_out = True
         
     try:
         stdout = stdout.decode()
@@ -1348,10 +1350,10 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         stdout = str(stdout)
 
     if raise_on_error and proc.returncode != 0:
-        logger.debug(f"process error:", proc.args, stdout)
-        raise ValueError(f"exec_in_docker failed\nexec_code: {proc.returncode}\n{stdout}")
+        logger.debug(f"process error (timed out: {timed_out}):", proc.args, stdout)
+        raise ValueError(f"exec_in_docker failed\ntimed out: {timed_out}\nexec_code: {proc.returncode}\n{stdout}")
     
-    return {'returncode': proc.returncode, 'out': stdout}
+    return {'returncode': proc.returncode, 'out': stdout, 'timed_out': timed_out}
         ##################
         # alternative version using docker lib, this errors with lots of docker containers
         # https://github.com/docker/docker-py/issues/2278
@@ -1466,16 +1468,15 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
         rf.unlink()
 
     # do an initial check to see if the seed files are already crashing
-    try:
-        (returncode, out) = check_crashing(
-            testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
-    except subprocess.TimeoutExpired:
+    (returncode, out, timed_out) = check_crashing(
+        testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
+    if timed_out:
         return {
             'result': 'timeout_check_crashing',
             'total_time': cur_time,
             'covered_file_seen': None,
             'timed_out': True,
-            'all_logs': out
+            'all_logs': out[-1000:]
         }
     if returncode != 0:
         return {
@@ -2575,7 +2576,14 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
     except Exception:
         # if there was an exception record it
         trace = traceback.format_exc()
-        for mut_id in mut_data['mutation_ids']:
+        mutation_ids = mut_data['mutation_ids']
+        if len(mutation_ids) > 1:
+            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Run crashed, retrying with less mutations ...")
+            chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
+        else:
+            mut_id = list(mutation_ids)[0]
             stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
             logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
     else:
@@ -3115,7 +3123,7 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                 ],
                 ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=5*60)
 
-    return proc['returncode'], proc['out']
+    return proc['returncode'], proc['out'], proc['timed_out']
 
 
 def prepare_mutation(core_to_use, data):
@@ -4834,7 +4842,7 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
             timeout=60*15)
-        if run['returncode'] != 0:
+        if run['timed_out'] or run['returncode'] != 0:
             logger.info(f"Got returncode != 0: {run['returncode']}")
             raise CoverageException(run)
         # get a list of all mutation ids from triggered folder
