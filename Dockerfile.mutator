@@ -39,7 +39,8 @@ RUN apt-get update -y && \
         libdw-dev \
         libidn2-dev \
         libidn2-0 \
-        idn2
+        idn2 \
+        libstdc++6
 
 
 # install kcov

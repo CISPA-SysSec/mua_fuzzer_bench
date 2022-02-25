@@ -242,6 +242,7 @@ PROGRAMS = {
         "bc_compile_args": [
         ],
         "bin_compile_args": [
+            {'val': '-lstdc++', 'action': None},
         ],
         "is_cpp": False,
         "orig_bin": str(Path("tmp/samples/libevent/out/parse_query_fuzzer")),
@@ -1973,7 +1974,7 @@ def instrument_prog(container, prog_info):
             *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
             "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info['bin_compile_args']), '/home/mutator')]
-    run_exec_in_container(container.name, True, args)
+    print(run_exec_in_container(container.name, True, args))
 
 
 # Find functions that are reachable from fnA
