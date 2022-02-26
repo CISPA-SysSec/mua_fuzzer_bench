@@ -398,15 +398,15 @@ UnInitLocalVariables::find(const Instruction *instr, int id, IRBuilder<> *builde
                         to_delete.insert(instrUser);
                         BasicBlock::iterator itr_bb(instrUser);
                         IRBuilder<> userBuilder(instrUser->getParent(), itr_bb);
-                          //PatterIDCounter - 1 since it was already increased in getIdentifierString_unsignaled
-                        addMutationFoundSignal(&userBuilder, M, PatternIDCounter - 1);
-                        if (!found) {
-                            // there must be at least one store user before we can put the mutation into the results
-                            results.push_back(getIdentifierString_unsignaled(instr, id, DELETE_LOCAL_STORE, j));
-                            found = true;
-                        }
+                        addMutationFoundSignal(&userBuilder, M, PatternIDCounter);
+                        // signal that at least one position to mutate was found for later adding the respective mutation to the results
+                        found = true;
                     }
                 }
+            }
+            if (found) {
+                // there must be at least one store user before we can put the mutation into the results
+                results.push_back(getIdentifierString_unsignaled(instr, id, DELETE_LOCAL_STORE, j));
             }
         }
     }
