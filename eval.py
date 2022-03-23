@@ -207,22 +207,22 @@ PROGRAMS = {
         "omit_functions": ["LLVMFuzzerTestOneInput"],
      },
      "curl": {
-         "bc_compile_args": [
-            {'val': "-L", 'action': None},
-            {'val': "tmp/samples/curl/out/lib/", 'action': 'prefix_workdir'},
-            {'val': "-lpthread", 'action': None},
-            {'val': "-lidn2", 'action': None},
-            {'val': "-lz", 'action': None},
-            {'val': "-lnghttp2", 'action': None},
-         ],
-         "bin_compile_args": [
-         ],
-         "is_cpp": False,
-         "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
-         "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
-         "name": "curl",
-         "path": "samples/curl/",
-         "dict": None,
+        "bc_compile_args": [
+           {'val': "-L", 'action': None},
+           {'val': "tmp/samples/curl/out/lib/", 'action': 'prefix_workdir'},
+           {'val': "-lpthread", 'action': None},
+           {'val': "-lidn2", 'action': None},
+           {'val': "-lnghttp2", 'action': None},
+           {'val': "-lz", 'action': None},
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": False,
+        "orig_bin": str(Path("tmp/samples/curl/out/curl_fuzzer")),
+        "orig_bc": str(Path("tmp/samples/curl/out/curl.bc")),
+        "name": "curl",
+        "path": "samples/curl/",
+        "dict": None,
         "omit_functions": ["LLVMFuzzerTestOneInput"],
      },
     "guetzli": {
@@ -1716,7 +1716,6 @@ def base_eval(run_data, docker_image):
                 "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
             },
             working_dir=str(workdir),
-            mem_limit="10g",
             mem_swappiness=0,
             log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
                 config={'max-size': '10m'}),
@@ -1974,7 +1973,11 @@ def instrument_prog(container, prog_info):
             *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
             "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info['bin_compile_args']), '/home/mutator')]
-    print(run_exec_in_container(container.name, True, args))
+    try:
+        run_exec_in_container(container.name, True, args)
+    except Exception as e:
+        logger.warning(f"Exception during instrumenting {e}")
+        raise e
 
 
 # Find functions that are reachable from fnA
@@ -3496,7 +3499,7 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
             # Gather all data to start a seed gathering run
 
             # Compile arguments
-            compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+            compile_args = prog_info['bc_compile_args'] + prog_info['bin_compile_args']
 
             mut_data = {
                 'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
@@ -3566,6 +3569,7 @@ def handle_seed_run_result(run_future, run_data, all_runs):
         with open(workdir_exception_file, 'wt') as f:
             f.write(str(e))
             f.write(str(trace))
+            logger.debug(f"{e}\n{trace}")
     else:
         errored_file = run_result.get('file_error')
         should_restart = run_result.get('restart')
@@ -3595,7 +3599,7 @@ def seed_gathering_run(run_data, docker_image):
     seed_base_dir = run_data['seed_base_dir']
     workdir = run_data['workdir']
     orig_bc = mut_data['orig_bc']
-    compile_args = mut_data['compile_args']
+    compile_args = build_compile_args(mut_data['compile_args'], IN_DOCKER_WORKDIR)
     seeds = get_seed_dir(seed_base_dir, mut_data['prog'], run_data['fuzzer'])
     dictionary = mut_data['dict']
     core_to_use = run_data['used_core']
@@ -3672,6 +3676,7 @@ def seed_gathering_run(run_data, docker_image):
 
     if should_run and time.time() - timeout < start_time:
         # The runtime is less than the timeout, something went wrong.
+        logger.warning(f"{''.join(all_logs)}")
         raise RuntimeError(''.join(all_logs))
 
     return {
@@ -4028,6 +4033,8 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         sr_minimized_dir.mkdir(parents=True)
         sr['minimized_dir'] = str(sr_minimized_dir)
         minimize_seeds_one(minimize_shm_dir, sr_prog, sr_fuzzer, sr_seed_dir, sr_minimized_dir)
+        minimized_files = list(Path(sr['minimized_dir']).glob("*"))
+        sr['num_seeds_minimized'] = len(minimized_files)
 
 
     with start_mutation_container(None, None) as mutator:
@@ -4054,8 +4061,12 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
                 covered_mutations = measure_mutation_coverage(mutator, PROGRAMS[prog], sr_seed_dir)
             except CoverageException as e:
                 exception_path = kcov_res_dir/f"exception_{sr['prog']}_{sr['fuzzer']}_{sr['instance']}"
+                exception_message = f"{e}\n{traceback.format_exc()}"
+                logger.warning(f"Got exception, writing exception to {exception_path}")
+                logger.debug(f"{exception_message}")
                 with open(exception_path, 'wt') as f:
-                    f.write(str(e))
+                    f.write(exception_message)
+                continue
 
             sr['covered_mutations'] = covered_mutations
 
@@ -4066,7 +4077,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             sr['kcov_res'] = kcov_res
 
             logger.info(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
-                  f"created {sr['num_seeds']} seeds inputs covering {len(covered_mutations)} mutations")
+                  f"created {sr['num_seeds_minimized']} seeds inputs covering {len(covered_mutations)} mutations")
 
     runs_by_prog_fuzzer = defaultdict(list)
     for sr in seed_runs:
@@ -4082,11 +4093,13 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         median_run_dir = median_runs_base_dir/mr['prog']/mr['fuzzer']
         median_run_dir.mkdir(parents=True)
 
-        for si in Path(mr['minimized_dir']).glob("*"):
+        minimized_files = list(Path(mr['minimized_dir']).glob("*"))
+        for si in minimized_files:
             shutil.copyfile(si, median_run_dir/si.name)
 
     with open(destination_dir/'info.json', 'wt') as f:
         json.dump(seed_runs, f)
+    logger.info(f"Done gathering seeds.")
 
 
 def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances):
@@ -4872,8 +4885,8 @@ def seed_minimization_run(run_data, docker_image):
         docker_image, # the image
         [
             "/home/user/minimize.sh",
-            str(compile_args),
             str(orig_bc),
+            str(compile_args),
             str(seeds_in),
             str(seeds_out),
         ], # the arguments
@@ -4957,7 +4970,9 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
         seed_in_tmp_dir.mkdir()
         seed_out_tmp_dir = active_dir/"seeds_out"
         seed_out_tmp_dir.mkdir()
-        for ff in in_path.glob("*"):
+
+        in_files = list(in_path.glob("*"))
+        for ff in in_files:
             if ff.is_dir():
                 raise ValueError("Did not expect any directories in the seed path, something is wrong.")
             shutil.copy2(ff, seed_in_tmp_dir)
@@ -5175,7 +5190,13 @@ def get_kcov(prog, seed_path, res_path):
         all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
 
         res_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(workdir/f"result.json", res_path)
+        try:
+            shutil.copy(workdir/f"result.json", res_path)
+        except FileNotFoundError as e:
+            logger.warning("Failed to get results file.")
+            logs_message = ''.join(all_logs)
+            logger.warning(f"{logs_message}")
+            raise e
 
 def seed_coverage(seed_path, res_path, prog):
     # prepare environment
@@ -5186,7 +5207,7 @@ def seed_coverage(seed_path, res_path, prog):
     build_subject_docker_images([prog])
 
     try:
-        prog_info = PROGRAMS[prog]
+        _ = PROGRAMS[prog]
     except Exception as err:
         logger.info(err)
         logger.info(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")

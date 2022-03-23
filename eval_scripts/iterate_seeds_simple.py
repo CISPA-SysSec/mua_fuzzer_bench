@@ -10,6 +10,7 @@ from pathlib import Path
 
 TRIGGERED_STR = b"Triggered!\r\n"
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 30
+MAX_RETRY = 3
 
 
 def run_cmd(cmd):
@@ -37,14 +38,24 @@ def run_seeds(seeds, binary, args, workdir):
 
             # Run input on binary
             orig_cmd = ["/home/mutator/run_bin.sh", str(binary)] + shlex.split(input_args)
-            proc = run_cmd(orig_cmd)
-            orig_res = proc.stdout
-            orig_returncode = proc.returncode
-            if orig_returncode != 0:
-                print("orig bin returncode != 0, crashing base bin:")
-                print("args:", orig_cmd, "returncode:", orig_returncode)
-                print(orig_res.read())
-                sys.exit(2)
+            retry = 0
+            while True:
+                proc = run_cmd(orig_cmd)
+                orig_res = proc.stdout
+                orig_returncode = proc.returncode
+                if orig_returncode != 0:
+                    if retry < MAX_RETRY:
+                        # retry
+                        retry += 1
+                        continue
+                    else:
+                        print("orig bin returncode != 0, crashing base bin:")
+                        print("args:", orig_cmd, "returncode:", orig_returncode)
+                        print(orig_res.read())
+                        sys.exit(2)
+                else:
+                    # Successful run
+                    break
 
 
 def main():
