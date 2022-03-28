@@ -178,4 +178,5 @@ eval/build_test_suite.py.old
 eval/build.sh.old
 seed_gathering.log
 /data/
+/seeds/
 eval.log

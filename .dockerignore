@@ -1,4 +1,6 @@
 cov/
 tmp/
+seeds/
+data/
 !tmp/lib
 
