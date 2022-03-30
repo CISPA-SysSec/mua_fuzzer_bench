@@ -4855,7 +4855,7 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
                 '--workdir', '/home/mutator'
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
-            timeout=60*15)
+            timeout=60*60*4)
         if run['timed_out'] or run['returncode'] != 0:
             logger.info(f"Got returncode != 0: {run['returncode']}")
             raise CoverageException(run)
