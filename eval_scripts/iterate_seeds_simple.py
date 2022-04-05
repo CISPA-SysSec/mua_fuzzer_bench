@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 TRIGGERED_STR = b"Triggered!\r\n"
-MAX_RUN_EXEC_IN_CONTAINER_TIME = 30
+MAX_RUN_EXEC_IN_CONTAINER_TIME = 300
 MAX_RETRY = 3
 
 
@@ -20,6 +20,7 @@ def run_cmd(cmd):
     try:
         proc.wait(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME)
     except subprocess.TimeoutExpired:
+        print("timeout")
         proc.kill()
         proc.wait()
     return proc
