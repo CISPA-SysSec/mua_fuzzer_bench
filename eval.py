@@ -4294,7 +4294,10 @@ def prog_stats(con):
 
 def latex_stats(out_dir, con):
     def value_to_file(stats, name, path):
+        print(name)
+        print(stats[name])
         val = stats[name].unique()
+        print(val)
         assert len(val) == 1
         val = val[0]
         path = path.with_stem(path.stem + "---" + name.replace('_', '-'))
@@ -4312,26 +4315,34 @@ def latex_stats(out_dir, con):
     old_float_format = pd.options.display.float_format
     pd.options.display.float_format = lambda x : '{:.0f}'.format(x) if round(x,0) == x else '{:,.2f}'.format(x)
 
+    # stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
+    # stats_total = pd.read_sql_query("SELECT * from interesting_run_results where confirmed is 1 group by exec_id, prog, mut_id, run_ctr", con)
+    # combined = len(stats_total)
+
+    # value_to_file(stats, 'done', out_dir/"fuzzer-stats.tex")
+    # value_to_file(stats, 'covered', out_dir/"fuzzer-stats.tex")
+    # value_to_file(stats, 'f_by_seed', out_dir/"fuzzer-stats.tex")
+    # value_to_file(stats, 'interesting', out_dir/"fuzzer-stats.tex")
+
+    # num_fuzzers = len(stats['fuzzer'])
+    # stats = stats[['fuzzer', 'f_by_f']]
+    # stats.loc[-1] = ['combined', combined]
+    # stats.index = stats.index + 1
+    # stats = stats.sort_index()
+    # write_table(stats.T.to_latex(
+    #     index=False,
+    #     header=False,
+    #     na_rep='---',
+    #     column_format="c"*(num_fuzzers+1),
+    # ), out_dir/"fuzzer-stats.tex")
+
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
-    stats_total = pd.read_sql_query("SELECT * from interesting_run_results where confirmed is 1 group by exec_id, prog, mut_id, run_ctr", con)
-    combined = len(stats_total)
-
-    value_to_file(stats, 'done', out_dir/"fuzzer-stats.tex")
-    value_to_file(stats, 'covered', out_dir/"fuzzer-stats.tex")
-    value_to_file(stats, 'f_by_seed', out_dir/"fuzzer-stats.tex")
-    value_to_file(stats, 'interesting', out_dir/"fuzzer-stats.tex")
-
-    num_fuzzers = len(stats['fuzzer'])
-    stats = stats[['fuzzer', 'f_by_f']]
-    stats.loc[-1] = ['combined', combined]
-    stats.index = stats.index + 1
-    stats = stats.sort_index()
-    write_table(stats.T.to_latex(
-        index=False,
-        header=False,
+    stats[['fuzzer', 'done', 'covered', 'c_by_seed', 'found', 'f_by_seed', 'f_by_f']].to_latex(
+        buf=out_dir/"fuzzer-stats.tex",
+        header=['prog', 'total', 'covered', 'by seed', 'found', 'by seed', 'by fuzzer'],
         na_rep='---',
-        column_format="c"*(num_fuzzers+1),
-    ), out_dir/"fuzzer-stats.tex")
+        index=False,
+    )
 
     stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
     stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
@@ -4367,7 +4378,6 @@ def latex_stats(out_dir, con):
         na_rep='---',
         index=False,
         column_format="p{.18\\textwidth}p{.4\\textwidth}p{.4\\textwidth}",
-        escape=False,
         longtable=True,
         multirow=True,
     )
@@ -4713,7 +4723,7 @@ def generate_plots(db_path, to_disk):
     import pandas as pd
     db_path = Path(db_path)
 
-    plot_dir = db_path.parent/f"plots_{db_path.stem}"
+    plot_dir = db_path.parent/"plots"
     if to_disk:
         shutil.rmtree(plot_dir, ignore_errors=True)
         plot_dir.mkdir(parents=True, exist_ok=True)

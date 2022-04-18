@@ -50,8 +50,11 @@ order by mut_type;
 DROP VIEW IF EXISTS distinct_seed_crashing_inputs;
 CREATE VIEW distinct_seed_crashing_inputs
 as
-select * from seed_crashing_inputs
-where orig_return_code != mut_return_code
+select substr(fuzzer_tmp, 0, instr(fuzzer_tmp, "/")) as fuzzer, *
+from (
+	select replace(path, "tmp/seeds_coverage/median_runs/" || prog || "/", "") as fuzzer_tmp, * from seed_crashing_inputs
+	where orig_return_code != mut_return_code
+)
 group by exec_id, prog, mutation_id;
 
 -- a distinct list of crashing inputs one for each prog, mutation_id, fuzzer if available
@@ -100,7 +103,7 @@ select
 	then 1 else 0 end
 	as found_by_seed,
 	
-	(ifnull(executed_seeds.total_time, 0) + ifnull(executed_runs.total_time, 0)) / 60 as total_time,
+	(ifnull(executed_seeds.total_time, 0) + ifnull(executed_runs.total_time, 0)) as total_time,
 	
 	case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed,
 	
@@ -120,7 +123,7 @@ select
 from all_runs
 left join executed_seeds using (exec_id, prog, run_ctr, fuzzer, mutation_id)
 left join executed_runs using (exec_id, prog, mutation_id, run_ctr, fuzzer)
-left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
+left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id, fuzzer) 
 left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)
 left join crashing_mutation_preparation using (exec_id, prog, mutation_id)
 left join run_crashed using (exec_id, prog, mutation_id, run_ctr, fuzzer)
@@ -374,7 +377,7 @@ select
 	   fuzzer,
 	   case when ifnull(dsci.time_found, dci.time_found) is not NULL then 1 else NULL end as confirmed
 from all_runs
-left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id) 
+left join distinct_seed_crashing_inputs as dsci using (exec_id, prog, mutation_id, fuzzer) 
 left join distinct_crashing_inputs as dci using (exec_id, prog, mutation_id, run_ctr, fuzzer)
 inner join mutations using (exec_id, prog, mutation_id)
 inner join completed_runs on
