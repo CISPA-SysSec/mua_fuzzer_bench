@@ -4292,49 +4292,89 @@ def prog_stats(con):
     res += stats.to_html()
     return res
 
-def latex_stats(out_dir, con):
-    def value_to_file(stats, name, path):
-        print(name)
-        print(stats[name])
-        val = stats[name].unique()
-        print(val)
-        assert len(val) == 1
-        val = val[0]
-        path = path.with_stem(path.stem + "---" + name.replace('_', '-'))
-        with open(path, 'w') as f:
-            f.write(str(val))
+def latex_stats_seeds(out_dir):
+    run_data = []
+    for res_json in Path("seeds/seeds_coverage/").glob("info_*.json"):
+        with open(res_json, 'rt') as f:
+            run_data.extend(json.load(f))
 
-    def write_table(latex, path):
-        latex = re.sub(r'\\(toprule|midrule|bottomrule)$', r'\\hline', latex, flags=re.M)
-        with open(path, 'w') as f:
-            f.write(latex)
+    bucketed = defaultdict(list)
+    for dd in run_data:
+        bucketed[(dd['prog'], dd['fuzzer'])].append(dd)
+
+    data = defaultdict(lambda: defaultdict(dict))
+    for pf, bb in bucketed.items():
+        sorted_bb = sorted(bb, key=lambda x: len(x['covered_mutations']))
+        median_bb = sorted_bb[len(sorted_bb)//2]
+        bb = median_bb
+        data[bb['prog']][bb['fuzzer']] = median_bb
+
+    all_progs = sorted(set(data.keys()))
+    all_fuzzers = sorted(set(kk for dd in data.values() for kk in dd.keys()))
+    
+    res_table = ""
+
+    all_fuzzers_str = ' & '.join(all_fuzzers)
+    res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
+    res_table += r"\midrule" + "\n"
+
+    for ii, pp in enumerate(all_progs):
+        f_line = rf"\multirow{{3}}{{*}}{{{pp}}} & F: &"
+        m_line = rf"                     & M: &"
+        l_line = rf"                     & L: &"
+
+        for ff in all_fuzzers:
+            fuzzer_res = data[pp][ff]
+            covered_mutations = len(fuzzer_res['covered_mutations'])
+            covered_lines = len(set(tuple(ll) for ll in fuzzer_res['kcov_res']['covered_lines']))
+            num_seeds = fuzzer_res['num_seeds_minimized']
+            f_line += f" & {num_seeds}"
+            m_line += f" & {covered_mutations}"
+            l_line += f" & {covered_lines}"
+
+        # max_num_mutations = "---"
+        # max_num_lines = "---"
+        # f_line += rf" & & \\"
+        # m_line += rf" & & {max_num_mutations} \\"
+        # l_line += rf" & & {max_num_lines} \\"
+
+        f_line += rf" \\"
+        m_line += rf" \\"
+        l_line += rf" \\"
+        res_table += f_line + "\n"
+        res_table += m_line + "\n"
+        res_table += l_line + "\n"
+        if ii < len(all_progs) - 1:
+            res_table += r"\cmidrule{4-7}" + "\n"
+
+    with open(out_dir/"seed-stats.tex", "wt") as f:
+        f.write(res_table)
+
+
+def latex_stats(out_dir, con):
+    # def value_to_file(stats, name, path):
+    #     print(name)
+    #     print(stats[name])
+    #     val = stats[name].unique()
+    #     print(val)
+    #     assert len(val) == 1
+    #     val = val[0]
+    #     path = path.with_stem(path.stem + "---" + name.replace('_', '-'))
+    #     with open(path, 'w') as f:
+    #         f.write(str(val))
+
+    # def write_table(latex, path):
+    #     latex = re.sub(r'\\(toprule|midrule|bottomrule)$', r'\\hline', latex, flags=re.M)
+    #     with open(path, 'w') as f:
+    #         f.write(latex)
 
     import pandas as pd
     logger.info(f"Writing latex tables to: {out_dir}")
 
+    latex_stats_seeds(out_dir)
+
     old_float_format = pd.options.display.float_format
     pd.options.display.float_format = lambda x : '{:.0f}'.format(x) if round(x,0) == x else '{:,.2f}'.format(x)
-
-    # stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
-    # stats_total = pd.read_sql_query("SELECT * from interesting_run_results where confirmed is 1 group by exec_id, prog, mut_id, run_ctr", con)
-    # combined = len(stats_total)
-
-    # value_to_file(stats, 'done', out_dir/"fuzzer-stats.tex")
-    # value_to_file(stats, 'covered', out_dir/"fuzzer-stats.tex")
-    # value_to_file(stats, 'f_by_seed', out_dir/"fuzzer-stats.tex")
-    # value_to_file(stats, 'interesting', out_dir/"fuzzer-stats.tex")
-
-    # num_fuzzers = len(stats['fuzzer'])
-    # stats = stats[['fuzzer', 'f_by_f']]
-    # stats.loc[-1] = ['combined', combined]
-    # stats.index = stats.index + 1
-    # stats = stats.sort_index()
-    # write_table(stats.T.to_latex(
-    #     index=False,
-    #     header=False,
-    #     na_rep='---',
-    #     column_format="c"*(num_fuzzers+1),
-    # ), out_dir/"fuzzer-stats.tex")
 
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
     stats[['fuzzer', 'done', 'covered', 'c_by_seed', 'found', 'f_by_seed', 'f_by_f']].to_latex(
@@ -4562,8 +4602,6 @@ def gather_plot_data(runs, run_results):
         import math
         if event.covered_file_seen is None or math.isnan(event.covered_file_seen):
             continue
-        if event.found_by_seed:
-            continue
         unique_events.append({
             'fuzzer': event.fuzzer,
             'prog': event.prog,
@@ -4574,10 +4612,10 @@ def gather_plot_data(runs, run_results):
         })
 
     for event in run_results.itertuples():
-        if event.found_by_seed:
-            continue
         if event.confirmed != 1:
             continue
+        # if event.found_by_seed:
+        #     continue
         unique_events.append({
             'fuzzer': event.fuzzer,
             'prog': event.prog,
@@ -4732,43 +4770,43 @@ def generate_plots(db_path, to_disk):
     con.isolation_level = None
     con.row_factory = sqlite3.Row
 
-    with open("eval.sql", "rt") as f:
-        cur = con.cursor()
-        cur.executescript(f.read())
+    # with open("eval.sql", "rt") as f:
+    #     cur = con.cursor()
+    #     cur.executescript(f.read())
 
     if to_disk:
         latex_stats(plot_dir, con)
 
     res = header()
-    logger.info("crashes")
-    res += error_stats(con)
-    logger.info("fuzzer stats")
-    res += fuzzer_stats(con)
-    logger.info("fuzzer prog stats")
-    res += fuzzer_prog_stats(con)
-    logger.info("mut stats")
-    res += mut_stats(con)
-    logger.info("prog stats")
-    res += prog_stats(con)
-    logger.info("afl stats")
-    res += aflpp_stats(con)
+    # logger.info("crashes")
+    # res += error_stats(con)
+    # logger.info("fuzzer stats")
+    # res += fuzzer_stats(con)
+    # logger.info("fuzzer prog stats")
+    # res += fuzzer_prog_stats(con)
+    # logger.info("mut stats")
+    # res += mut_stats(con)
+    # logger.info("prog stats")
+    # res += prog_stats(con)
+    # logger.info("afl stats")
+    # res += aflpp_stats(con)
 
-    logger.info("select mut_types")
-    mut_types = pd.read_sql_query("SELECT * from mut_types", con)
+    # logger.info("select mut_types")
+    # mut_types = pd.read_sql_query("SELECT * from mut_types", con)
     logger.info("select runs")
     runs = pd.read_sql_query("select * from run_results_by_mut_type_and_fuzzer", con)
     logger.info("select run_results")
     run_results = pd.read_sql_query("select * from run_results", con)
-    logger.info("select unique_finds")
-    unique_finds = pd.read_sql_query("select * from unique_finds", con)
-    #  logger.info("select unique_finds_overall")
-    #  unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
-    logger.info("select mutation_types")
-    mutation_info = pd.read_sql_query("select * from mutation_types", con)
+    # logger.info("select unique_finds")
+    # unique_finds = pd.read_sql_query("select * from unique_finds", con)
+    # #  logger.info("select unique_finds_overall")
+    # #  unique_finds_overall = pd.read_sql_query("select * from unique_finds_overall", con)
+    # logger.info("select mutation_types")
+    # mutation_info = pd.read_sql_query("select * from mutation_types", con)
 
-    res += "<h2>Plots</h2>"
-    res += "<h3>Overall Plots</h3>"
-    logger.info("overall")
+    # res += "<h2>Plots</h2>"
+    # res += "<h3>Overall Plots</h3>"
+    # logger.info("overall")
     total_plot_data = gather_plot_data(runs, run_results)
     if total_plot_data is not None:
         res += plot(plot_dir if to_disk else None, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
@@ -4778,21 +4816,21 @@ def generate_plots(db_path, to_disk):
     #  res += 'Left finds what upper does not.'
     #  res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
 
-    for mut_type in mut_types['mut_type']:
-        logger.info(mut_type)
-        res += create_mut_type_plot(plot_dir, mut_type,
-            runs[runs.mut_type == mut_type],
-            run_results[run_results.mut_type == mut_type],
-            unique_finds[unique_finds.mut_type == mut_type],
-            mutation_info[mutation_info.mut_type == mut_type],
-        )
-    res += footer()
+    # for mut_type in mut_types['mut_type']:
+    #     logger.info(mut_type)
+    #     res += create_mut_type_plot(plot_dir, mut_type,
+    #         runs[runs.mut_type == mut_type],
+    #         run_results[run_results.mut_type == mut_type],
+    #         unique_finds[unique_finds.mut_type == mut_type],
+    #         mutation_info[mutation_info.mut_type == mut_type],
+    #     )
+    # res += footer()
 
-    out_path = db_path.with_suffix(".html").resolve()
-    logger.info(f"Writing plots to: {out_path}")
-    with open(out_path, 'w') as f:
-        f.write(res)
-    logger.info(f"Open: file://{out_path}")
+    # out_path = db_path.with_suffix(".html").resolve()
+    # logger.info(f"Writing plots to: {out_path}")
+    # with open(out_path, 'w') as f:
+    #     f.write(res)
+    # logger.info(f"Open: file://{out_path}")
 
 
 def merge_dbs(out_path, in_paths):
