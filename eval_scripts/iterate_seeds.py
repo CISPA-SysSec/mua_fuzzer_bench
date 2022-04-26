@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 TRIGGERED_STR = b"Triggered!\r\n"
-MAX_RUN_EXEC_IN_CONTAINER_TIME = 2
+MAX_RUN_EXEC_IN_CONTAINER_TIME = int(os.getenv("MUT_MAX_RUN", "2"))
 
 
 def run_cmd(cmd):

@@ -1522,7 +1522,7 @@ def update_results(results, new_results, start_time):
 
     for nr in new_results:
         res = nr['result']
-        if res in ['orig_crash', 'orig_timeout']:
+        if res in ['orig_crash', 'orig_timeout', 'orig_timeout_by_seed']:
             key = (res, None)
         else:
             try:
@@ -2607,10 +2607,11 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             for sm in new_supermutants:
                 recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), sm)
         elif result_type == 'orig_timeout_by_seed':
-            record_supermutant_multi(stats, mut_data, run_result['results'])
+            # record_supermutant_multi(stats, mut_data, run_result['results'])
+            logger.info(f"! orig timeout by seed! {printable_m_id(mut_data)}")
             for mut_id in mut_data['mutation_ids']:
                 stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'],
-                    'orig timeout by seed!!!\n' + str(run_result.values()))
+                    'orig timeout by seed!!!\n' + str(run_result))
         elif result_type == 'retry':
             mut_data = copy.deepcopy(mut_data)
             del mut_data['check_run']
@@ -3116,6 +3117,9 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
 
     covered_dir = Path("/dev/shm/covered/")
     covered_dir.mkdir(parents=True, exist_ok=True)
+
+    max_runtime = 2 if not (WITH_ASAN or WITH_MSAN) else 20
+
     with tempfile.TemporaryDirectory(dir=covered_dir) as covered:
 
         proc = run_exec_in_container(testing_container.name, False,
@@ -3127,7 +3131,10 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                     '--workdir', IN_DOCKER_WORKDIR,
                     '--results', str(result_dir),
                 ],
-                ['--env', f"TRIGGERED_FOLDER={covered}"], timeout=120*60)
+                [
+                    '--env', f"TRIGGERED_FOLDER={covered}",
+                    '--env', f'MUT_MAX_RUN={max_runtime}'
+                ], timeout=120*60)
 
     return proc['returncode'], proc['out'], proc['timed_out']
 
@@ -3312,7 +3319,8 @@ def build_subject_docker_images(progs):
 
                 run_exec_in_container(build_container, True, [
                     'clang++' if prog_info['is_cpp'] else 'clang',
-                    '-fsanitize=address' if WITH_ASAN else '-fsanitize=memory',
+                    *(['-fsanitize=address'] if WITH_ASAN else []),
+                    *(['-fsanitize=memory'] if WITH_MSAN else []),
                     "-g", "-D_FORTIFY_SOURCE=0",
                     str(Path("/home/mutator", orig_bc)),
                     *shlex.split(compile_args),
