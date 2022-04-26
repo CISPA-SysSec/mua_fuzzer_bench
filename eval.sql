@@ -55,7 +55,7 @@ from (
 	select replace(path, "tmp/seeds_coverage/median_runs/" || prog || "/", "") as fuzzer_tmp, * from seed_crashing_inputs
 	where orig_return_code != mut_return_code
 )
-group by exec_id, prog, mutation_id;
+group by exec_id, prog, mutation_id, fuzzer;
 
 -- a distinct list of crashing inputs one for each prog, mutation_id, fuzzer if available
 DROP VIEW IF EXISTS distinct_crashing_inputs;

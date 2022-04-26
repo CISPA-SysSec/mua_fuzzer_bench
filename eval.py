@@ -4770,9 +4770,9 @@ def generate_plots(db_path, to_disk):
     con.isolation_level = None
     con.row_factory = sqlite3.Row
 
-    # with open("eval.sql", "rt") as f:
-    #     cur = con.cursor()
-    #     cur.executescript(f.read())
+    with open("eval.sql", "rt") as f:
+        cur = con.cursor()
+        cur.executescript(f.read())
 
     if to_disk:
         latex_stats(plot_dir, con)
