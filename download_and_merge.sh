@@ -44,12 +44,12 @@ echo "Merging dbs:"
 db_paths=()
 for db in "$RESULT_DIR"/*; do
     if [[ -f "$db" && ! $(basename "$db") =~ ^$COMBINED_DB_NAME ]]; then
-        num_execs=$(sqlite3 ${db} "select count() from execution;")
+        num_execs=$(sqlite3 ${db} "select count() from progs;")
         if (( num_execs != 1 )); then
             echo "$db has $num_execs executions, exactly one expected"
             exit
         fi
-        exec=$(sqlite3 ${db} "select exec_id from execution;")
+        exec=$(sqlite3 ${db} "select prog from progs;")
         normalized_db="${RESULT_DIR}/${exec}.db"
         mv "${db}" "${normalized_db}" || true
         if [[ " ${db_paths[*]} " =~ " ${normalized_db} " ]]; then
