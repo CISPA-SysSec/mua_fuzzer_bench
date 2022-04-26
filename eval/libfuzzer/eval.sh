@@ -13,7 +13,20 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-clang++ -fsanitize=fuzzer /home/user/lib/libdynamiclibrary.so $1 $2 -o ./libfuzz_target
+libfuzzer_arg="-fsanitize=fuzzer"
+
+
+if [[ ! -z "${MUT_WITH_ASAN}" ]]; then
+  echo "Activating ASAN"
+  libfuzzer_arg+=",address"
+fi
+
+if [[ ! -z "${MUT_WITH_MSAN}" ]]; then
+  echo "Activating MSAN"
+  libfuzzer_arg+=",memory"
+fi
+
+clang++ "${libfuzzer_arg}" /home/user/lib/libdynamiclibrary.so $1 $2 -o ./libfuzz_target
 
 shift
 shift

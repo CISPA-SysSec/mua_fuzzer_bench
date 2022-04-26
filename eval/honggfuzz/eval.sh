@@ -13,6 +13,17 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
+
+if [[ ! -z "${MUT_WITH_ASAN}" ]]; then
+  echo "Activating ASAN"
+  export HFUZZ_CC_ASAN=1
+fi
+
+if [[ ! -z "${MUT_WITH_MSAN}" ]]; then
+  echo "Activating MSAN"
+  export HFUZZ_CC_MSAN=1
+fi
+
 hfuzz-clang++ /home/user/lib/libdynamiclibrary.so $1 $2
 
 [[ -d output ]] && rm -rf output

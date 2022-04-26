@@ -13,7 +13,17 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-ls -la /home/user/
+echo "${MUT_WITH_ASAN}"
+
+if [[ ! -z "${MUT_WITH_ASAN}" ]]; then
+  echo "Activating ASAN"
+  export AFL_USE_ASAN=1
+fi
+
+if [[ ! -z "${MUT_WITH_MSAN}" ]]; then
+  echo "Activating MSAN"
+  export AFL_USE_MSAN=1
+fi
 
 afl-clang-fast++ /home/user/lib/libdynamiclibrary.so /home/user/common/main.cc $1 $2
 
