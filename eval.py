@@ -4767,7 +4767,121 @@ def footer():
     </html>
     """
 
-def generate_plots(db_path, to_disk):
+def wayne_diagram(values, total_sum, fuzzers, plot_pdf_path):
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+
+    fig, ax = plt.subplots()
+
+    ax.set_title("Overlap of Killed Mutants between Fuzzers")
+    ax.set_axis_off()
+    ax.set_xlim([.78, 2.1])
+    ax.set_ylim([0, 1.06])
+
+    def ell(offset, angle, color):
+        return patches.Ellipse(offset, 1, 0.5, angle=angle, alpha=.3, color=color)
+
+    cmap = plt.get_cmap('Set1')
+
+    ax.add_patch(ell((1.1825, .4), 90+45, color=cmap.colors[0]))
+    ax.text(0.85, .84, fuzzers[0], color=cmap.colors[0], alpha=.7)
+
+    ax.add_patch(ell((1.425, .52), 90+45, color=cmap.colors[1]))
+    ax.text(1.1, .96, fuzzers[1], color=cmap.colors[1], alpha=.7)
+
+    ax.add_patch(ell((1.425, .52), 90-45, color=cmap.colors[2]))
+    ax.text(1.6, .96, fuzzers[2], color=cmap.colors[2], alpha=.7)
+
+    ax.add_patch(ell((1.6675, .4), 90-45, color=cmap.colors[3]))
+    ax.text(1.85, .84, fuzzers[3], color=cmap.colors[3], alpha=.7)
+
+
+    texts = {
+        '1___': (None, (0.9, .48)),
+        '_2__': (None, (1.2, .77)),
+        '__3_': (None, (1.56, .77)),
+        '___4': (None, (1.85, .48)),
+        '12__': (None, (1.07, .62)),
+        '1_3_': (None, (1.1, .25)),
+        '1__4': (None, (1.375, .07)),
+        '_23_': (None, (1.375, .64)),
+        '_2_4': (None, (1.65, .25)),
+        '__34': (None, (1.69, .62)),
+        '_234': (None, (1.55, .48)),
+        '1_34': (None, (1.28, .18)),
+        '12_4': (None, (1.48, .18)),
+        '123_': (None, (1.2, .48)),
+        '1234': (None, (1.375, .32)),
+    }
+
+    texts = {kk: (values[kk], (vv[1][0], vv[1][1])) for kk, vv in texts.items()}
+
+    for tt in texts.values():
+        ax.text(tt[1][0], tt[1][1], tt[0])
+
+    ax.text(.8, .01, f"Total Killed: {total_sum}")
+
+    # note that text is not scaled
+    scaling = 1.4
+    fig.set_size_inches(scaling*7, scaling*4)
+
+    fig.savefig(plot_pdf_path, format="pdf")
+    plt.close(fig)
+
+
+def plot_killed_union(runs, run_results, plot_dir):
+    from itertools import combinations
+    all_fuzzers = sorted(runs.fuzzer.unique())
+    if len(all_fuzzers) != 4:
+        logger.info(f"Results are contain not exactly 4 fuzzers ({all_fuzzers}), skipping wayne diagram.")
+        return
+
+    found = run_results[run_results['confirmed'].notnull()]
+
+    fuzzers_found_mutation = defaultdict(list)
+    for _, ff in found.iterrows():
+        fuzzers_found_mutation[(ff['exec_id'], ff['prog'], ff['mut_id'])].append(ff['fuzzer'])
+
+
+    # Separate buckets
+    values = {
+        '1___': 0,
+        '_2__': 0,
+        '__3_': 0,
+        '___4': 0,
+        '12__': 0,
+        '1_3_': 0,
+        '1__4': 0,
+        '_23_': 0,
+        '_2_4': 0,
+        '__34': 0,
+        '_234': 0,
+        '1_34': 0,
+        '12_4': 0,
+        '123_': 0,
+        '1234': 0,
+    }
+
+    total_sum = 0
+    for ff in fuzzers_found_mutation.values():
+        # Count each bucket separately
+        key = ""
+        for ii, fuzzer in enumerate(all_fuzzers):
+            if fuzzer in ff:
+                key += f"{ii+1}"
+            else:
+                key += "_"
+        values[key] += 1
+
+        total_sum += 1
+
+    values = {kk: f"{vv}\n[{(100*vv/total_sum):.1f}%]" for kk, vv in values.items()}
+    
+    plot_path_pdf = plot_dir.joinpath(f"wayne-diagram-separate.pdf")
+    wayne_diagram(values, total_sum, all_fuzzers, plot_path_pdf)
+    
+
+def generate_plots(db_path, to_disk, skip_script):
     import pandas as pd
     db_path = Path(db_path)
 
@@ -4780,9 +4894,12 @@ def generate_plots(db_path, to_disk):
     con.isolation_level = None
     con.row_factory = sqlite3.Row
 
-    with open("eval.sql", "rt") as f:
-        cur = con.cursor()
-        cur.executescript(f.read())
+    if not skip_script:
+        logger.info("Executing eval.sql script...")
+        with open("eval.sql", "rt") as f:
+            cur = con.cursor()
+            cur.executescript(f.read())
+        logger.info("done")
 
     if to_disk:
         latex_stats(plot_dir, con)
@@ -4822,6 +4939,9 @@ def generate_plots(db_path, to_disk):
         res += plot(plot_dir if to_disk else None, f"Killed Covered Mutants Overall", "overall", total_plot_data['covered'], total_plot_data['num_mutations'], False)
         res += plot(plot_dir if to_disk else None, f"Killed Mutants Overall", "overall", total_plot_data['total'], total_plot_data['num_mutations'], False)
         res += plot(plot_dir if to_disk else None, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
+
+    if to_disk:
+        plot_killed_union(runs, run_results, plot_dir)
     #  res += '<h4>Unique Finds</h4>'
     #  res += 'Left finds what upper does not.'
     #  res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
@@ -5369,6 +5489,10 @@ def main():
     parser_plot = subparsers.add_parser('plot', help="Generate plots for the gathered data")
     parser_plot.add_argument("--artifacts", default=False, action="store_true",
             help="If further detailed plots and latex tables should be written to disk.")
+    parser_plot.add_argument("--skip-script", default=False, action="store_true",
+            help="If plot has already been called on the current db, so eval.sql script has been executed on the db. "
+                "This option can be used to skip reevaluating the "
+                "script, speeding up the plot process. Useful for debugging of plotting.")
     parser_plot.add_argument("db_path", help="The sqlite database to plot.")
     del parser_plot
 
@@ -5424,7 +5548,7 @@ def main():
     elif args.cmd == 'import_seeds':
         import_seeds(args.source, args.dest)
     elif args.cmd == 'plot':
-        generate_plots(args.db_path, args.artifacts)
+        generate_plots(args.db_path, args.artifacts, args.skip_script)
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
