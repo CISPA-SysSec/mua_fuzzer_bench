@@ -16,12 +16,12 @@ export LD_LIBRARY_PATH=/home/user/lib/
 libfuzzer_arg="-fsanitize=fuzzer"
 
 
-if [[ ! -z "${MUT_WITH_ASAN}" ]]; then
+if [[ ! -z "${MUT_WITH_ASAN:-}" ]]; then
   echo "Activating ASAN"
   libfuzzer_arg+=",address"
 fi
 
-if [[ ! -z "${MUT_WITH_MSAN}" ]]; then
+if [[ ! -z "${MUT_WITH_MSAN:-}" ]]; then
   echo "Activating MSAN"
   libfuzzer_arg+=",memory"
 fi

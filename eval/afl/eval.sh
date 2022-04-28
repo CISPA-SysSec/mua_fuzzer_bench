@@ -13,14 +13,12 @@ echo "workdir: $(pwd)"
 
 export LD_LIBRARY_PATH=/home/user/lib/
 
-echo "${MUT_WITH_ASAN}"
-
-if [[ ! -z "${MUT_WITH_ASAN}" ]]; then
+if [[ ! -z "${MUT_WITH_ASAN:-}" ]]; then
   echo "Activating ASAN"
   export AFL_USE_ASAN=1
 fi
 
-if [[ ! -z "${MUT_WITH_MSAN}" ]]; then
+if [[ ! -z "${MUT_WITH_MSAN:-}" ]]; then
   echo "Activating MSAN"
   export AFL_USE_MSAN=1
 fi
@@ -46,6 +44,12 @@ args=(-d -i $SEEDS -o output)
 if [[ ! -z ${DICT_PATH:+x} ]]; then
     args+=(-x)
     args+=("${DICT_PATH}")
+fi
+
+if [[ ! -z "${MUT_WITH_ASAN:-}" || ! -z "${MUT_WITH_MSAN:-}" ]]; then
+    args+=("-t5000")
+    args+=("-m")
+    args+=("none")
 fi
 
 echo "afl-fuzz ${args[@]} -- ./a.out $@ @@"
