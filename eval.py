@@ -688,6 +688,15 @@ class Stats():
         )''')
 
         c.execute('''
+        CREATE TABLE locator_seed_covered (
+            exec_id,
+            prog,
+            mutation_id INTEGER,
+            fuzzer,
+            locator_seed_covered
+        )''')
+
+        c.execute('''
         CREATE TABLE progs (
             exec_id,
             prog,
@@ -1138,6 +1147,20 @@ class Stats():
                 mutation_id,
             )
         )
+        self.conn.commit()
+
+    @connection
+    def locator_seed_covered(self, c, exec_id, prog, fuzzer, mutation_ids):
+        for mm in mutation_ids:
+            c.execute('INSERT INTO locator_seed_covered VALUES (?, ?, ?, ?, ?)',
+                (
+                    exec_id,
+                    prog,
+                    mm,
+                    fuzzer,
+                    True
+                )
+            )
         self.conn.commit()
 
 
@@ -2280,9 +2303,6 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
         logger.info("="*50)
         logger.info(f"Compiling base and locating mutations for {prog}")
 
-        # Run the seeds through the mutation detector
-        seeds = Path(seed_base_dir/prog)
-
         if rerun is None:
             instrument_prog(mutator, prog_info)
         else:
@@ -2300,6 +2320,8 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
                 # If this is needed either figure out how to create .opt_mutate from .bc and .mutationlocations
                 # or also restore it.
                 raise NotImplementedError("Can not filter mutations on a rerun.")
+            # Run the seeds through the mutation detector
+            seeds = Path(seed_base_dir/prog)
             logger.info("Filtering mutations, running all seed files.")
             filtered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
 
@@ -2422,6 +2444,14 @@ def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rer
         all_mutations = get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutations)
 
         all_mutations = sequence_mutations(all_mutations)
+
+        # measure coverage by seeds
+        for prog in progs:
+            prog_info = PROGRAMS[prog]
+            for fuzzer in fuzzers:
+                seeds = get_seed_dir(seed_base_dir, prog, fuzzer)
+                seed_covered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
+                stats.locator_seed_covered(EXEC_ID, prog, fuzzer, seed_covered_mutations)
 
         all_runs = []
 
