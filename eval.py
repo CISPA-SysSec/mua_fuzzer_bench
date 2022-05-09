@@ -2451,6 +2451,7 @@ def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rer
             for fuzzer in fuzzers:
                 seeds = get_seed_dir(seed_base_dir, prog, fuzzer)
                 seed_covered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
+                logger.info(f"Measured locator seed coverage for: {prog} {fuzzer} {seeds} => {len(seed_covered_mutations)}")
                 stats.locator_seed_covered(EXEC_ID, prog, fuzzer, seed_covered_mutations)
 
         all_runs = []
