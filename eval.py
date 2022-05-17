@@ -2666,14 +2666,14 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                 timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
                 killed = has_result(mut_id, results, ['killed_by_seed'])
 
-                stats.new_seeds_executed(
-                    EXEC_ID, prog, mut_id, data['run_ctr'], data['fuzzer'],
-                    seed_covered, timeout, total_time)
-
                 if killed:
+                    stats.new_seeds_executed(
+                        EXEC_ID, prog, mut_id, data['run_ctr'], data['fuzzer'],
+                        seed_covered, timeout, total_time)
+
                     stats.new_seed_crashing_inputs(EXEC_ID, prog, mut_id, [killed])
 
-                killed_mutants |= set([mut_id])
+                    killed_mutants |= set([mut_id])
 
             cur_mutations = set(mut_data['mutation_ids'])
             assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
