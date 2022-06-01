@@ -2560,7 +2560,7 @@ def split_up_supermutant(multi, all_muts):
     multiple mutations are covered at once.
     """
     multi = set(chain(*multi))
-    all_muts = set(all_muts)
+    all_muts = set([int(mm) for mm in all_muts])
     assert all_muts & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
                                       f"all_muts: {all_muts}, multi: {multi}"
     others = all_muts - multi
