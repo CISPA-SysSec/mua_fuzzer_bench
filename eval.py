@@ -113,6 +113,11 @@ TRIGGERED_STR = "Triggered!\r\n"
 
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 
+SHARED_DIR = Path(os.getenv("MUT_SHARED_DIR", "/dev/shm/")).absolute()
+SHARED_DIR.mkdir(parents=True, exist_ok=True)
+
+IN_DOCKER_SHARED_DIR = Path("/shared/")
+
 
 # The programs that can be evaluated
 PROGRAMS = {
@@ -1293,15 +1298,14 @@ class CoveredFile:
     def __init__(self, workdir, start_time) -> None:
         super().__init__()
         self.found = {}
-        self.path = Path(workdir)/"covered"
+        self.host_path = SHARED_DIR/"covered"/workdir
+        self.host_path.mkdir(parents=True)
+        self.docker_path = IN_DOCKER_SHARED_DIR/"covered"/workdir
         self.start_time = start_time
-
-        if self.path.is_file():
-            self.path.unlink()
 
     def check(self):
         cur_time = time.time() - self.start_time
-        cur = set(int(cf.stem) for cf in self.path.glob("*"))
+        cur = set(int(cf.stem) for cf in self.host_path.glob("*"))
         new = cur - self.found.keys()
         new = {nn: cur_time for nn in new}
         self.found = {**self.found, **new}
@@ -1309,6 +1313,9 @@ class CoveredFile:
 
     def file_path(self):
         return self.path
+
+    def __del__(self):
+        shutil.rmtree(self.host_path)
 
 
 @contextlib.contextmanager
@@ -1326,10 +1333,12 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile, timeout):
         user=os.getuid(),
         environment={
             'LD_LIBRARY_PATH': "/workdir/tmp/lib/",
-            'TRIGGERED_FOLDER': str(trigger_file.path),
+            'TRIGGERED_FOLDER': str(trigger_file.docker_path),
         },
-        volumes={str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/",
-                                      'mode': 'ro'}},
+        volumes={
+            str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
+        },
         working_dir=str(IN_DOCKER_WORKDIR),
         cpuset_cpus=str(core_to_use),
         mem_limit="1g",
@@ -1370,8 +1379,10 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
         ipc_mode="host",
         auto_remove=True,
         user=os.getuid(),
-        volumes={str(HOST_TMP_PATH): {'bind': "/home/mutator/tmp/",
-                                      'mode': 'rw'}},
+        volumes={
+            str(HOST_TMP_PATH): {'bind': "/home/mutator/tmp/", 'mode': 'rw'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
+        },
         mem_limit="10g",
         mem_swappiness=0,
         cpuset_cpus=str(core_to_use) if core_to_use is not None else None,
@@ -1450,9 +1461,13 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         #  return {'returncode': proc[0], 'out': proc[1]}
 
 
-def get_mut_base_dir(mut_data: dict) -> Path:
-    "Get the path to the directory containing all files related to a mutation."
-    return Path("/dev/shm/mut_base/")/mut_data['prog']/printable_m_id(mut_data)
+def shared_dir_to_docker(dir: Path) -> Path:
+    rel_path = dir.relative_to(SHARED_DIR)
+    res = IN_DOCKER_SHARED_DIR/rel_path
+    return res
+
+def get_mut_base_dir(data: dict) -> Path:
+    return SHARED_DIR/"mut_base"/data['prog']/printable_m_id(data)
 
 
 def get_mut_base_bin(mut_data: dict) -> Path:
@@ -1541,7 +1556,7 @@ def base_eval_crash_check(input_dir, run_data, cur_time, testing):
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
     workdir = run_data['workdir']
-    docker_mut_bin = get_mut_base_bin(mut_data)
+    docker_mut_bin = shared_dir_to_docker(get_mut_base_bin(mut_data))
     result_dir = Path(workdir)/'crash_check'
     result_dir.mkdir(parents=True, exist_ok=True)
     for rf in result_dir.glob("*"):
@@ -1720,9 +1735,11 @@ def base_eval(run_data, docker_image):
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
     run_ctr = run_data['run_ctr']
-    workdir = Path("/dev/shm/mutator/")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
-    run_data['workdir'] = workdir
-    crash_dir = workdir/run_data['crash_dir']
+    workdir_path = Path("mutator")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
+    workdir_host = SHARED_DIR/workdir_path
+    workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
+    run_data['workdir'] = workdir_host
+    crash_dir = workdir_host/run_data['crash_dir']
     prog_bc = mut_data['prog_bc']
     compile_args = build_compile_args(mut_data['compile_args'], IN_DOCKER_WORKDIR)
     seed_base_dir = mut_data['seed_base_dir']
@@ -1730,10 +1747,10 @@ def base_eval(run_data, docker_image):
     dictionary = mut_data['dict']
     core_to_use = run_data['used_core']
 
-    workdir.mkdir(parents=True, exist_ok=True)
+    workdir_host.mkdir(parents=True, exist_ok=True)
 
     # get path for covered files
-    covered = CoveredFile(workdir, start_time)
+    covered = CoveredFile(workdir_path, start_time)
 
     results = {}
 
@@ -1770,13 +1787,13 @@ def base_eval(run_data, docker_image):
             docker_image, # the image
             [
                 "/home/user/eval.sh",
-                str(prog_bc),
+                str(shared_dir_to_docker(prog_bc)),
                 str(compile_args),
                 str(IN_DOCKER_WORKDIR/seeds),
             ], # the arguments
             environment={
                 'TRIGGERED_OUTPUT': str(""),
-                'TRIGGERED_FOLDER': str(covered.path),
+                'TRIGGERED_FOLDER': str(covered.docker_path),
                 **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
                 **({'MUT_WITH_ASAN': '1'} if WITH_ASAN else {}),
                 **({'MUT_WITH_MSAN': '1'} if WITH_MSAN else {}),
@@ -1786,9 +1803,9 @@ def base_eval(run_data, docker_image):
             auto_remove=True,
             volumes={
                 str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-                "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+                str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
             },
-            working_dir=str(workdir),
+            working_dir=str(workdir_docker),
             mem_swappiness=0,
             log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
                 config={'max-size': '10m'}),
@@ -1822,7 +1839,7 @@ def base_eval(run_data, docker_image):
 
             # Check if a crashing input has already been found
             new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
-                                                crash_dir, workdir, time.time() - start_time)
+                                                crash_dir, workdir_host, time.time() - start_time)
             res = update_results(results, new_results, start_time)
             if res is not None:
                 stop_container(container)
@@ -1843,7 +1860,7 @@ def base_eval(run_data, docker_image):
 
         # Also collect all remaining crashing outputs
         new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
-                                    crash_dir, workdir, time.time() - start_time)
+                                    crash_dir, workdir_host, time.time() - start_time)
         res = update_results(results, new_results, start_time)
         if res is not None:
             res['all_logs'] = get_logs(logs_queue)
@@ -1993,15 +2010,17 @@ def check_run(run_data):
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
     run_ctr = run_data['run_ctr']
-    workdir = Path("/dev/shm/mutator/")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
-    run_data['workdir'] = workdir
+    workdir_path = Path("mutator")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
+    workdir_host = SHARED_DIR/workdir_path
+    workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
+    run_data['workdir'] = workdir_host
     inputs_to_check = mut_data['check_run_input_dir']
     core_to_use = run_data['used_core']
 
-    workdir.mkdir(parents=True, exist_ok=True)
+    workdir_host.mkdir(parents=True, exist_ok=True)
 
     # get path for covered files
-    covered = CoveredFile(workdir, start_time)
+    covered = CoveredFile(workdir_path, start_time)
 
     results = {}
 
@@ -2708,7 +2727,7 @@ def has_result(mut_id, results, to_search):
 
 
 def copy_fuzzer_inputs(data):
-    tmp_dir = Path(tempfile.mkdtemp(dir="/dev/shm/mutator_tmp/"))
+    tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
     found_inputs = SEED_HANDLERS[data['fuzzer']](data['workdir'])
     for fi in found_inputs:
         file_hash = hash_file(fi)
@@ -3167,7 +3186,7 @@ def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
         mut_data['previous_supermutant_ids'].append(old_supermutant_id)
     else:
         mut_data['previous_supermutant_ids'] = [old_supermutant_id]
-    workdir = Path("/dev/shm/mutator/")/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+    workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
     logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
@@ -3187,7 +3206,7 @@ def recompile_and_run_from_mutation(prepared_runs, mut_data, fuzzer_runs, new_su
 
     fuzzer_runs = copy.deepcopy(fuzzer_runs)
     for fr in fuzzer_runs:
-        workdir = Path("/dev/shm/mutator/")/mut_data['prog']/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
+        workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
         workdir.mkdir(parents=True)
         fr['workdir'] = workdir
         fr['mut_data'] = mut_data
@@ -3204,7 +3223,7 @@ def start_check_run(prepared_runs, data, new_supermutand_id, mutations, input_di
     mut_data['supermutant_id'] = new_supermutand_id
     mut_data['check_run_input_dir'] = input_dir
     mut_data['check_run'] = True
-    workdir = Path("/dev/shm/mutator/")/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+    workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
     logger.info(f"! new supermutant (check): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
@@ -3292,7 +3311,7 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
     if not input_dir.is_dir():
         raise ValueError(f"Given seed dir path is not a directory: {input_dir}")
 
-    covered_dir = Path("/dev/shm/covered/")
+    covered_dir = SHARED_DIR/"covered"
     covered_dir.mkdir(parents=True, exist_ok=True)
 
     max_runtime = 2 if not (WITH_ASAN or WITH_MSAN) else 20
@@ -3330,7 +3349,6 @@ def prepare_mutation(core_to_use, data):
     prog_ll = mut_base_dir/prog_ll_name
     data['prog_bc'] = prog_bc
 
-    prog_bc.parent.mkdir(parents=True, exist_ok=True)
 
     if WITH_ASAN:
         compile_args = "-fsanitize=address " + compile_args
@@ -3338,7 +3356,7 @@ def prepare_mutation(core_to_use, data):
         compile_args = "-fsanitize=memory " + compile_args
 
     # get path for covered file and rm the file if it exists
-    covered = CoveredFile(mut_base_dir, time.time())
+    covered = CoveredFile(Path("mut_base")/data['prog']/printable_m_id(data), time.time())
 
     with start_mutation_container(core_to_use, 60*60) as mutator, \
          start_testing_container(core_to_use, covered, 60*60) as testing:
@@ -3351,7 +3369,7 @@ def prepare_mutation(core_to_use, data):
                     "-ll", "-bc",
                     *(["-cpp"] if data['is_cpp'] else ['-cc']),  # conditionally add cpp flag
                     *["-ml", *[str(mid) for mid in data['mutation_ids']]],
-                    "--out-dir", str(mut_base_dir),
+                    "--out-dir", str(shared_dir_to_docker(mut_base_dir)),
                     data['orig_bc']
             ])
         except Exception as exc:
@@ -3366,9 +3384,9 @@ def prepare_mutation(core_to_use, data):
             clang_args = [
                 "/usr/bin/clang++-11",
                 "-v",
-                "-o", str(mut_base_dir/"mut_base"),
+                "-o", str(shared_dir_to_docker(mut_base_dir/"mut_base")),
                 "/workdir/tmp/lib/libdynamiclibrary.so",
-                str(prog_bc),
+                str(shared_dir_to_docker(prog_bc)),
                 *shlex.split(compile_args),
             ] 
             # compile the compare version of the mutated binary
@@ -3605,13 +3623,13 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, rerun, rerun_m
     execution_start_time = time.time()
 
     # prepare environment
-    base_shm_dir = Path("/dev/shm/mutator")
+    base_shm_dir = SHARED_DIR/"mutator"
     base_shm_dir.mkdir(parents=True, exist_ok=True)
-    base_shm_dir = Path("/dev/shm/mutator_tmp")
+    base_shm_dir = SHARED_DIR/"mutator_tmp"
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize the stats object
-    stats = Stats("/dev/shm/mutator/stats.db")
+    stats = Stats(str(SHARED_DIR/"mutator/stats.db"))
 
     # Record current eval execution data
     # Get the current git status
@@ -3713,7 +3731,7 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
 
                 workdir = Path(tempfile.mkdtemp(
                     prefix=f"{prog}__{fuzzer}__{ii}__",
-                    dir="/dev/shm/mutator_seed_gathering/"))
+                    dir=str(SHARED_DIR/"mutator_seed_gathering")))
 
                 run_data = {
                     'fuzzer': fuzzer,
@@ -3825,7 +3843,7 @@ def seed_gathering_run(run_data, docker_image):
         auto_remove=True,
         volumes={
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
         working_dir=str(workdir),
         mem_limit="10g",
@@ -4004,7 +4022,7 @@ def seed_checking_run(run_data, docker_image):
         auto_remove=True,
         volumes={
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
         working_dir=str(workdir),
         mem_limit="10g",
@@ -4075,7 +4093,7 @@ def check_seeds(progs, fuzzers, seed_base_dir):
     global should_run
 
     # prepare environment
-    base_shm_dir = Path("/dev/shm/mutator_check_seeds")
+    base_shm_dir = SHARED_DIR/"mutator_check_seeds"
     shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x))
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4144,7 +4162,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     destination_dir.mkdir(parents=True, exist_ok=True)
 
     # prepare environment
-    seed_coverage_base_shm_dir = Path("/dev/shm/mutator_seed_gathering")
+    seed_coverage_base_shm_dir = SHARED_DIR/"mutator_seed_gathering"
     shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
     seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4219,7 +4237,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
     # for each seed_run, minimize the run in new folder minimize_dir
     all_minimized_runs_dir = destination_dir/"minimized_runs"
 
-    minimize_shm_dir = Path("/dev/shm/minimize_coverage_seeds")
+    minimize_shm_dir = SHARED_DIR/"minimize_coverage_seeds"
     shutil.rmtree(minimize_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x))
     minimize_shm_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4244,11 +4262,11 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             prog_info = PROGRAMS[prog]
             instrument_prog(mutator, prog_info)
 
-        kcov_res_dir = Path('/dev/shm/kcov_res')
+        kcov_res_dir = SHARED_DIR/"kcov_res"
         shutil.rmtree(kcov_res_dir, ignore_errors=True)
         kcov_res_dir.mkdir(parents=True)
 
-        seed_coverage_base_shm_dir = Path("/dev/shm/seed_coverage")
+        seed_coverage_base_shm_dir = SHARED_DIR/"seed_coverage"
         shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
         seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5265,7 +5283,7 @@ def seed_minimization_run(run_data, docker_image):
         auto_remove=True,
         volumes={
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
         working_dir=str(workdir),
         mem_swappiness=0,
@@ -5391,7 +5409,7 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
         sys.exit(1)
 
     # prepare environment
-    base_shm_dir = Path("/dev/shm/minimize_seeds")
+    base_shm_dir = SHARED_DIR/"minimize_seeds"
     shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x))
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5448,7 +5466,7 @@ def seed_coverage_run(run_data, docker_image):
         auto_remove=True,
         volumes={
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
-            "/dev/shm": {'bind': "/dev/shm", 'mode': 'rw'},
+            str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
         working_dir=str(workdir),
         mem_swappiness=0,
@@ -5512,7 +5530,7 @@ def get_kcov(prog, seed_path, res_path):
         logger.info(f"Result path already exists, to avoid data loss, it is required that this dir does not exist: {res_path}")
         sys.exit(1)
 
-    with tempfile.TemporaryDirectory(dir="/dev/shm/seed_coverage") as active_dir:
+    with tempfile.TemporaryDirectory(dir=str(SHARED_DIR/"seed_coverage")) as active_dir:
         active_dir = Path(active_dir)
 
         # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
@@ -5568,7 +5586,7 @@ def get_kcov(prog, seed_path, res_path):
 
 def seed_coverage(seed_path, res_path, prog):
     # prepare environment
-    base_shm_dir = Path("/dev/shm/seed_coverage")
+    base_shm_dir = SHARED_DIR/"seed_coverage"
     shutil.rmtree(base_shm_dir, ignore_errors=True)
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
