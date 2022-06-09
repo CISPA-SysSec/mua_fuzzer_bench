@@ -1337,7 +1337,7 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile, timeout):
                 container.reload()
             while True:
                 container.stop()
-                logger.info(f"! Container still alive {container.name}, keep killing it.")
+                logger.info(f"! Testing container still alive {container.name}, keep killing it.")
                 time.sleep(1)
         except docker.errors.NotFound:
             # container is dead
@@ -1379,7 +1379,7 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
                 container.reload()
             while True:
                 container.stop()
-                logger.info(f"! Container still alive {container.name}, keep killing it.")
+                logger.info(f"! Mutation container still alive {container.name}, keep killing it.")
                 time.sleep(1)
         except docker.errors.NotFound:
             # container is dead
@@ -2232,7 +2232,7 @@ def get_callgraph(prog_info, graph_info):
     return flatten_callgraph(call_graph)
 
 
-def get_supermutations(prog_info, mutations):
+def get_supermutations_callgraph(prog_info, mutations):
     graph_info = {}
     callgraph = get_callgraph(prog_info, graph_info)
 
@@ -2317,6 +2317,88 @@ def get_supermutations(prog_info, mutations):
     return supermutants, graph_info
 
 
+def indirect_call_info(graph):
+    """
+    Takes the graph and collects a dictionary of calls by their types.
+    """
+    mapping = defaultdict(list)
+    # first get an initial mapping of the result set and collect all known functions
+    for key in graph.keys():
+        key_splitted = key.split(SPLITTER)[:-1]
+        funname = key_splitted[0]
+        type_key = tuple(key_splitted[1:])
+        mapping[type_key].append(funname)
+
+    return mapping
+
+
+def get_supermutations_cfg(prog_info, mutations):
+    import cfg_supermutants
+    entry_node = 'LLVMFuzzerTestOneInput'
+    cfg_base_dir = Path('tmp/cfgs')
+
+    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+        call_graph = json.load(f)
+
+    call_info = indirect_call_info(call_graph)
+
+    muts = [
+        (mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
+        for mm in mutations
+    ]
+
+    try:
+        shutil.rmtree(cfg_base_dir)
+    except OSError as err:
+        logger.info(f"Could not clean up {cfg_base_dir}: {err}")
+
+    cfg_base_dir.mkdir(parents=True, exist_ok=True)
+    with start_mutation_container(None, None) as container:
+        tmp_dir = cfg_base_dir/"dots"
+        tmp_dir.mkdir()
+        bc_path_in_container = Path("/home/mutator", prog_info['orig_bc'])
+        tmp_dir_in_container = Path("/home/mutator/tmp/cfgs", Path(tmp_dir).name)
+        run_exec_in_container(
+            container, raise_on_error=True,
+            cmd=["opt", "-passes=dot-cfg", "-debug-pass-manager", str(bc_path_in_container), "-S", "-o", "bitcode.ll"],
+            exec_args=['--workdir', str(tmp_dir_in_container)],
+        )
+        cfg_graph, bitcode = cfg_supermutants.create_initial_graph(tmp_dir)
+
+    call_graph = cfg_supermutants.add_function_call_edges(cfg_graph, call_info)
+    print("CFG:", cfg_graph, "call graph:", call_graph)
+    # print(call_graph.out_edges("LLVMFuzzerTestOneInput"))
+
+    cfg_supermutants.load_mutations(cfg_graph, muts)
+
+    tc_cfg_graph = cfg_supermutants.transitive_closure(cfg_graph)
+    tc_call_graph = cfg_supermutants.transitive_closure(call_graph)
+
+    reachable_muts = cfg_supermutants.get_reachable_mutants(cfg_graph, call_graph, entry_node)
+    print(f"Found {len(reachable_muts)} reachable mutations (from {entry_node}) based on cfg and call graph.")
+
+    # mut_info = mutations[0][3]
+    # for rm in reachable_muts:
+    #     funname = mut_info[rm]['funname']
+    #     line = mut_info[rm]['line']
+    #     col = mut_info[rm]['column']
+    #     file_path = mut_info[rm]['filePath']
+    #     directory = mut_info[rm]['directory']
+    #     mut_type = mut_info[rm]['type']
+    #     print(rm, mut_type, funname, f"{directory}/{file_path}:{line}:{col}")
+    #     # print(mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
+
+    supermutants = cfg_supermutants.get_supermutants(tc_cfg_graph, tc_call_graph, reachable_muts)
+
+    print(f"Generated {len(supermutants)} supermutants out of {len(reachable_muts)} reachable mutants ", end='')
+    print(f"a reduction of {(len(reachable_muts) + len(tc_cfg_graph.graph['mut_failed'])) / len(supermutants)}. Failed muts: {len(tc_cfg_graph.graph['mut_failed'])}.")
+
+    # For testing if there are supermutants where multiple mutants are seen in one execution.
+    # supermutants = [sm for sm in supermutants if len(sm) > 1]
+
+    return supermutants, None
+
+
 def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutations):
     if rerun:
         rerun = ReadStatsDb(rerun)
@@ -2360,7 +2442,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
             logger.info("Filtering mutations, running all seed files.")
             filtered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
 
-        mutations = list((str(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
+        mutations = list((int(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
 
         # Remove mutations for functions that should not be mutated
         omit_functions = prog_info['omit_functions']
@@ -2427,7 +2509,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
                     raise ValueError("Unknown rerun_mutations mode:", mode)
             
         else:
-            supermutations, graph_info = get_supermutations(prog_info, mutations)
+            supermutations, graph_info = get_supermutations_cfg(prog_info, mutations)
             stats.new_supermutant_graph_info(EXEC_ID, prog, graph_info)
 
 

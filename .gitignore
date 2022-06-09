@@ -181,3 +181,4 @@ seed_gathering.log
 /seeds/
 eval.log
 .vscode/launch.json
+__pycache__/
