@@ -116,6 +116,19 @@ MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 
 # The programs that can be evaluated
 PROGRAMS = {
+    "dev": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": False,
+        "orig_bin": str(Path("tmp/samples/dev/out/test")),
+        "orig_bc": str(Path("tmp/samples/dev/out/test.bc")),
+        "name": "dev",
+        "path": "samples/dev",
+        "dict": None,
+        "omit_functions": ["LLVMFuzzerTestOneInput"],
+    },
     "cares_parse_reply": {
         "bc_compile_args": [
         ],
