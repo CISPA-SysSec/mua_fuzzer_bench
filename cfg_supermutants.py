@@ -181,8 +181,11 @@ def add_function_call_edges(cfg_graph, call_info):
         for ll in cfg_graph.nodes[nn]['bb_lines']:
             if " call " in ll or " invoke " in ll:
                 # static calls
-                if mm := re.match(".*(?:call|invoke) .*@(\S+)(\(.*| to )", ll):
-                    func_name = mm.group(1)
+                direct_mm = re.match(".*(?:call|invoke) .*@(\S+)(\(.*| to )", ll)
+                indirect_mm = re.match(".*(?:call|invoke) .*?(\S+) %(?:\S+)\((.*)\)", ll)
+                asm_mm = re.match(".*(?:call|invoke) .* asm ", ll)
+                if direct_mm:
+                    func_name = direct_mm.group(1)
                     if func_name.startswith("llvm."):
                         continue
                     try:
@@ -190,23 +193,23 @@ def add_function_call_edges(cfg_graph, call_info):
                     except KeyError:
                         # print(f"not found {func_name}")
                         pass
-                elif mm := re.match(".*(?:call|invoke) .*?(\S+) %(?:\S+)\((.*)\)", ll): # dynamic calls
+                elif indirect_mm: # dynamic calls
                     if "!callees" in ll:
                         print("has callees:", ll)
-                    return_type = mm.group(1)
-                    args = mm.group(2)
+                    return_type = indirect_mm.group(1)
+                    args = indirect_mm.group(2)
                     func_args = (return_type, *(aa.strip().split(' ')[0] for aa in args.split(',')))
                     for func_name in call_info[func_args]:
                         try:
                             add_edges(func_name, nn, ll)
                         except KeyError:
                             raise ValueError("Expected to only work with known functions in cfg.")
-                elif mm := re.match(".*(?:call|invoke) .* asm ", ll): # assembly calls
+                elif asm_mm: # assembly calls
                     # ignore assembly calls
                     print("asm:", ll)
                 else: # something is wrong
                     print(cfg_graph.nodes[nn]['bb_lines'])
-                    print("#", mm, nn, ll)
+                    print("#", nn, ll)
                     import pdb; pdb.set_trace()
                     raise ValueError("Could not match call instruction.")
 
