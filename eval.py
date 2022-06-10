@@ -2678,7 +2678,8 @@ def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rer
                 'orig_bin': orig_bin,
                 'seed_base_dir': seed_base_dir,
                 'supermutant_id': stats.next_supermutant_id(),
-                'mutation_ids': m_id,
+                'mutation_ids': [int(mm) for mm in m_id],
+                # 'mutation_ids': m_id,
                 'mutation_data': [mutation_data[int(mut_id)] for mut_id in m_id],
             }
 
@@ -2886,7 +2887,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     killed_mutants |= set([mut_id])
                     stats.done_run('killed_by_seed', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
 
-            assert len(killed_mutants) >= 1, f"Expected at least one mutant to be killed.: {results}"
+            assert len(killed_mutants) >= 1, f"Expected at least one mutant to be killed.: {results} {all_mutation_ids}"
             assert len(all_mutation_ids & killed_mutants) == len(killed_mutants), "No mutations in common"
 
             remaining_mutations = all_mutation_ids - killed_mutants
@@ -2950,6 +2951,8 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             all_mutation_ids = set(int(mm) for mm in mut_data['mutation_ids'])
             assert len(all_mutation_ids) > 0
+            for rr in results:
+                assert 'mutation_ids' in rr, f"{results}"
             result_ids = set(int(mm) for rr in results for mm in rr['mutation_ids'])
             assert len(result_ids - set(all_mutation_ids)) == 0, f"{sorted(result_ids)}\n{sorted(all_mutation_ids)}"
 
