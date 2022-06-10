@@ -2431,6 +2431,59 @@ def get_supermutations_cfg(prog_info, mutations):
     return supermutants, None
 
 
+def get_supermutations_simple_reachable(prog_info, mutations):
+    import cfg_supermutants
+    entry_node = 'LLVMFuzzerTestOneInput'
+    cfg_base_dir = Path('tmp/cfgs')
+
+    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+        call_graph = json.load(f)
+
+    call_info = indirect_call_info(call_graph)
+
+    muts = [
+        (mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
+        for mm in mutations
+    ]
+
+    try:
+        shutil.rmtree(cfg_base_dir)
+    except OSError as err:
+        logger.info(f"Could not clean up {cfg_base_dir}: {err}")
+
+    cfg_base_dir.mkdir(parents=True, exist_ok=True)
+    with start_mutation_container(None, None) as container:
+        tmp_dir = cfg_base_dir/"dots"
+        tmp_dir.mkdir()
+        bc_path_in_container = Path("/home/mutator", prog_info['orig_bc'])
+        tmp_dir_in_container = Path("/home/mutator/tmp/cfgs", Path(tmp_dir).name)
+        run_exec_in_container(
+            container, raise_on_error=True,
+            cmd=["opt", "-passes=dot-cfg", "-debug-pass-manager", str(bc_path_in_container), "-S", "-o", "bitcode.ll"],
+            exec_args=['--workdir', str(tmp_dir_in_container)],
+        )
+        cfg_graph, bitcode = cfg_supermutants.create_initial_graph(tmp_dir)
+
+    call_graph = cfg_supermutants.add_function_call_edges(cfg_graph, call_info)
+    print("CFG:", cfg_graph, "call graph:", call_graph)
+    # print(call_graph.out_edges("LLVMFuzzerTestOneInput"))
+
+    cfg_supermutants.load_mutations(cfg_graph, muts)
+
+    reachable_muts = cfg_supermutants.get_reachable_mutants(cfg_graph, call_graph, entry_node)
+    print(f"Found {len(reachable_muts)} reachable mutations (from {entry_node}) based on cfg and call graph.")
+
+    supermutants = [[mm] for mm in reachable_muts]
+
+    print(f"Generated {len(supermutants)} supermutants out of {len(reachable_muts)} reachable mutants ", end='')
+    print(f"a reduction of {(len(reachable_muts)) / len(supermutants)}")
+
+    # For testing if there are supermutants where multiple mutants are seen in one execution.
+    # supermutants = [sm for sm in supermutants if len(sm) > 1]
+
+    return supermutants, None
+
+
 def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutations):
     if rerun:
         rerun = ReadStatsDb(rerun)
@@ -2541,7 +2594,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
                     raise ValueError("Unknown rerun_mutations mode:", mode)
             
         else:
-            supermutations, graph_info = get_supermutations_cfg(prog_info, mutations)
+            supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
             stats.new_supermutant_graph_info(EXEC_ID, prog, graph_info)
 
 
