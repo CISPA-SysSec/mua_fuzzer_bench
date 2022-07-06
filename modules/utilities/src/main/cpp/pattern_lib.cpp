@@ -29,6 +29,16 @@ std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, in
     return getIdentifierString_unsignaled(instr, id, type, j);
 }
 
+static std::string getBBNodeLabel(const BasicBlock *Node) {
+    if (!Node->getName().empty())
+        return Node->getName().str();
+
+    std::string Str;
+    raw_string_ostream OS(Str);
+    Node->printAsOperand(OS, false);
+    return OS.str();
+}
+
 std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, int id, int type, const json &additionalInfo) {
     const DebugLoc &debugInfo = instr->getDebugLoc();
     json j;
@@ -50,6 +60,10 @@ std::string Pattern::getIdentifierString_unsignaled(const Instruction *instr, in
     j["type"] = type;
     auto surroundingFunction = instr->getFunction()->getName().str();
     j["funname"] = surroundingFunction;
+
+    auto surroundingBB = instr->getParent();
+    j["bb_name"] = getBBNodeLabel(surroundingBB);
+
     std::string instructionString;
     raw_string_ostream os(instructionString);
     instr->print(os);

@@ -2484,7 +2484,133 @@ def get_supermutations_simple_reachable(prog_info, mutations):
     return supermutants, None
 
 
-def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutations):
+def measure_mutation_coverage_per_file(mutator, prog_info, seed_dir):
+    detector_path = mutation_detector_path(prog_info)
+    args = "@@"
+    # create tmp folder to where to put trigger signals
+    with tempfile.TemporaryDirectory(dir=HOST_TMP_PATH) as trigger_folder, \
+         tempfile.TemporaryDirectory(dir=HOST_TMP_PATH) as result_dir:
+        result_file = Path(result_dir)/"results.json"
+        in_docker_trigger_folder = Path('/home/mutator/tmp/').joinpath(Path(trigger_folder).relative_to(HOST_TMP_PATH))
+        in_docker_result_file = Path('/home/mutator/tmp/').joinpath(Path(result_file).relative_to(HOST_TMP_PATH))
+        # start detector and run through all seed files
+        run = run_exec_in_container(mutator.name, False,
+            [
+                '/home/mutator/iterate_seeds_individual.py',
+                '--seeds', seed_dir,
+                '--args', args,
+                '--binary', detector_path,
+                '--workdir', '/home/mutator',
+                '--results-file', str(in_docker_result_file),
+            ],
+            exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
+            timeout=60*60*4)
+        if run['timed_out'] or run['returncode'] != 0:
+            logger.info(f"Got returncode != 0: {run['returncode']}")
+            print(run['out'])
+            raise CoverageException(run)
+
+        with open(result_file, 'rt') as f:
+            data = json.load(f)
+        return data
+
+
+def get_supermutations_seed_reachable(prog, prog_info, mutations, mutator_container, seed_base_dir, fuzzers):
+    MAX_SM_SIZE = 200
+
+    mut_data = {mm[0]: mm[3][mm[0]] for mm in mutations}
+
+    covered_mutations = set()
+    input_coverages = defaultdict(set)
+    for fuzzer in fuzzers:
+        seeds = get_seed_dir(seed_base_dir, prog, fuzzer)
+        seed_covered_mutations = measure_mutation_coverage_per_file(mutator_container, prog_info, seeds)
+        for scv in seed_covered_mutations.values():
+            scv = set(scv)
+            covered_mutations |= scv
+            for mm in scv:
+                input_coverages[mm] |= scv
+
+    # some mutations are in omitted functions, however, this is not respected in the coverage measurement
+    # do this filtering now
+    covered_mutations = set(filter(lambda x: x in mut_data, covered_mutations))
+            
+    mutations_todo = sorted(list(covered_mutations), key=lambda mm: len(input_coverages[mm]), reverse=True)
+    supermutants = []
+
+    while mutations_todo:
+        used_funcs = set()
+        candidates = mutations_todo.copy()
+        supermutant = []
+        collisions = set()
+
+        while candidates:
+            mt = candidates.pop()
+            candidate_fun = mut_data[mt]['funname']
+            if candidate_fun not in used_funcs:
+                used_funcs.add(candidate_fun)
+                supermutant.append(mt)
+                collisions |= input_coverages[mt]
+                candidates = list(filter(lambda x: x not in collisions, candidates))
+                if len(supermutant) >= MAX_SM_SIZE:
+                    break
+
+        for can in supermutant:
+            mutations_todo.remove(can)
+        
+        supermutants.append(supermutant)
+
+    all_mutations = set(mm[0] for mm in mutations)
+    not_covered_mutations = all_mutations - covered_mutations
+
+    nc_mut_per_instr = defaultdict(list)
+    for nc_mut in not_covered_mutations:
+        funname = mut_data[nc_mut]['funname']
+        bb_name = mut_data[nc_mut]['bb_name']
+        instr = mut_data[nc_mut]['instr']
+        # nc_mut_per_instr[(funname, instr)].append(nc_mut) # 53
+        # nc_mut_per_instr[(funname, bb_name)].append(nc_mut) # 58
+        nc_mut_per_instr[funname].append(nc_mut) # 479
+
+    not_covered_supermutants = []
+    while len(nc_mut_per_instr) > 0:
+        supermutant = []
+        done_locs = []
+        for loc in nc_mut_per_instr:
+            nc_muts = nc_mut_per_instr[loc]
+            try:
+                supermutant.append(nc_muts.pop())
+            except IndexError:
+                done_locs.append(loc)
+            if len(nc_muts) == 0:
+                done_locs.append(loc)
+
+            if len(supermutant) >= MAX_SM_SIZE:
+                break
+
+        for dl in done_locs:
+            nc_mut_per_instr.pop(dl)
+
+        # Order in reversed
+        supermutant = list(sorted(supermutant, reverse=True))
+
+        not_covered_supermutants.append(supermutant)
+
+    print(f"Generated {len(supermutants)} supermutants out of {len(covered_mutations)} covered mutants ", end='')
+    print(f"a reduction of {(len(covered_mutations)) / len(supermutants):.2f}")
+
+    print(f"Generated {len(not_covered_supermutants)} supermutants out of {len(not_covered_mutations)} not covered mutants ", end='')
+    print(f"a reduction of {(len(not_covered_mutations)) / len(not_covered_supermutants):.2f}")
+
+    return supermutants + not_covered_supermutants, {
+        'covered': list(covered_mutations),
+        'covered_supermutants': list(supermutants),
+        'not_covered': list(not_covered_mutations),
+        'not_covered_supermutants': list(not_covered_supermutants),
+    }
+
+
+def get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, rerun_mutations):
     if rerun:
         rerun = ReadStatsDb(rerun)
 
@@ -2556,7 +2682,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
             all_mutation_ids = set((p['UID'] for p in mutation_data))
             filtered_mutation_ids = set((int(m) for m in filtered_mutations))
             assert len(filtered_mutation_ids - all_mutation_ids) == 0, 'Filtered mutation ids contain ids not in all ids.'
-            mutations = list((str(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
+            mutations = list((int(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
             logger.info(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         if rerun:
@@ -2594,7 +2720,8 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutatio
                     raise ValueError("Unknown rerun_mutations mode:", mode)
             
         else:
-            supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
+            # supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
+            supermutations, graph_info = get_supermutations_seed_reachable(prog, prog_info, mutations, mutator, seed_base_dir, fuzzers)
             stats.new_supermutant_graph_info(EXEC_ID, prog, graph_info)
 
 
@@ -2643,7 +2770,7 @@ def printable_m_id(mut_data):
 # Then yields all information needed to start a eval run
 def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rerun, rerun_mutations):
     with start_mutation_container(None, 24*60*60) as mutator:
-        all_mutations = get_all_mutations(stats, mutator, progs, seed_base_dir, rerun, rerun_mutations)
+        all_mutations = get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, rerun_mutations)
 
         all_mutations = sequence_mutations(all_mutations)
 
@@ -2887,7 +3014,15 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     killed_mutants |= set([mut_id])
                     stats.done_run('killed_by_seed', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
 
-            assert len(killed_mutants) >= 1, f"Expected at least one mutant to be killed.: {results} {all_mutation_ids}"
+            if len(killed_mutants) == 0:
+                for res in [rr for rr in results]:
+                    if rr['result'] == "timout_by_seed" and len(rr['mutation_ids']) == 0:
+                        chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
+                        recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
+                        recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
+                    break
+                else:  # no break
+                    assert len(killed_mutants) >= 1, f"Expected at least one mutant to be killed.: {results} {all_mutation_ids}"
             assert len(all_mutation_ids & killed_mutants) == len(killed_mutants), "No mutations in common"
 
             remaining_mutations = all_mutation_ids - killed_mutants
@@ -3434,7 +3569,9 @@ def prepare_mutation(core_to_use, data):
         with open(prog_ll, 'rt') as f:
             ll_data = f.read()
             for mid in data['mutation_ids']:
-                assert ll_data.find(f"signal_triggered_mutation(i64 {mid})") != -1, f"Did not find \"signal_triggered_mutation(i64 {mid})\" in {prog_ll}. All expected mutation ids: {data['mutation_ids']}"
+                assert ll_data.find(f"signal_triggered_mutation(i64 {mid})") != -1, \
+                    f"Did not find \"signal_triggered_mutation(i64 {mid})\" in {prog_ll}. " \
+                    f"All expected mutation ids ({len(data['mutation_ids'])}): {data['mutation_ids']}"
 
         try:
             clang_args = [

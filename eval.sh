@@ -31,6 +31,7 @@ echo yes | ./mutator-docker-wrapper.py -b
 
 sudo rm /dev/shm/fuzz.file* || true
 sudo rm -rf /dev/shm/mutator/
+sudo rm -rf /dev/shm/covered/
 sudo rm -rf ./tmp/lib
 sudo rm -rf ./tmp/samples
 sudo rm -rf ./tmp/unsolved_mutants
