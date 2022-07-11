@@ -2965,7 +2965,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             multi = run_result['data']
             record_supermutant_multi(stats, mut_data, multi, data['fuzzer'], data['run_ctr'], 'multiple_result')
-            multi_ids = set([tuple(sorted(mm['mutation_ids'])) for mm in multi if len(mm['mutation_ids']) > 1])
+            multi_ids = set([tuple(sorted(mm['mutation_ids'])) for mm in multi if len(mm.get('mutation_ids', [])) > 1])
             logger.info(f"= run (multi):  {mut_data['prog']}:{printable_m_id(mut_data)}:{multi_ids}")
             all_mutations = mut_data['mutation_ids']
             new_supermutants = split_up_supermutant(multi_ids, all_mutations)
