@@ -4038,7 +4038,7 @@ def seed_gathering_run(run_data, docker_image):
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
             str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
-        working_dir=str(workdir),
+        working_dir=str(shared_dir_to_docker(workdir)),
         mem_limit="10g",
         mem_swappiness=0,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
@@ -5639,6 +5639,7 @@ def seed_coverage_run(run_data, docker_image):
     # seeds_out = run_data['seed_out_dir']
 
     workdir.mkdir(parents=True, exist_ok=True)
+    in_docker_workdir = shared_dir_to_docker(workdir)
 
     # get access to the docker client to start the container
     docker_client = docker.from_env()
@@ -5648,10 +5649,10 @@ def seed_coverage_run(run_data, docker_image):
         docker_image, # the image
         [
             "/home/mutator/seed_coverage.py",
-            "--prog", str(orig_bin),
+            "--prog", str(shared_dir_to_docker(orig_bin)),
             "--prog-args", str(args),
-            "--seeds", str(seed_path),
-            "--workdir", str(workdir),
+            "--seeds", str(shared_dir_to_docker(seed_path)),
+            "--workdir", str(in_docker_workdir),
         ], # the arguments
         user=os.getuid(),
         privileged=True,
@@ -5661,7 +5662,7 @@ def seed_coverage_run(run_data, docker_image):
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
             str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
-        working_dir=str(workdir),
+        working_dir=str(in_docker_workdir),
         mem_swappiness=0,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
