@@ -5466,8 +5466,8 @@ def seed_minimization_run(run_data, docker_image):
             "/home/user/minimize.sh",
             str(orig_bc),
             str(compile_args),
-            str(seeds_in),
-            str(seeds_out),
+            str(shared_dir_to_docker(seeds_in)),
+            str(shared_dir_to_docker(seeds_out)),
         ], # the arguments
         environment={
             **({'DICT_PATH': str(Path(IN_DOCKER_WORKDIR)/dictionary)} if dictionary is not None else {}),
@@ -5478,12 +5478,16 @@ def seed_minimization_run(run_data, docker_image):
             str(HOST_TMP_PATH): {'bind': str(IN_DOCKER_WORKDIR)+"/tmp/", 'mode': 'ro'},
             str(SHARED_DIR): {'bind': str(IN_DOCKER_SHARED_DIR), 'mode': 'rw'},
         },
-        working_dir=str(workdir),
+        working_dir=str(shared_dir_to_docker(workdir)),
         mem_swappiness=0,
         log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
             config={'max-size': '10m'}),
         detach=True
     )
+
+    del seeds_in
+    del seeds_out
+    del workdir
 
     logs_queue = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
