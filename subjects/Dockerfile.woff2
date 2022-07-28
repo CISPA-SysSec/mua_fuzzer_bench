@@ -8,7 +8,7 @@ WORKDIR /home/mutator/samples
 RUN apt-get install -y make autoconf automake libtool
 RUN git clone https://github.com/google/woff2
 WORKDIR /home/mutator/samples/woff2/
-RUN git checkout a0d0ed7da27b708c0a4e96ad7a998bddc933c06e
+RUN git checkout 4721483ad780ee2b63cb787bfee4aa64b61a0446
 RUN git submodule update --init --recursive
 
 # build
