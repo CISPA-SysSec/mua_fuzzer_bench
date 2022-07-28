@@ -3015,7 +3015,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     stats.done_run('killed_by_seed', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
 
             if len(killed_mutants) == 0:
-                for res in [rr for rr in results]:
+                for rr in results:
                     if rr['result'] == "timout_by_seed" and len(rr['mutation_ids']) == 0:
                         chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
