@@ -50,11 +50,8 @@ order by mut_type;
 DROP VIEW IF EXISTS distinct_seed_crashing_inputs;
 CREATE VIEW distinct_seed_crashing_inputs
 as
-select substr(fuzzer_tmp, 0, instr(fuzzer_tmp, "/")) as fuzzer, *
-from (
-	select replace(path, "tmp/seeds_coverage/median_runs/" || prog || "/", "") as fuzzer_tmp, * from seed_crashing_inputs
-	where orig_return_code != mut_return_code
-)
+select * from seed_crashing_inputs
+where orig_return_code != mut_return_code
 group by exec_id, prog, mutation_id, fuzzer;
 
 -- a distinct list of crashing inputs one for each prog, mutation_id, fuzzer if available
@@ -517,3 +514,85 @@ CREATE VIEW super_mutants_multi_group
 as
 select prog, super_mutant_id from super_mutants_multi
 group by prog, super_mutant_id;
+
+
+DROP VIEW IF EXISTS run_results_with_super_mutants;
+CREATE VIEW run_results_with_super_mutants
+as
+select *
+from (
+	select * from run_results
+	left join (
+		select *, mutation_id as mut_id
+		from started_super_mutants
+		group by exec_id, prog, mut_id
+	) as muts using (exec_id, prog, mut_id)
+	group by exec_id, prog, mut_id, run_results.fuzzer
+)
+group by exec_id, prog, mut_id
+order by mut_id, exec_id, prog;
+
+
+DROP VIEW IF EXISTS reduction_per_prog;
+CREATE VIEW reduction_per_prog
+as
+select exec_id, prog, rr.cnt as mutations, sm.cnt as supermutants, round(cast(rr.cnt as float) / cast(sm.cnt as float), 2) as reduction
+from (
+	select exec_id, prog, count() as cnt
+	from run_results_with_super_mutants
+	group by exec_id, prog
+) as rr
+join (
+	select exec_id, prog, count() as cnt
+	from (
+		select *
+		from run_results_with_super_mutants
+		group by exec_id, prog, super_mutant_id
+	)
+	group by exec_id, prog
+) as sm using (exec_id, prog);
+
+
+DROP VIEW IF EXISTS reduction_overall;
+CREATE VIEW reduction_overall
+as
+select rr.cnt as mutations, sm.cnt as supermutants, round(cast(rr.cnt as float) / cast(sm.cnt as float), 2) as reduction
+from (
+	select count() as cnt
+	from run_results_with_super_mutants
+) as rr
+join (
+	select count() as cnt
+	from (
+		select *
+		from run_results_with_super_mutants
+		group by exec_id, prog, super_mutant_id
+	)
+) as sm;
+
+DROP VIEW IF EXISTS union_run_results;
+CREATE VIEW union_run_results
+as
+select * from run_results group by exec_id, prog, mut_id;
+
+DROP VIEW IF EXISTS union_run_results_covered_by_seed;
+CREATE VIEW union_run_results_covered_by_seed
+as
+select * from run_results where covered_by_seed group by exec_id, prog, mut_id;
+
+DROP VIEW IF EXISTS union_run_results_found;
+CREATE VIEW union_run_results_found
+as
+select * from run_results where found_by_seed group by exec_id, prog, mut_id;
+
+DROP VIEW IF EXISTS union_run_results_confirmed;
+CREATE VIEW union_run_results_confirmed
+as
+select * from run_results where confirmed group by exec_id, prog, mut_id;
+
+DROP VIEW IF EXISTS union_run_results_covered;
+CREATE VIEW union_run_results_covered
+as
+select * from run_results where covered_file_seen not null group by exec_id, prog, mut_id;
+
+select "done";

@@ -4703,9 +4703,19 @@ def prog_stats(con):
     res += stats.to_html()
     return res
 
-def latex_stats_seeds(out_dir):
+def latex_stats_seeds(seed_dir, run_results, out_dir):
+    seed_dir = Path(seed_dir)
+    seed_res = {}
+    for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
+        ].groupby(['exec_id', 'prog', 'fuzzer']
+        )['covered_by_seed', 'found_by_seed'].sum().iterrows():
+        index = (rr[0][1], rr[0][2])
+        cov = rr[1]['covered_by_seed']
+        found = rr[1]['found_by_seed']
+        seed_res[index] = (cov, found)
+
     run_data = []
-    for res_json in Path("seeds/seeds_coverage/").glob("info_*.json"):
+    for res_json in seed_dir.glob("info_*.json"):
         with open(res_json, 'rt') as f:
             run_data.extend(json.load(f))
 
@@ -4714,7 +4724,7 @@ def latex_stats_seeds(out_dir):
         bucketed[(dd['prog'], dd['fuzzer'])].append(dd)
 
     data = defaultdict(lambda: defaultdict(dict))
-    for pf, bb in bucketed.items():
+    for _, bb in bucketed.items():
         sorted_bb = sorted(bb, key=lambda x: len(x['covered_mutations']))
         median_bb = sorted_bb[len(sorted_bb)//2]
         bb = median_bb
@@ -4730,8 +4740,9 @@ def latex_stats_seeds(out_dir):
     res_table += r"\midrule" + "\n"
 
     for ii, pp in enumerate(all_progs):
-        f_line = rf"\multirow{{3}}{{*}}{{{pp}}} & F: &"
+        f_line = rf"\multirow{{4}}{{*}}{{{pp}}} & F: &"
         m_line = rf"                     & M: &"
+        k_line = rf"                     & K: &"
         l_line = rf"                     & L: &"
 
         for ff in all_fuzzers:
@@ -4740,7 +4751,8 @@ def latex_stats_seeds(out_dir):
             covered_lines = len(set(tuple(ll) for ll in fuzzer_res['kcov_res']['covered_lines']))
             num_seeds = fuzzer_res['num_seeds_minimized']
             f_line += f" & {num_seeds}"
-            m_line += f" & {covered_mutations}"
+            m_line += f" & {covered_mutations} / {seed_res[(pp, ff)][0]}"
+            k_line += f" & {seed_res[(pp, ff)][1]}"
             l_line += f" & {covered_lines}"
 
         # max_num_mutations = "---"
@@ -4751,14 +4763,108 @@ def latex_stats_seeds(out_dir):
 
         f_line += rf" \\"
         m_line += rf" \\"
+        k_line += rf" \\"
         l_line += rf" \\"
         res_table += f_line + "\n"
         res_table += m_line + "\n"
+        res_table += k_line + "\n"
         res_table += l_line + "\n"
         if ii < len(all_progs) - 1:
             res_table += r"\cmidrule{4-7}" + "\n"
 
     with open(out_dir/"seed-stats.tex", "wt") as f:
+        f.write(res_table)
+
+
+def latex_big_table(seed_dir, run_results, out_dir, con):
+    import pandas as pd
+
+    seed_dir = Path(seed_dir)
+    seed_res = {}
+    for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
+        ].groupby(['exec_id', 'prog', 'fuzzer']
+        )['covered_by_seed', 'found_by_seed'].sum().iterrows():
+        index = (rr[0][1], rr[0][2])
+        cov = rr[1]['covered_by_seed']
+        found = rr[1]['found_by_seed']
+        seed_res[index] = (cov, found)
+
+    all_progs = sorted(set(pp for pp, ff in seed_res.keys()))
+
+    run_data = []
+    for res_json in seed_dir.glob("info_*.json"):
+        with open(res_json, 'rt') as f:
+            run_data.extend(json.load(f))
+
+    bucketed = defaultdict(list)
+    for dd in run_data:
+        bucketed[(dd['prog'], dd['fuzzer'])].append(dd)
+
+    data = defaultdict(lambda: defaultdict(dict))
+    for _, bb in bucketed.items():
+        sorted_bb = sorted(bb, key=lambda x: len(x['covered_mutations']))
+        median_bb = sorted_bb[len(sorted_bb)//2]
+        bb = median_bb
+        data[bb['prog']][bb['fuzzer']] = median_bb
+
+    prog_fuzzer_stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
+    # print(prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == "afl") & (prog_fuzzer_stats['prog'] == "curl")])
+
+    all_fuzzers = sorted(set(kk for dd in data.values() for kk in dd.keys()))
+    
+    res_table = ""
+
+    all_types_str = r' \#Files & \#Cov Mutants & \#Seed Killed & \#Kcov Lines & \# Dyn Cov & \# Dyn Killed'
+    res_table += rf"Program &   Fuzzer &&   {all_types_str} \\" + "\n"
+    #res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
+    res_table += r"\midrule" + "\n"
+
+    for ii, pp in enumerate(all_progs):
+        lines = ["                      & " for _ in all_fuzzers]
+        # add prog name
+        lines[0] = rf"\multirow{{4}}{{*}}{{{pp}}} & "
+
+        for ffii, ff in enumerate(all_fuzzers):
+            fuzzer_res = data[pp][ff]
+            covered_mutations = len(fuzzer_res['covered_mutations'])
+            covered_lines = len(set(tuple(ll) for ll in fuzzer_res['kcov_res']['covered_lines']))
+            num_seeds = fuzzer_res['num_seeds_minimized']
+            this_prog_fuzzer = prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == ff) & (prog_fuzzer_stats['prog'] == pp)]
+            covered_dyn = this_prog_fuzzer['c_by_f'].iat[0]
+            killed_dyn = this_prog_fuzzer['f_by_f'].iat[0]
+            
+            lines[ffii] += f"{ff} & "
+            lines[ffii] += f" & {num_seeds}"                # files after minimization
+            lines[ffii] += f" & {covered_mutations} / {seed_res[(pp, ff)][0]}"  # covered by seed
+            lines[ffii] += f" & {seed_res[(pp, ff)][1]}"    # killed by seed
+            lines[ffii] += f" & {covered_lines}"            # covered lines
+            lines[ffii] += f" & {covered_dyn}"    # todo: covered dyn
+            lines[ffii] += f" & {killed_dyn}"    # todo: killed dyn
+            lines[ffii] += r" \\"
+
+        # max_num_mutations = "---"
+        # max_num_lines = "---"
+        # f_line += rf" & & \\"
+        # m_line += rf" & & {max_num_mutations} \\"
+        # l_line += rf" & & {max_num_lines} \\"
+
+        # f_line += rf" \\"
+        # m_line += rf" \\"
+        # k_line += rf" \\"
+        # l_line += rf" \\"
+
+        for ll in lines:
+            res_table += ll + "\n"
+        # res_table += m_line + "\n"
+        # res_table += k_line + "\n"
+        # res_table += l_line + "\n"
+        if ii < len(all_progs) - 1:
+            res_table += r"\cmidrule{4-9}" + "\n"
+
+    print(res_table)
+    sys.exit()
+
+    with open(out_dir/"big-table.tex", "wt") as f:
         f.write(res_table)
 
 
@@ -4782,56 +4888,119 @@ def latex_stats(out_dir, con):
     import pandas as pd
     logger.info(f"Writing latex tables to: {out_dir}")
 
-    latex_stats_seeds(out_dir)
-
     old_float_format = pd.options.display.float_format
     pd.options.display.float_format = lambda x : '{:.0f}'.format(x) if round(x,0) == x else '{:,.2f}'.format(x)
 
     stats = pd.read_sql_query("SELECT * from run_results_by_fuzzer", con)
-    stats[['fuzzer', 'done', 'covered', 'c_by_seed', 'found', 'f_by_seed', 'f_by_f']].to_latex(
-        buf=out_dir/"fuzzer-stats.tex",
-        header=['prog', 'total', 'covered', 'by seed', 'found', 'by seed', 'by fuzzer'],
-        na_rep='---',
-        index=False,
-    )
+    stats = stats[['fuzzer', 'done', 'covered', 'c_by_f', 'found', 'f_by_f']]
+    stats.rename(columns={'done': 'total', 'c_by_f': 'dyn cov', 'f_by_f': 'dyn found'}, inplace=True)
+    styler = stats.style
+    styler.na_rep = '---'
+    styler.hide(axis='index')
+    styler.to_latex(buf=out_dir/"fuzzer-stats.tex")
 
-    stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
-    stats[['prog', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
-        buf=out_dir/"prog-stats.tex",
-        header=['prog', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
-        na_rep='---',
-        index=False,
-    )
+    combined_total = len(pd.read_sql_query("""
+        select 1 from run_results
+        group by exec_id, prog, mut_id, run_ctr;
+    """, con))
 
-    stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
-    stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
-        buf=out_dir/"mut-type-stats.tex",
-        header=['mutation', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
-        na_rep='---',
-        index=False,
-    )
+    combined_covered = len(pd.read_sql_query("""
+        select 1 from run_results
+        where covered_file_seen is not NULL
+        group by exec_id, prog, mut_id, run_ctr;
+    """, con))
+
+    combined_confirmed = len(pd.read_sql_query("""
+        select 1 from run_results
+        where time_found is not NULL
+        group by exec_id, prog, mut_id, run_ctr;
+    """, con))
+
+    stats = pd.concat([stats, pd.DataFrame.from_dict({
+        'fuzzer': ['combined'],
+        'total': [combined_total],
+        'covered': [combined_covered],
+        'dyn cov': [0],
+        'found': [combined_confirmed],
+        'dyn found': [0],
+    })], ignore_index=True)
+
+    stats.to_csv(path_or_buf=out_dir/"fuzzer-stats.csv")
+
+    # stats = pd.read_sql_query("SELECT * from run_results_by_prog", con)
+    # print(stats.columns)
+    # stats = stats[['prog', 'done', 'covered', 'interesting', 'confirmed']]
+    # stats.rename(columns={'done': 'total', 'interesting': 'stubborn', 'confirmed': 'killed'}, inplace=True)
+    # styler = stats.style
+    # styler.na_rep = '---'
+    # styler.hide(axis='index')
+    # styler.to_latex(buf=out_dir/"prog-stats.tex")
+    # ,
+    #     header=['prog', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
+    #     na_rep='---',
+    #     index=False,
+    # )
+
+    # stats = pd.read_sql_query("SELECT * from run_results_by_mut_type", con)
+    # stats = stats[['name', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']]
+    # stats.rename(columns={'name': 'mutation', 'done': 'total', 'f_by_f': 'by fuzzer'}, inplace=True)
+
+    # .to_latex(
+    #     buf=out_dir/"mut-type-stats.tex",
+    #     header=['mutation', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
+    #     na_rep='---',
+    #     index=False,
+    # )
+    # styler = stats.style
+    # styler.na_rep = '---'
+    # styler.hide(axis='index')
 
     stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
-    stats[['prog', 'fuzzer', 'done', 'covered', 'f_by_seed', 'interesting', 'f_by_one', 'f_by_all']].to_latex(
-        buf=out_dir/"prog-fuzzer-stats.tex",
-        header=['prog', 'fuzzer', 'total', 'covered', 'by seed', 'stubborn', 'by one', 'by all'],
-        na_rep='---',
-        index=False,
-    )
+    stats = stats[['prog', 'fuzzer', 'done', 'covered', 'c_by_f', 'found', 'f_by_f']]
+    stats.rename(columns={'done': 'total', 'c_by_f': 'by fuzzer', 'f_by_f': 'by fuzzer'}, inplace=True)
+    styler = stats.style
+    styler.na_rep = '---'
+    styler.hide(axis='index')
+    styler.to_latex(buf=out_dir/"prog-fuzzer-stats.tex")
+
+    stats.to_csv(path_or_buf=out_dir/"prog-fuzzer-stats.csv")
+
+    stats = pd.read_sql_query("SELECT prog, mutations, supermutants, reduction from reduction_per_prog", con)
+    stats = stats[['prog', 'mutations', 'supermutants', 'reduction']]
+    # stats.rename(columns={'done': 'total', 'c_by_f': 'by fuzzer', 'f_by_f': 'by fuzzer'}, inplace=True)
+    styler = stats.style
+    styler.format(precision=2)
+    styler.na_rep = '---'
+    styler.hide(axis='index')
+    styler.to_latex(buf=out_dir/"reduction-prog.tex")
+
+    stats.to_csv(path_or_buf=out_dir/"reduction-prog.csv")
 
     old_max_with = pd.get_option('display.max_colwidth')
     pd.set_option('display.max_colwidth', 1000)
 
-    stats = pd.read_sql_query("SELECT * from mutation_types", con)
-    stats[['pattern_name', 'description', 'procedure']].to_latex(
-        buf=out_dir/"mutations.tex",
-        header=['mutation', 'description', 'procedure'],
-        na_rep='---',
-        index=False,
+    stats = pd.read_sql_query("SELECT * from mutation_types group by mut_type", con)
+    stats = stats[['pattern_name', 'description', 'procedure']]
+    stats['pattern_name'] = stats['pattern_name'].transform(lambda x: x.replace('_', ' '))
+    # stats.rename(columns={'pattern_name': 'mutation'}, inplace=True)
+    styler = stats.style
+    styler.na_rep = '---'
+    styler.hide(axis='index')
+    styler.format(escape='latex')
+    styler.to_latex(
         column_format="p{.18\\textwidth}p{.4\\textwidth}p{.4\\textwidth}",
-        longtable=True,
-        multirow=True,
+        buf=out_dir/"mutations.tex",
+        environment='longtable',
+        # longtable=True,
+        # multirow_=True,
     )
+
+    stats.to_csv(path_or_buf=out_dir/"mutations.csv")
+
+        # header=['mutation', 'description', 'procedure'],
+        # na_rep='---',
+        # index=False,
+        # column_format="p{.18\\textwidth}p{.4\\textwidth}p{.4\\textwidth}",
 
     pd.options.display.float_format = old_float_format
     pd.set_option('display.max_colwidth', old_max_with)
@@ -4971,12 +5140,14 @@ def gather_plot_data(runs, run_results):
     if len(run_results) == 0:
         return None
 
-    totals_set = defaultdict(set)
     max_time = 0
     all_progs = set(run.prog for run in runs.itertuples())
     all_fuzzers = set(run.fuzzer for run in runs.itertuples())
 
     absolute_num_mutations = defaultdict(lambda: [0, 0])
+
+    print(runs.head())
+    print(run_results.head())
 
     for run in runs.itertuples():
         if run.fuzzer != list(all_fuzzers)[0]:
@@ -5041,6 +5212,8 @@ def gather_plot_data(runs, run_results):
         'confirmed': 0,
     })
 
+    totals_set = defaultdict(set)
+
     def inc_counter(fuzzer, prog, id, counter_type):
         counter[(fuzzer, prog)][counter_type] += 1
         counter[(fuzzer, ALL_PROG)][counter_type] += 1
@@ -5057,17 +5230,16 @@ def gather_plot_data(runs, run_results):
         try:
             total_percentage = (counts['confirmed'] / total) * 100
         except ZeroDivisionError:
+            print("zero")
             total_percentage = 0
 
         try:
             confirmed_percentage = (counts['confirmed'] / counts['covered']) * 100
         except ZeroDivisionError:
+            print("bug not covered but confirmed")
             confirmed_percentage = 0
 
-        try:
-            absolute = counts['confirmed']
-        except ZeroDivisionError:
-            absolute = 0
+        absolute = counts['confirmed']
 
         for name, val in [
                 ('total', total_percentage),
@@ -5105,7 +5277,7 @@ def gather_plot_data(runs, run_results):
         if event['time'] > max_time:
             max_time = event['time']
 
-        total_inc = inc_counter(event['fuzzer'], event['prog'], event['id'], event['type'])
+        total_inc: bool = inc_counter(event['fuzzer'], event['prog'], event['id'], event['type'])
         add_datapoint(event['fuzzer'], event['prog'], event['time'])
         add_datapoint(event['fuzzer'], ALL_PROG, event['time'])
         if total_inc:
@@ -5280,9 +5452,60 @@ def plot_killed_union(runs, run_results, plot_dir):
     
     plot_path_pdf = plot_dir.joinpath(f"wayne-diagram-separate.pdf")
     wayne_diagram(values, total_sum, all_fuzzers, plot_path_pdf)
+
+
+def plot_mutation_distribution(con, plot_dir):
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.sankey import Sankey
+
+    plt.set_loglevel('info')
+
+    # total_num = 102677
+    total_num = int(pd.read_sql_query("select count() as cnt from union_run_results", con)['cnt'][0])
+
+    covered_num = int(pd.read_sql_query("select count() as cnt from union_run_results_covered", con)['cnt'][0])
+    not_covered = (total_num - covered_num) / total_num
+    # not_covered = 19970 / total_num
+
+
+    killed_by_seed_num = int(pd.read_sql_query("select count() as cnt from union_run_results_found", con)['cnt'][0])
+    killed_by_seed = killed_by_seed_num / total_num
+
+    stubborn = (1 - not_covered - killed_by_seed)
+
+    total_manual = 100
+    immortal = 75 / total_manual * stubborn
+    equivalent = 16 / total_manual * stubborn
+    sanitizer = 6 / total_manual * stubborn
+    difficult = 3 / total_manual * stubborn
+
+    fig, ax = plt.subplots()
+    ax.set_axis_off()
+    # ax = fig.add_subplot(1, 1, 1, xticks=[], yticks=[], title="Distribution of mutations")
+
+    sankey = Sankey(ax=ax, format="%.02f", unit="%", scale=.01)
+    sankey.add(
+        flows=[vv*100 for vv in [1, -not_covered, -killed_by_seed, -stubborn]],
+        labels=['Mutations', 'Not Covered', 'Killed By Seed', 'Stubborn'],
+        orientations=[0, 1, -1, 0],
+    )
+
+    sankey.add(
+        prior=0,
+        connect=(3, 0),
+        flows=[vv*100 for vv in [stubborn, -immortal, -equivalent, -sanitizer, -difficult]],
+        labels=[None, 'Immortal (Oracle too Weak)', 'Equivalent', 'Sanitizer', 'Difficult'],
+        orientations=[0, 1, 1, 0, -1],
+        pathlengths=[.0, .25, .25, .15, .25]
+    )
+
+    sankey.finish()
+    fig.savefig(plot_dir.joinpath("mutation-distribution.pdf"), format="pdf")
+    plt.close(fig)
     
 
-def generate_plots(db_path, to_disk, skip_script):
+def generate_plots(db_path, seed_dir, to_disk, skip_script):
     import pandas as pd
     db_path = Path(db_path)
 
@@ -5301,9 +5524,6 @@ def generate_plots(db_path, to_disk, skip_script):
             cur = con.cursor()
             cur.executescript(f.read())
         logger.info("done")
-
-    if to_disk:
-        latex_stats(plot_dir, con)
 
     res = header()
     # logger.info("crashes")
@@ -5342,7 +5562,12 @@ def generate_plots(db_path, to_disk, skip_script):
         res += plot(plot_dir if to_disk else None, f"Absolute Killed Mutants Overall", "overall", total_plot_data['absolute'], total_plot_data['num_mutations'], True)
 
     if to_disk:
+        latex_stats(plot_dir, con)
         plot_killed_union(runs, run_results, plot_dir)
+        if seed_dir is not None:
+            # latex_stats_seeds(seed_dir, run_results, plot_dir)
+            latex_big_table(seed_dir, run_results, plot_dir, con)
+        plot_mutation_distribution(con, plot_dir)
     #  res += '<h4>Unique Finds</h4>'
     #  res += 'Left finds what upper does not.'
     #  res += matrix_unique_finds(unique_finds_overall).to_html(na_rep="")
@@ -5895,6 +6120,8 @@ def main():
     parser_plot = subparsers.add_parser('plot', help="Generate plots for the gathered data")
     parser_plot.add_argument("--artifacts", default=False, action="store_true",
             help="If further detailed plots and latex tables should be written to disk.")
+    parser_plot.add_argument("--seed-dir", default=None,
+            help="Will be used to generate stats regarding the seeds, if given.")
     parser_plot.add_argument("--skip-script", default=False, action="store_true",
             help="If plot has already been called on the current db, so eval.sql script has been executed on the db. "
                 "This option can be used to skip reevaluating the "
@@ -5954,7 +6181,7 @@ def main():
     elif args.cmd == 'import_seeds':
         import_seeds(args.source, args.dest)
     elif args.cmd == 'plot':
-        generate_plots(args.db_path, args.artifacts, args.skip_script)
+        generate_plots(args.db_path, args.seed_dir, args.artifacts, args.skip_script)
     elif args.cmd == 'merge':
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
