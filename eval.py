@@ -2775,7 +2775,7 @@ def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rer
         all_mutations = sequence_mutations(all_mutations)
 
         # measure coverage by seeds
-        if not SKIP_LOCATOR_SEED_CHECK:
+        if not SKIP_LOCATOR_SEED_CHECK and rerun is None:
             for prog in progs:
                 prog_info = PROGRAMS[prog]
                 for fuzzer in fuzzers:
