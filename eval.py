@@ -4780,16 +4780,16 @@ def latex_big_table(seed_dir, run_results, out_dir, con):
     import pandas as pd
 
     seed_dir = Path(seed_dir)
-    seed_res = {}
+    full_res = {}
     for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
         ].groupby(['exec_id', 'prog', 'fuzzer']
         )['covered_by_seed', 'found_by_seed'].sum().iterrows():
         index = (rr[0][1], rr[0][2])
         cov = rr[1]['covered_by_seed']
         found = rr[1]['found_by_seed']
-        seed_res[index] = (cov, found)
+        full_res[index] = (cov, found)
 
-    all_progs = sorted(set(pp for pp, ff in seed_res.keys()))
+    all_progs = sorted(set(pp for pp, ff in full_res.keys()))
 
     run_data = []
     for res_json in seed_dir.glob("info_*.json"):
@@ -4800,46 +4800,51 @@ def latex_big_table(seed_dir, run_results, out_dir, con):
     for dd in run_data:
         bucketed[(dd['prog'], dd['fuzzer'])].append(dd)
 
-    data = defaultdict(lambda: defaultdict(dict))
+    seed_data = defaultdict(lambda: defaultdict(dict))
     for _, bb in bucketed.items():
         sorted_bb = sorted(bb, key=lambda x: len(x['covered_mutations']))
         median_bb = sorted_bb[len(sorted_bb)//2]
         bb = median_bb
-        data[bb['prog']][bb['fuzzer']] = median_bb
+        seed_data[bb['prog']][bb['fuzzer']] = median_bb
 
     prog_fuzzer_stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
     # print(prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == "afl") & (prog_fuzzer_stats['prog'] == "curl")])
 
-    all_fuzzers = sorted(set(kk for dd in data.values() for kk in dd.keys()))
+    all_fuzzers = sorted(set(kk for dd in seed_data.values() for kk in dd.keys()))
     
     res_table = ""
 
-    all_types_str = r' \#Files & \#Cov Mutants & \#Seed Killed & \#Kcov Lines & \# Dyn Cov & \# Dyn Killed'
+    all_types_str = r' \#Files & \#Kcov Lines & \#Seed Cov & \#Seed Killed & \#Dyn Cov & \#Dyn Killed'
     res_table += rf"Program &   Fuzzer &&   {all_types_str} \\" + "\n"
     #res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
     res_table += r"\midrule" + "\n"
 
     for ii, pp in enumerate(all_progs):
-        lines = ["                      & " for _ in all_fuzzers]
+        lines = ["                      & " for _ in range(len(all_fuzzers) + 2)]
         # add prog name
         lines[0] = rf"\multirow{{4}}{{*}}{{{pp}}} & "
+        lines[-2] = r"\cmidrule{2-9} "
+
+        combined_covered_lines = set()
 
         for ffii, ff in enumerate(all_fuzzers):
-            fuzzer_res = data[pp][ff]
-            covered_mutations = len(fuzzer_res['covered_mutations'])
-            covered_lines = len(set(tuple(ll) for ll in fuzzer_res['kcov_res']['covered_lines']))
-            num_seeds = fuzzer_res['num_seeds_minimized']
+            seed_fuzzer_data = seed_data[pp][ff]
+            # covered_mutations = len(seed_fuzzer_data['covered_mutations'])
+            covered_lines = set(tuple(ll) for ll in seed_fuzzer_data['kcov_res']['covered_lines'])
+            combined_covered_lines |= covered_lines
+            covered_lines = len(covered_lines)
+            num_seeds = seed_fuzzer_data['num_seeds_minimized']
             this_prog_fuzzer = prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == ff) & (prog_fuzzer_stats['prog'] == pp)]
             covered_dyn = this_prog_fuzzer['c_by_f'].iat[0]
             killed_dyn = this_prog_fuzzer['f_by_f'].iat[0]
             
             lines[ffii] += f"{ff} & "
             lines[ffii] += f" & {num_seeds}"                # files after minimization
-            lines[ffii] += f" & {covered_mutations} / {seed_res[(pp, ff)][0]}"  # covered by seed
-            lines[ffii] += f" & {seed_res[(pp, ff)][1]}"    # killed by seed
             lines[ffii] += f" & {covered_lines}"            # covered lines
-            lines[ffii] += f" & {covered_dyn}"    # todo: covered dyn
-            lines[ffii] += f" & {killed_dyn}"    # todo: killed dyn
+            lines[ffii] += f" & {full_res[(pp, ff)][0]}"  # covered by seed
+            lines[ffii] += f" & {full_res[(pp, ff)][1]}"    # killed by seed
+            lines[ffii] += f" & {covered_dyn}"
+            lines[ffii] += f" & {killed_dyn}"
             lines[ffii] += r" \\"
 
         # max_num_mutations = "---"
@@ -4852,17 +4857,51 @@ def latex_big_table(seed_dir, run_results, out_dir, con):
         # m_line += rf" \\"
         # k_line += rf" \\"
         # l_line += rf" \\"
-
-        for ll in lines:
-            res_table += ll + "\n"
         # res_table += m_line + "\n"
         # res_table += k_line + "\n"
         # res_table += l_line + "\n"
-        if ii < len(all_progs) - 1:
-            res_table += r"\cmidrule{4-9}" + "\n"
 
-    print(res_table)
-    sys.exit()
+        # combined values
+
+
+        seed_covered = len(pd.read_sql_query(f"""
+        select * from run_results
+        where prog like "{pp}" and covered_by_seed is 1
+        group by mut_id
+        """, con))
+
+        seed_killed = len(pd.read_sql_query(f"""
+        select * from run_results
+        where prog like "{pp}" and found_by_seed is 1
+        group by mut_id
+        """, con))
+
+        all_covered = len(pd.read_sql_query(f"""
+        select * from run_results
+        where prog like "{pp}" and covered_file_seen is not null
+        group by mut_id
+        """, con))
+
+        all_killed = len(pd.read_sql_query(f"""
+        select * from run_results
+        where prog like "{pp}" and confirmed is 1
+        group by mut_id
+        """, con))
+
+        lines[-1] += f"combined & "
+        lines[-1] += f" & "                # files after minimization
+        lines[-1] += f" & {len(combined_covered_lines)}"            # covered lines
+        lines[-1] += f" & {seed_covered}"  # covered by seed
+        lines[-1] += f" & {seed_killed}"    # killed by seed
+        lines[-1] += f" & {all_covered - seed_covered}"
+        lines[-1] += f" & {all_killed - seed_killed}"
+        lines[-1] += r" \\"
+
+        for ll in lines:
+            res_table += ll + "\n"
+
+        if ii < len(all_progs) - 1:
+            res_table += r"\cmidrule{1-9}" + "\n"
 
     with open(out_dir/"big-table.tex", "wt") as f:
         f.write(res_table)

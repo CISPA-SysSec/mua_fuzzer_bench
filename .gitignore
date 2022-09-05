@@ -183,3 +183,10 @@ eval.log
 .vscode/launch.json
 __pycache__/
 /.mypy_cache/
+/bak/
+/.Rproj.user
+/.RData
+/.Rhistory
+/*.Rproj
+/*.csv
+/*.pdf
