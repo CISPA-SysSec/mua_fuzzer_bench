@@ -108,7 +108,7 @@ def main():
 
     print(f"Merging to {combined_db} from {dbs}")
     merge_dbs(combined_db, dbs)
-    run(f"./eval.py plot --artifacts --seed-dir seeds/seeds_coverage/ {combined_db}")
+    # run(f"./eval.py plot --artifacts --seed-dir seeds/seeds_coverage/ {combined_db}")
 
 
 if __name__ == "__main__":

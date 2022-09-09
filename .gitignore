@@ -190,3 +190,7 @@ __pycache__/
 /*.Rproj
 /*.csv
 /*.pdf
+/*.json
+/*.db
+/plot/
+__pycache__

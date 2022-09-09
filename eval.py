@@ -4776,137 +4776,6 @@ def latex_stats_seeds(seed_dir, run_results, out_dir):
         f.write(res_table)
 
 
-def latex_big_table(seed_dir, run_results, out_dir, con):
-    import pandas as pd
-
-    seed_dir = Path(seed_dir)
-    full_res = {}
-    for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
-        ].groupby(['exec_id', 'prog', 'fuzzer']
-        )['covered_by_seed', 'found_by_seed'].sum().iterrows():
-        index = (rr[0][1], rr[0][2])
-        cov = rr[1]['covered_by_seed']
-        found = rr[1]['found_by_seed']
-        full_res[index] = (cov, found)
-
-    all_progs = sorted(set(pp for pp, ff in full_res.keys()))
-
-    run_data = []
-    for res_json in seed_dir.glob("info_*.json"):
-        with open(res_json, 'rt') as f:
-            run_data.extend(json.load(f))
-
-    bucketed = defaultdict(list)
-    for dd in run_data:
-        bucketed[(dd['prog'], dd['fuzzer'])].append(dd)
-
-    seed_data = defaultdict(lambda: defaultdict(dict))
-    for _, bb in bucketed.items():
-        sorted_bb = sorted(bb, key=lambda x: len(x['covered_mutations']))
-        median_bb = sorted_bb[len(sorted_bb)//2]
-        bb = median_bb
-        seed_data[bb['prog']][bb['fuzzer']] = median_bb
-
-    prog_fuzzer_stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
-    # print(prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == "afl") & (prog_fuzzer_stats['prog'] == "curl")])
-
-    all_fuzzers = sorted(set(kk for dd in seed_data.values() for kk in dd.keys()))
-    
-    res_table = ""
-
-    all_types_str = r' \#Files & \#Kcov Lines & \#Seed Cov & \#Seed Killed & \#Dyn Cov & \#Dyn Killed'
-    res_table += rf"Program &   Fuzzer &&   {all_types_str} \\" + "\n"
-    #res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
-    res_table += r"\midrule" + "\n"
-
-    for ii, pp in enumerate(all_progs):
-        lines = ["                      & " for _ in range(len(all_fuzzers) + 2)]
-        # add prog name
-        lines[0] = rf"\multirow{{4}}{{*}}{{{pp}}} & "
-        lines[-2] = r"\cmidrule{2-9} "
-
-        combined_covered_lines = set()
-
-        for ffii, ff in enumerate(all_fuzzers):
-            seed_fuzzer_data = seed_data[pp][ff]
-            # covered_mutations = len(seed_fuzzer_data['covered_mutations'])
-            covered_lines = set(tuple(ll) for ll in seed_fuzzer_data['kcov_res']['covered_lines'])
-            combined_covered_lines |= covered_lines
-            covered_lines = len(covered_lines)
-            num_seeds = seed_fuzzer_data['num_seeds_minimized']
-            this_prog_fuzzer = prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == ff) & (prog_fuzzer_stats['prog'] == pp)]
-            covered_dyn = this_prog_fuzzer['c_by_f'].iat[0]
-            killed_dyn = this_prog_fuzzer['f_by_f'].iat[0]
-            
-            lines[ffii] += f"{ff} & "
-            lines[ffii] += f" & {num_seeds}"                # files after minimization
-            lines[ffii] += f" & {covered_lines}"            # covered lines
-            lines[ffii] += f" & {full_res[(pp, ff)][0]}"  # covered by seed
-            lines[ffii] += f" & {full_res[(pp, ff)][1]}"    # killed by seed
-            lines[ffii] += f" & {covered_dyn}"
-            lines[ffii] += f" & {killed_dyn}"
-            lines[ffii] += r" \\"
-
-        # max_num_mutations = "---"
-        # max_num_lines = "---"
-        # f_line += rf" & & \\"
-        # m_line += rf" & & {max_num_mutations} \\"
-        # l_line += rf" & & {max_num_lines} \\"
-
-        # f_line += rf" \\"
-        # m_line += rf" \\"
-        # k_line += rf" \\"
-        # l_line += rf" \\"
-        # res_table += m_line + "\n"
-        # res_table += k_line + "\n"
-        # res_table += l_line + "\n"
-
-        # combined values
-
-
-        seed_covered = len(pd.read_sql_query(f"""
-        select * from run_results
-        where prog like "{pp}" and covered_by_seed is 1
-        group by mut_id
-        """, con))
-
-        seed_killed = len(pd.read_sql_query(f"""
-        select * from run_results
-        where prog like "{pp}" and found_by_seed is 1
-        group by mut_id
-        """, con))
-
-        all_covered = len(pd.read_sql_query(f"""
-        select * from run_results
-        where prog like "{pp}" and covered_file_seen is not null
-        group by mut_id
-        """, con))
-
-        all_killed = len(pd.read_sql_query(f"""
-        select * from run_results
-        where prog like "{pp}" and confirmed is 1
-        group by mut_id
-        """, con))
-
-        lines[-1] += f"combined & "
-        lines[-1] += f" & "                # files after minimization
-        lines[-1] += f" & {len(combined_covered_lines)}"            # covered lines
-        lines[-1] += f" & {seed_covered}"  # covered by seed
-        lines[-1] += f" & {seed_killed}"    # killed by seed
-        lines[-1] += f" & {all_covered - seed_covered}"
-        lines[-1] += f" & {all_killed - seed_killed}"
-        lines[-1] += r" \\"
-
-        for ll in lines:
-            res_table += ll + "\n"
-
-        if ii < len(all_progs) - 1:
-            res_table += r"\cmidrule{1-9}" + "\n"
-
-    with open(out_dir/"big-table.tex", "wt") as f:
-        f.write(res_table)
-
-
 def latex_stats(out_dir, con):
     # def value_to_file(stats, name, path):
     #     print(name)
@@ -5604,8 +5473,7 @@ def generate_plots(db_path, seed_dir, to_disk, skip_script):
         latex_stats(plot_dir, con)
         plot_killed_union(runs, run_results, plot_dir)
         if seed_dir is not None:
-            # latex_stats_seeds(seed_dir, run_results, plot_dir)
-            latex_big_table(seed_dir, run_results, plot_dir, con)
+            latex_stats_seeds(seed_dir, run_results, plot_dir)
         plot_mutation_distribution(con, plot_dir)
     #  res += '<h4>Unique Finds</h4>'
     #  res += 'Left finds what upper does not.'

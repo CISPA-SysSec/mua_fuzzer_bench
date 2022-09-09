@@ -1,7 +1,7 @@
 options(repos = c(CRAN = "https://cran.rstudio.com"))
 
 ## First specify the packages of interest
-packages = c('ggplot2', 'UpSetR', 'tidyr', 'dplyr', 'VennDiagram', 'ggupset', 'forcats')
+packages = c('ggplot2', 'UpSetR', 'tidyr', 'dplyr', 'VennDiagram', 'ggupset', 'forcats', 'rjson', 'gsubfn')
 
 ## Now load or install&load all
 package.check <- lapply(
@@ -16,33 +16,10 @@ package.check <- lapply(
 rm(packages, package.check)
 # `pdf(NULL)`
 
+################################################################################
+# oracle results
 data = read.csv("def_asan_results.csv")
 
-# temp = data %>%
-#   select(prog, fuzzer, found___both, found__asan, found__def, covered___both, covered__asan, covered__def) %>%
-#   pivot_longer(cols = c(found___both, found__asan, found__def, covered___both, covered__asan, covered__def)) %>%
-#   mutate(val_type=startsWith(name, "found"), .keep="all")
-# 
-# temp
-# 
-# temp %>%
-#   ggplot(aes(x=fuzzer)) +
-#     geom_col(aes(fill=name, y=value), position="dodge") +
-#     facet_wrap(vars(prog), scales = "free")
-# 
-# covered_v_found = data %>%
-#   select(prog, fuzzer, found___both, found__asan, found__def, covered___both, covered__asan, covered__def) %>%
-#   mutate(found=(found___both + found__asan + found__def)) %>%
-#   mutate(covered=(covered___both + covered__asan + covered__def - found)) %>%
-#   pivot_longer(cols = c(found___both, found__asan, found__def, covered))
-# 
-# covered_v_found
-# 
-# covered_v_found %>%
-#   ggplot(aes(x=fuzzer)) +
-#   geom_col(aes(fill=name, y=value)) +
-#   facet_wrap(vars(prog), scales = "free")
-# 
 covered_v_found_per = data %>%
   select(prog, fuzzer, found___both, found__asan, found__def, covered___both, covered__asan, covered__def) %>%
   mutate(covered_cnt=(covered___both + covered__asan + covered__def)) %>%
@@ -65,3 +42,30 @@ p <- covered_v_found_per %>%
   labs(fill='Result', x="Subject", y="Percentage of Mutations")
 
 ggsave(p, filename="oracle-percentages.pdf", device="pdf")
+
+
+# ################################################################################
+# # resampling
+# resampling_data <- as.data.frame(fromJSON(file="resampling.json"))
+# 
+# mean(resampling_data$X10.kill)
+# median(resampling_data$X10.kill)
+# min(resampling_data$X10.kill)
+# max(resampling_data$X10.kill)
+# 
+# kill_data <- as.data.frame(resampling_data[, endsWith(colnames(resampling_data), ".kill")]) %>%
+#   rename_with(function(x) gsub("\\.kill", "", x)) %>%
+#   rename_with(function(x) gsub("X", "", x))
+# 
+# eh <- do.call(cbind, lapply(kill_data, summary)) %>%
+#   as.data.frame()
+# eh$type <- row.names(eh)
+# 
+# p <- eh %>%
+#   pivot_longer(cols=-type) %>%
+#   mutate(across(c('name'), as.numeric)) %>%
+#   rename('sample_size' = 'name') %>%
+#   ggplot(aes(x = sample_size, y = value, color = type)) +
+#   geom_line()
+# ggsave(p, file="resample.pdf", width=4, height=3)
+
