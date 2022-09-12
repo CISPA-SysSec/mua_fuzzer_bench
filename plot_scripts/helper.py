@@ -52,8 +52,6 @@ def fix_path(path: Path | str) -> Path:
 
 
 def to_latex_table(data: List[List[str] | str], /, suffixes: Optional[List[Optional[str]]]=None):
-    # for ll in data:
-    #     print(ll)
 
     if suffixes:
         assert len(suffixes) == len(data), f"{len(suffixes)} == {len(data)}"
@@ -72,9 +70,7 @@ def to_latex_table(data: List[List[str] | str], /, suffixes: Optional[List[Optio
     res = ""
     for row_idx, rr in enumerate(data):
         if isinstance(rr, list):
-            print(rr)
             for ii, el in enumerate(rr):
-                print(el, col_lengths[ii])
                 res += f"{el:<{col_lengths[ii]}}"
                 if ii < columns - 1:
                     res += f" & "
