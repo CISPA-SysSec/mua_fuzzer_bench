@@ -1,4 +1,5 @@
 #%%
+from argparse import ArgumentParser
 import json
 from pathlib import Path
 from collections import defaultdict
@@ -7,7 +8,13 @@ import pandas as pd
 
 from helper import db_connect, fix_path, query, to_latex_table, out_path
 
-con = db_connect(fix_path("data/current/stats_all.db"))
+args = ArgumentParser("")
+args.add_argument("db_path")
+args.add_argument("out_name")
+
+args = args.parse_args()
+
+con = db_connect(args.db_path)
 seed_dir = fix_path("seeds/seeds_coverage/")
 print(seed_dir)
 
@@ -153,5 +160,5 @@ for ii, pp in enumerate(all_progs):
 
 #%%
 
-with open(out_path("big-table.tex"), "wt") as f:
+with open(out_path(args.out_name), "wt") as f:
     f.write(to_latex_table(table_lines, suffixes=table_suffixes))

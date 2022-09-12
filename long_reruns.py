@@ -1,5 +1,3 @@
-
-
 #%%
 import sqlite3
 
@@ -19,6 +17,26 @@ def get(run, name):
     return run[indices[name]]
 
 #%%
+import json
+from collections import defaultdict
+done_runs = defaultdict(set)
+ii = 1
+while True:
+    runs_path = f"24_hour_runs_{ii:02}.json"
+    print(runs_path)
+
+    try:
+        with open(runs_path) as f:
+            cur_runs = json.load(f)
+            for kk, vv in cur_runs.items():
+                done_runs[kk] |= set(vv['ids'])
+    except FileNotFoundError:
+        break
+
+    ii += 1
+
+
+#%%
 from collections import defaultdict
 
 candidates = defaultdict(set)
@@ -32,7 +50,8 @@ for run in data:
     time_found = get(run, "time_found")
     found_by_seed = get(run, "found_by_seed")
     crashed = get(run, "crashed")
-    if covered_file_seen is not None and time_found is None and crashed is None:
+    seed_timeout = get(run, "seed_timeout")
+    if covered_file_seen is not None and time_found is None and crashed is None and seed_timeout is None and mut_id not in done_runs[prog]:
         candidates[(prog, mut_id)].add(fuzzer)
 
 
@@ -56,7 +75,10 @@ for prog, m_id in all_covered_candidates:
     runs_todo[prog]['ids'].append(m_id)
 
 for pp, dd in runs_todo.items():
-    dd['ids'] = random.sample(dd['ids'], k=min(100, len(dd['ids'])))
+    dd['ids'] = random.sample(dd['ids'], k=min(104, len(dd['ids'])))
+    print(pp, len(dd['ids']))
 
-with open("24_hour_runs_02.json", "wt") as f:
+#%%
+
+with open(runs_path, "wt") as f:
     json.dump(runs_todo, f, indent=2)

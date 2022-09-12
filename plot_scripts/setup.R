@@ -1,7 +1,7 @@
 options(repos = c(CRAN = "https://cran.rstudio.com"))
 
 ## First specify the packages of interest
-packages = c('ggplot2', 'UpSetR', 'tidyr', 'dplyr', 'VennDiagram', 'ggupset', 'forcats', 'rjson', 'gsubfn')
+packages = c('ggplot2', 'UpSetR', 'tidyr', 'dplyr', 'VennDiagram', 'ggupset', 'forcats', 'rjson', 'gsubfn', 'ggvenn')
 
 ## Now load or install&load all
 package.check <- lapply(

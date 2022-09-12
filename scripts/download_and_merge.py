@@ -108,6 +108,12 @@ def main():
 
     print(f"Merging to {combined_db} from {dbs}")
     merge_dbs(combined_db, dbs)
+
+    print(f"Executing eval script on: {combined_db}")
+    con = sqlite3.connect(combined_db)
+    with open("eval.sql", "rt") as f:
+        cur = con.cursor()
+        cur.executescript(f.read())
     # run(f"./eval.py plot --artifacts --seed-dir seeds/seeds_coverage/ {combined_db}")
 
 
