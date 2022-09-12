@@ -1,10 +1,17 @@
-.PHONY: plot clean resampling twenty_four_hours big_table oracle fuzzer-mut mutations wayne
+.PHONY: plot clean resampling twenty_four_hours big_table oracle fuzzer-mut mutations wayne reduction
 
-plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne
+plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne reduction
 
 clean:
 	-rm -r plot/fig
 	-rm -r plot/tmp_data
+
+
+# reduction
+reduction: plot/fig/reduction-prog.tex
+
+plot/fig/reduction-prog.tex: plot_scripts/reduction.py data/current/stats_all.db
+	python3 plot_scripts/reduction.py
 
 
 # wayne
