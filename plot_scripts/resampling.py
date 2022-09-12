@@ -1,35 +1,25 @@
 #%%
 import sqlite3
+from helper import db_connect, fix_path, query, to_latex_table, out_path, data_path
 
-db = sqlite3.connect("data/current/stats_all.db")
+db = db_connect("data/current/stats_all.db")
 
 
 #%%
-res = db.execute("""
+sampling_results = query(db, """
 select * from run_results
 """)
-default_columns = [dd[0] for dd in res.description]
-
-all_runs = list(res.fetchall())
-
-indices = {nn: ii for ii, nn in enumerate(default_columns)}
-
-print(default_columns)
-print(indices)
-
-def get(run, name):
-    return run[indices[name]]
 
 #%%
 all_runs_list = []
 
-for run in all_runs:
-    prog = get(run, "prog")
-    fuzzer = get(run, "fuzzer")
-    covered_file_seen = get(run, "covered_file_seen")
-    covered_by_seed = get(run, "covered_by_seed")
-    time_found = get(run, "time_found");
-    found_by_seed = get(run, "found_by_seed")
+for run in sampling_results:
+    prog = run.get("prog")
+    fuzzer = run.get("fuzzer")
+    covered_file_seen = run.get("covered_file_seen")
+    covered_by_seed = run.get("covered_by_seed")
+    time_found = run.get("time_found");
+    found_by_seed = run.get("found_by_seed")
     all_runs_list.append({
         'prog': prog,
         'fuzzer': fuzzer,
@@ -43,12 +33,10 @@ for run in all_runs:
 import pandas as pd
 data = pd.DataFrame.from_records(all_runs_list)
 
-progs = data['prog'].unique()
-fuzzers = data['fuzzer'].unique()
+all_progs = data['prog'].unique()
+all_fuzzers = data['fuzzer'].unique()
 
-print(progs, fuzzers)
-
-print(data[data['prog'] == 're2'])
+print(all_progs, all_fuzzers)
 
 #%%
 
@@ -56,47 +44,66 @@ print(data[data['prog'] == 're2'])
 assert data[(data['covered'] == False) & (data['found'] == True)].shape[0] == 0
 
 #%%
-dd = data[(data['prog'] == 're2') & (data['fuzzer'] == 'aflpp')]
-
-#%%
 from collections import defaultdict
 import json
 from time import time
 from pathlib import Path
 
-# sample_sizes = [10, 100, 500, 1000, 2000, 3000, 4000, 5000] + [int(pp * dd.shape[0]) for pp in (.01, .02, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1)]
-sample_sizes = [int(pp * dd.shape[0]) for pp in (.1, .2, .3, .4, .5, .6, .7, .8, .9, 1)]
-samples_sizes = [ss for ss in sample_sizes if dd.shape[0] >= ss]
-sample_sizes = sorted(sample_sizes)
-print(sample_sizes)
-
-res = defaultdict(lambda: {
+sampling_results = defaultdict(lambda: defaultdict(lambda: {
     'cov_seed': [],
     'cov': [],
     'kill_seed': [],
     'kill': [],
-})
+}))
 
-for ii, ss in enumerate(sample_sizes):
-    start = time()
-    ss_res = res[ss]
-    for _ in range(1000):
-        sdd = dd.sample(ss)
-        ss_res['cov_seed'].append(sdd.loc[data['covered_by_seed'] == True].shape[0] / sdd.shape[0])
-        ss_res['cov'].append(sdd.loc[data['covered'] == True].shape[0] / sdd.shape[0])
-        ss_res['kill_seed'].append(sdd.loc[data['found_by_seed'] == True].shape[0] / sdd.shape[0])
-        ss_res['kill'].append(sdd.loc[data['found'] == True].shape[0] / sdd.shape[0])
-    print(f"{ii + 1} / {len(sample_sizes)}: {ss}, {time() - start:.2f}")
+REPEATS = 100
 
-out_path = Path("plot/tmp_data/resampling.json")
-out_path.parent.mkdir(parents=True, exist_ok=True)
-with open(out_path, "wt") as f:
-    json.dump(res, f)
+for prog in all_progs:
+    for fuzzer in all_fuzzers:
+        print(prog, fuzzer)
+        pf_res = sampling_results[f"{prog}-{fuzzer}"]
+        dd = data[(data['prog'] == prog) & (data['fuzzer'] == fuzzer)]
+        sample_sizes = [int(pp * dd.shape[0]) for pp in (.1, .2, .3, .4, .5, .6, .7, .8, .9)]
+        samples_sizes = [ss for ss in sample_sizes if dd.shape[0] >= ss]
+        sample_sizes = sorted(sample_sizes)
 
-    # print("sample size:", exp_total)
-    # print("Per Covered Seed:", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['cov_seed']]))
-    # print("Per Covered:     ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['cov']]))
-    # print("Per Killed Seed: ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['kill_seed']]))
-    # print("Per Killed:      ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['kill']]))
-    # print()
-    # print()
+        ss_res = pf_res[dd.shape[0]]
+        sdd = dd
+        expected_cov_seed =  sdd.loc[sdd['covered_by_seed'] == True].shape[0] / sdd.shape[0]
+        expected_cov =       sdd.loc[sdd['covered']         == True].shape[0] / sdd.shape[0]
+        expected_kill_seed = sdd.loc[sdd['found_by_seed']   == True].shape[0] / sdd.shape[0]
+        expected_kill =      sdd.loc[sdd['found']           == True].shape[0] / sdd.shape[0]
+
+        ss_res['cov_seed'].extend([0]*REPEATS)
+        ss_res['cov'].extend([0]*REPEATS)
+        ss_res['kill_seed'].extend([0]*REPEATS)
+        ss_res['kill'].extend([0]*REPEATS)
+
+
+        for ii, ss in enumerate(sample_sizes):
+            start = time()
+            ss_res = pf_res[ss]
+            for _ in range(REPEATS):
+                sdd = dd.sample(ss)
+                ss_res['cov_seed'].append(
+                    abs(expected_cov_seed  - sdd.loc[data['covered_by_seed'] == True].shape[0] / sdd.shape[0]))
+                ss_res['cov'].append(
+                    abs(expected_cov       - sdd.loc[data['covered']         == True].shape[0] / sdd.shape[0]))
+                ss_res['kill_seed'].append(
+                    abs(expected_kill_seed - sdd.loc[data['found_by_seed']   == True].shape[0] / sdd.shape[0]))
+                ss_res['kill'].append(
+                    abs(expected_kill      - sdd.loc[data['found']           == True].shape[0] / sdd.shape[0]))
+            print(f"{ii + 1} / {len(sample_sizes)}: {ss}, {time() - start:.2f}")
+
+#%%
+
+with open(data_path("resampling.json"), "wt") as f:
+    json.dump(sampling_results, f)
+
+        # print("sample size:", exp_total)
+        # print("Per Covered Seed:", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['cov_seed']]))
+        # print("Per Covered:     ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['cov']]))
+        # print("Per Killed Seed: ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['kill_seed']]))
+        # print("Per Killed:      ", ", ".join([f"{ee * 100:3.2f}" for ee in ss_res['kill']]))
+        # print()
+        # print()
