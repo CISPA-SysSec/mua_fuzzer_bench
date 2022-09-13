@@ -5,8 +5,8 @@ import sqlite3
 
 from helper import db_connect, fix_path, query, to_latex_table, out_path
 
-default_db = sqlite3.connect("data/current/stats_all.db")
-asan_db = sqlite3.connect("data/asan/stats_all.db")
+default_db = db_connect("data/current/stats_all.db")
+asan_db = db_connect("data/asan/stats_all.db")
 
 
 #%%

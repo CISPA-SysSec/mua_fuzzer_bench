@@ -1,7 +1,7 @@
 source("plot_scripts/setup.R")
 
 
-data <- as.data.frame(fromJSON(file="plot/tmp_data/wayne.json"))
+data <- as.data.frame(fromJSON(file = "plot/tmp_data/wayne.json"))
 
 head(data, 3)
 

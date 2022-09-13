@@ -15,12 +15,12 @@ stats.to_csv(path_or_buf=out_path("mutations.csv"))
 
 #%%
 data = stats.to_numpy().tolist()
-suff = ['\\midrule'] * ((len(data)) - 1) + [None]
+# suff = ['\\midrule'] * ((len(data)) - 1) + [None]
 
 with open(out_path("mutations.tex"), "wt") as f:
-    f.write(to_latex_table(
-        data,
-        suffixes=suff).replace("%", "\\%"))
+    f.write(
+        to_latex_table(data).replace("%", "\\%")
+    )
 
 #%%
 

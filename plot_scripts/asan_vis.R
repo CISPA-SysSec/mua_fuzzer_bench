@@ -16,35 +16,29 @@ res <- data %>%
 
 res
 
-asan <- res[res$name %in% c("both", "asan"), ]
-asan$type <- "asan"
-def <- res[res$name %in% c("both", "default"), ]
-def$type <- "default"
+positions <- c("both", "default", "asan")
 
-rejiggered <- merge(def, asan, all = TRUE)
+res
 
-rejiggered
-
-t_pos <- c("default", "asan")
-positions <- c("asan", "default", "both")
-
-p <- rejiggered %>%
+p <- res %>%
   filter(fuzzer == "aflpp") %>%
-  ggplot(aes(x = factor(type, levels = t_pos))) +
-  geom_col(aes(fill = factor(name, levels = positions), y = value)) +
-  scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+  ggplot(aes(x = factor(name, levels = positions), y = value, label = sprintf("%3.1f%%", value * 100))) +
+  geom_col(aes(fill = factor(name, levels = positions))) +
+  geom_text(vjust = "inward", size = 2.5) +
+  scale_y_continuous(labels = scales::percent, expand = c(0, 0.01)) +
   facet_wrap(c("prog")) +
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
 p
 ggsave(p, filename = "plot/fig/oracle-percentages-aflpp.pdf", device = "pdf", width = 4, height = 4)
 
-p <- rejiggered %>%
-  ggplot(aes(x = factor(type, levels = t_pos))) +
-  geom_col(aes(fill = factor(name, levels = positions), y = value)) +
-  scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+p <- res %>%
+  ggplot(aes(x = factor(name, levels = positions), y = value, label = sprintf("%3.1f%%", value * 100))) +
+  geom_col(aes(fill = factor(name, levels = positions))) +
+  geom_text(vjust = "inward", size = 2.5) +
+  scale_y_continuous(labels = scales::percent, expand = c(0, 0.01)) +
   facet_grid(c("prog", "fuzzer"), scale = "free_y") +
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-full.pdf", device = "pdf", width = 5, height = 8)
+ggsave(p, filename = "plot/fig/oracle-percentages-full.pdf", device = "pdf", width = 5, height = 10)

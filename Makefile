@@ -27,7 +27,7 @@ plot/tmp_data/wayne.json: data/current/stats_all.db plot_scripts/wayne.py
 # mutations
 mutations: plot/fig/mutations.tex plot/fig/mutations.csv
 
-plot/fig/mutations.tex plot/fig/mutations.csv: plot_scripts/mutations.py
+plot/fig/mutations.tex plot/fig/mutations.csv: plot_scripts/mutations.py data/current/stats_all.db
 	python3 plot_scripts/mutations.py
 
 
