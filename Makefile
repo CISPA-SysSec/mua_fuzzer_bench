@@ -74,8 +74,8 @@ plot/fig/24-hour.tex: data/24_hours_2/stats_all.db data/24_hours_3/stats_all.db
 # resampling
 resampling: plot/fig/resampling.pdf
 
-plot/fig/resampling.pdf: plot/tmp_data/resampling.json
+plot/fig/resampling.pdf: plot/tmp_data/resampling.json plot_scripts/resampling.R
 	Rscript plot_scripts/resampling.R
 
-plot/tmp_data/resampling.json:
+plot/tmp_data/resampling.json: plot_scripts/resampling.py
 	python3 plot_scripts/resampling.py

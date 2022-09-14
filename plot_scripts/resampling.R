@@ -8,11 +8,14 @@ kill_data <- as.data.frame(resampling_data[, endsWith(colnames(resampling_data),
   rename_with(function(x) gsub("\\.kill", "", x)) %>%
   rename_with(function(x) gsub("X", "", x))
 
-kill_data <- do.call(cbind, lapply(kill_data, summary)) %>%
-  as.data.frame()
-kill_data$type <- row.names(kill_data)
+probs = c(0.5, 0.75, 0.90, 0.95, 0.99)
 
-pivot_kill_data <- kill_data %>%
+kill_data_summary <- do.call(cbind, lapply(kill_data, function(x) quantile(x, probs = probs))) %>%
+  as.data.frame()
+kill_data_summary$type <- as.numeric(sub("\\%", "", row.names(kill_data_summary)))
+kill_data_summary$type <- factor(kill_data_summary$type, levels = kill_data_summary$type)
+
+pivot_kill_data <- kill_data_summary %>%
   pivot_longer(cols = -type) %>%
   mutate(prog = sub("\\..*", "", name)) %>%
   mutate(fuzzer = sub("\\..*", "", sub(".*?\\.", "", name))) %>%
@@ -29,7 +32,10 @@ p <- pivot_kill_data %>%
   ) +
   ylab("Error Percentage") +
   xlab("Sample Size") +
-  labs(color = "Type") +
-  scale_y_continuous(labels = scales::percent)
+  labs(color = "Percentile") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_color_discrete()
 
-ggsave(p, file = "plot/fig/resampling.pdf", width = 8, height = 4)
+p
+
+ggsave(p, file = "plot/fig/resampling.pdf", width = 8, height = 8)

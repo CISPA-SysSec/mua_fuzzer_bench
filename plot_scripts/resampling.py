@@ -56,7 +56,7 @@ sampling_results = defaultdict(lambda: defaultdict(lambda: {
     'kill': [],
 }))
 
-REPEATS = 100
+REPEATS = 1000
 
 for prog in all_progs:
     for fuzzer in all_fuzzers:

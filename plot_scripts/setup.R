@@ -1,10 +1,14 @@
 options(repos = c(CRAN = "https://cran.rstudio.com"))
 
 ## First specify the packages of interest
-packages = c('ggplot2', 'UpSetR', 'tidyr', 'dplyr', 'VennDiagram', 'ggupset', 'forcats', 'rjson', 'gsubfn', 'ggvenn')
+packages <- c(
+  "ggplot2", "UpSetR", "tidyr", "dplyr", "VennDiagram", "ggupset", "forcats", "rjson", "gsubfn", "ggvenn", "DBI",
+  "RSQLite"
+)
+
 
 ## Now load or install&load all
-package.check <- lapply(
+package_check <- lapply(
   packages,
   FUN = function(x) {
     if (!require(x, character.only = TRUE)) {
@@ -13,6 +17,6 @@ package.check <- lapply(
     }
   }
 )
-rm(packages, package.check)
+rm(packages, package_check)
 
 dir.create(file.path("plot", "fig"), showWarnings = FALSE)

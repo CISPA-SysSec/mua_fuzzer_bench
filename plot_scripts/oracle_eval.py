@@ -110,6 +110,10 @@ def get_ctr(all_runs, keep):
     ctr = defaultdict(lambda: 0)
     for pp in pairs.values():
 
+        # skip everything that is not covered by both
+        if not (pp['def_covered_by_seed'] == 1 and pp['asan_covered_by_seed'] == 1):
+            continue
+
         ctr['total'] += 1
 
         if pp['def_covered_by_seed'] == 0 and pp['asan_covered_by_seed'] == 1:

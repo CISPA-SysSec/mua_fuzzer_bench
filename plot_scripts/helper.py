@@ -56,8 +56,12 @@ def to_latex_table(data: List[List[str] | str], /, suffixes: Optional[List[Optio
     if suffixes:
         assert len(suffixes) == len(data), f"{len(suffixes)} == {len(data)}"
 
-    assert isinstance(data[0], list)
-    columns = len(data[0])
+    for dd in data:
+        if isinstance(dd, list):
+            columns = len(dd)
+            break
+    else:
+        raise ValueError("No lists in table, not supported.")
     col_lengths = [0]*columns
 
     # get max lengths for each column, to make the table more readable in raw form
