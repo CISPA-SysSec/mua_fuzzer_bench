@@ -36,7 +36,9 @@ group by prog
 """)
 
 #%%
-
+sum_mutations = stats['mutations'].sum()
+sum_supermutants = stats['supermutants'].sum()
+sum_mut_reduction = sum_mutations / sum_supermutants
 
 #%%
 
@@ -61,28 +63,40 @@ suff = [None]*len(table)
 suff[0] = r"\cmidrule(lr){2-4} \cmidrule(lr){5-7}"
 suff[1] = r"\midrule"
 
+sum_naive_cpu = 0
+
 for ny in naive_years:
     prog = ny.get("prog")
     cpu_years = ny.get("cpu_years")
+    sum_naive_cpu += cpu_years
 
     for ee in table:
         if ee[0] == prog:
             ee.append(f"{cpu_years:.2f}")
 
+sum_actual_cpu = 0
 
 for ay in actual_years:
     prog = ay.get("prog")
     cpu_years = ay.get("cpu_years")
+    sum_actual_cpu += cpu_years
 
     for ee in table:
         if ee[0] == prog:
             ee.append(f"{cpu_years:.2f}")
 
-for rr in table[2:]:
+sum_cpu_reduction = sum_naive_cpu / sum_actual_cpu
+
+table += [["", f"{sum_mutations:,}", f"{sum_supermutants:,}", f"{sum_mut_reduction:.2f}", f"{sum_naive_cpu:.2f}", f"{sum_actual_cpu:.2f}", f"{sum_cpu_reduction:.2f}"]]
+
+suff[-1] = r"\cmidrule(lr){2-4} \cmidrule(lr){5-7}"
+suff.append(None)
+
+for rr in table[2:-1]:
     rr.append(f"{float(rr[-2]) / float(rr[-1]):.2f}")
 
 for rr in table:
-    print(rr)
+    print(len(rr), rr)
 
 #%%
 
