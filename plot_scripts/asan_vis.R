@@ -14,7 +14,7 @@ res <- data %>%
   pivot_longer(cols = c(both, asan, default)) %>%
   select(-found___both, -found__asan, -found__def)
 
-res
+head(res, 5)
 
 positions <- c("both", "default", "asan")
 
@@ -26,6 +26,7 @@ p <- res %>%
   geom_col(aes(fill = factor(name, levels = positions))) +
   geom_text(vjust = "inward", size = 2.5) +
   scale_y_continuous(labels = scales::percent, expand = c(0, 0.01)) +
+  scale_fill_discrete(labels = c("default+asan", "default", "asan")) +
   facet_wrap(c("prog")) +
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
@@ -37,6 +38,7 @@ p <- res %>%
   geom_col(aes(fill = factor(name, levels = positions))) +
   geom_text(vjust = "inward", size = 2.5) +
   scale_y_continuous(labels = scales::percent, expand = c(0, 0.01)) +
+  scale_fill_discrete(labels = c("default+asan", "default", "asan")) +
   facet_grid(c("prog", "fuzzer"), scale = "free_y") +
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
