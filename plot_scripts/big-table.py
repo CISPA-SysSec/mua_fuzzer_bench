@@ -57,7 +57,7 @@ all_fuzzers = sorted(set(kk for dd in seed_data.values() for kk in dd.keys()))
 #res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
 
 table_lines = []
-headers = [rf'Program', r'\#Mutations', 'Fuzzer', r' \#Seeds', r'\#Seed Covered', r'\#Seed Killed', r'\#Dyn Covered', r'\#Dyn Killed', r'\#Total Covered', r'\#Total Killed']
+headers = [rf'Program', r'\#Mutations', 'Fuzzer', r'Phase~I Covered', r'Phase~I Killed', r'Phase~II Covered', r'Phase~II Killed', r'Total Covered', r'Total Killed']
 table_lines.append(headers)
 num_columns = len(headers)
 table_lines.append(fr"\cmidrule{{1-{num_columns}}}")
@@ -80,7 +80,7 @@ for ii, pp in enumerate(all_progs):
         covered_lines = set(tuple(ll) for ll in seed_fuzzer_data['kcov_res']['covered_lines'])
         combined_covered_lines |= covered_lines
         covered_lines = len(covered_lines)
-        num_seeds = seed_fuzzer_data['num_seeds_minimized']
+        # num_seeds = seed_fuzzer_data['num_seeds_minimized']
         this_prog_fuzzer = prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == ff) & (prog_fuzzer_stats['prog'] == pp)]
         covered_seed = full_res[(pp, ff)][0]
         killed_seed = full_res[(pp, ff)][1]
@@ -96,14 +96,14 @@ for ii, pp in enumerate(all_progs):
             lines[ffii][0] = ""
             lines[ffii][1] = ""
         lines[ffii][2] = f"{ff}"
-        lines[ffii][3] = f"{num_seeds:,}"                # files after minimization
+        # lines[ffii][3] = f"{num_seeds:,}"                # files after minimization
         # lines[ffii][4] = f"{covered_lines:,}"            # covered lines
-        lines[ffii][4] = f"{covered_seed:,}"  # covered by seed
-        lines[ffii][5] = f"{killed_seed:,}"    # killed by seed
-        lines[ffii][6] = f"{covered_dyn:,}"
-        lines[ffii][7] = f"{killed_dyn:,}"
-        lines[ffii][8] = f"{covered_total:,}"
-        lines[ffii][9] = f"{killed_total:,}"
+        lines[ffii][3] = f"{covered_seed:,}"  # covered by seed
+        lines[ffii][4] = f"{killed_seed:,}"    # killed by seed
+        lines[ffii][5] = f"{covered_dyn:,}"
+        lines[ffii][6] = f"{killed_dyn:,}"
+        lines[ffii][7] = f"{covered_total:,}"
+        lines[ffii][8] = f"{killed_total:,}"
         # lines[ffii] += f" & {crashed:,}"
 
     assert all(el == total_muts_list[0] for el in total_muts_list)
@@ -136,15 +136,15 @@ for ii, pp in enumerate(all_progs):
     group by mut_id
     """, con))
 
-    lines[-1][2] = f"\\textbf{{combined}}"
-    lines[-1][3] = ""
+    lines[-1][2] = f"\\g{{\\textbf{{combined}}}}"
+    # lines[-1][3] = "\\g{{ }}"
     # lines[-1] = f" & {len(combined_covered_lines):,}"            # covered lines
-    lines[-1][4] = f"{seed_covered:,}"  # covered by seed
-    lines[-1][5] = f"{seed_killed:,}"    # killed by seed
-    lines[-1][6] = f"{all_covered - seed_covered:,}"
-    lines[-1][7] = f"{all_killed - seed_killed:,}"
-    lines[-1][8] = f"{all_covered:,}"
-    lines[-1][9] = f"{all_killed:,}"
+    lines[-1][3] = f"\\g{{{seed_covered:,}}}"  # covered by seed
+    lines[-1][4] = f"\\g{{{seed_killed:,}}}"    # killed by seed
+    lines[-1][5] = "\\g{{ }}" # f"\\g{{{all_covered - seed_covered:,}}}"
+    lines[-1][6] = "\\g{{ }}" # f"\\g{{{all_killed - seed_killed:,}}}"
+    lines[-1][7] = f"\\g{{{all_covered:,}}}"
+    lines[-1][8] = f"\\g{{{all_killed:,}}}"
     # lines[-1] += f" & {total_muts:,}"
 
     # lines.insert(-1, fr"\cmidrule{{3-{num_columns}}}")

@@ -1,6 +1,6 @@
-.PHONY: plot clean resampling twenty_four_hours big_table oracle fuzzer-mut mutations wayne reduction
+.PHONY: plot clean resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne reduction
 
-plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne reduction
+plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut wayne reduction
 
 clean:
 	-rm -r plot/fig
@@ -24,11 +24,11 @@ plot/tmp_data/wayne.json: data/current/stats_all.db plot_scripts/wayne.py
 	python3 plot_scripts/wayne.py
 
 
-# mutations
-mutations: plot/fig/mutations.tex plot/fig/mutations.csv
+# # mutations
+# mutations: plot/fig/mutations.tex plot/fig/mutations.csv
 
-plot/fig/mutations.tex plot/fig/mutations.csv: plot_scripts/mutations.py data/current/stats_all.db
-	python3 plot_scripts/mutations.py
+# plot/fig/mutations.tex plot/fig/mutations.csv: plot_scripts/mutations.py data/current/stats_all.db
+# 	python3 plot_scripts/mutations.py
 
 
 # fuzzer-mut
@@ -56,9 +56,9 @@ plot/fig/big-table-asan.tex: plot_scripts/big-table.py data/asan/stats_all.db
 
 
 # big-table
-big_table: plot_scripts/big-table.py plot/fig/big-table.tex
+big_table: plot/fig/big-table.tex
 
-plot/fig/big-table.tex: data/current/stats_all.db
+plot/fig/big-table.tex: plot_scripts/big-table.py data/current/stats_all.db
 	python3 plot_scripts/big-table.py data/current/stats_all.db big-table.tex
 
 
@@ -66,16 +66,16 @@ plot/fig/big-table.tex: data/current/stats_all.db
 # 24 hours
 twenty_four_hours: plot/fig/24-hour.tex plot_scripts/24-hours.py
 
-plot/fig/24-hour.tex: data/24_hours_2/stats_all.db data/24_hours_3/stats_all.db
+plot/fig/24-hour.tex: data/24_hours_2/stats_all.db data/24_3/stats_all.db
 	python3 plot_scripts/24-hours.py
 
 
 
-# resampling
-resampling: plot/fig/resampling.pdf
+# # resampling
+# resampling: plot/fig/resampling.pdf
 
-plot/fig/resampling.pdf: plot/tmp_data/resampling.json plot_scripts/resampling.R
-	Rscript plot_scripts/resampling.R
+# plot/fig/resampling.pdf: plot/tmp_data/resampling.json plot_scripts/resampling.R
+# 	Rscript plot_scripts/resampling.R
 
-plot/tmp_data/resampling.json: plot_scripts/resampling.py
-	python3 plot_scripts/resampling.py
+# plot/tmp_data/resampling.json: plot_scripts/resampling.py
+# 	python3 plot_scripts/resampling.py

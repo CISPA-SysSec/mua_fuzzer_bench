@@ -44,5 +44,12 @@ for kk, fuzzers_found in all_found.items():
 #%%
 import json
 
+TRANSLATE_FUZZERS = {
+    'afl': 'AFL',
+    'aflpp': 'AFL++',
+    'honggfuzz': 'Honggfuzz',
+    'libfuzzer': 'libFuzzer',
+}
+
 with open(data_path("wayne.json"), "wt") as f:
     json.dump(all_found_list, f)

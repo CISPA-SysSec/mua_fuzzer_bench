@@ -42,6 +42,16 @@ sum_mut_reduction = sum_mutations / sum_supermutants
 
 #%%
 
+TRANSLATE_PROG = {
+    'curl': r'\curl',
+    'guetzli': r'\guetzli',
+    'woff2_new': r'\woffnew',
+    'cares_name': r'\cares_name',
+    'cares_parse_reply': r'\caresparsereply',
+    'libevent': r'\libevent',
+    're2': r'\retwo',
+}
+
 table = stats.to_numpy().tolist()
 
 table = [
@@ -76,9 +86,11 @@ for ny in naive_years:
 
 sum_actual_cpu = 0
 
+seed_collection_cpu_years = 2 * 52 / 365
+
 for ay in actual_years:
     prog = ay.get("prog")
-    cpu_years = ay.get("cpu_years")
+    cpu_years = ay.get("cpu_years") + seed_collection_cpu_years
     sum_actual_cpu += cpu_years
 
     for ee in table:
@@ -92,8 +104,16 @@ table += [["", f"{sum_mutations:,}", f"{sum_supermutants:,}", f"{sum_mut_reducti
 suff[-1] = r"\cmidrule(lr){2-4} \cmidrule(lr){5-7}"
 suff.append(None)
 
+for rr in table:
+    print(rr)
+
 for rr in table[2:-1]:
-    rr.append(f"{float(rr[-2]) / float(rr[-1]):.2f}")
+    rr.append(f"{float(rr[-2].replace(',', '')) / float(rr[-1]):.2f}")
+
+for rr in table:
+    res = TRANSLATE_PROG.get(rr[0])
+    if res is not None:
+        rr[0] = res
 
 for rr in table:
     print(len(rr), rr)

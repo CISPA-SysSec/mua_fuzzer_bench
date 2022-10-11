@@ -159,8 +159,10 @@ def get_ctr(all_runs, keep):
     return ctr
 
 import csv
+out_path = fix_path("plot/tmp_data/def_asan_results.csv")
+out_path.parent.mkdir(exist_ok=True, parents=True)
 
-with open(fix_path("plot/tmp_data/def_asan_results.csv"), "w", newline='') as f:
+with open(out_path, "w", newline='') as f:
     fields = [
         "prog", "fuzzer", "total",
         "covered___both", "covered__asan", "covered__def", "covered_by_seed__both",
