@@ -184,17 +184,17 @@ with open(out_path, "w", newline='') as f:
 
 #%%
 
-import pandas as pd
+# import pandas as pd
 
-df = pd.read_csv("def_asan_results.csv")
+# df = pd.read_csv("def_asan_results.csv")
 
-#%%
+# #%%
 
-df
+# df
 
-df[['prog', 'fuzzer', 'found___both', 'found__asan', 'found__def']].plot(kind='bar', subplots=True)
+# df[['prog', 'fuzzer', 'found___both', 'found__asan', 'found__def']].plot(kind='bar', subplots=True)
 
 
-#%%
+# #%%
 
-df.groupby(['prog']).plot(kind='bar', subplots=True)
+# df.groupby(['prog']).plot(kind='bar', subplots=True)

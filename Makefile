@@ -1,6 +1,6 @@
-.PHONY: plot clean resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne reduction
+.PHONY: plot clean resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut mutations wayne reduction mutation_types
 
-plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut wayne reduction
+plot: resampling twenty_four_hours big_table big_table_asan oracle fuzzer-mut wayne reduction mutation_types
 
 clean:
 	-rm -r plot/fig
@@ -23,6 +23,14 @@ plot/fig/wayne.pdf: plot/tmp_data/wayne.json plot_scripts/wayne.R
 plot/tmp_data/wayne.json: data/current/stats_all.db plot_scripts/wayne.py
 	python3 plot_scripts/wayne.py
 
+
+mutation_types: plot/fig/mutation_types.pdf
+
+plot/fig/mutation_types.pdf: plot_scripts/data/mutation_types.csv plot_scripts/mutation_types.R
+	Rscript plot_scripts/mutation_types.R
+
+plot_scripts/data/mutation_types.csv: data/current/stats_all.db plot_scripts/mutation_types.py
+	python3 plot_scripts/mutation_types.py
 
 # # mutations
 # mutations: plot/fig/mutations.tex plot/fig/mutations.csv
@@ -66,7 +74,7 @@ plot/fig/big-table.tex: plot_scripts/big-table.py data/current/stats_all.db
 # 24 hours
 twenty_four_hours: plot/fig/24-hour.tex plot_scripts/24-hours.py
 
-plot/fig/24-hour.tex: data/24_hours_2/stats_all.db data/24_3/stats_all.db
+plot/fig/24-hour.tex: data/24_3/stats_all.db
 	python3 plot_scripts/24-hours.py
 
 
