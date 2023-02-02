@@ -24,4 +24,4 @@ p <- muta_data %>%
     ) +
     labs(y = "Percentage of Mutants", fill = "Result")
 
-ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width=8, height = 10)
+ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width=8, height = 9)
