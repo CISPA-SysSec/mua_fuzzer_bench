@@ -18,8 +18,6 @@ head(res, 5)
 
 positions <- c("both", "default", "asan")
 
-res
-
 p <- res %>%
   filter(fuzzer == "aflpp") %>%
   ggplot(aes(x = factor(name, levels = positions), y = value, label = sprintf("%3.1f%%", value * 100))) +
@@ -54,7 +52,7 @@ def$type <- "default"
 
 rejiggered <- merge(def, asan, all = TRUE)
 
-rejiggered
+head(rejiggered, 5)
 
 t_pos <- c("default", "asan")
 positions <- c("asan", "default", "both")
@@ -91,11 +89,30 @@ p <- rejiggered %>%
     label = sprintf("%3.1f%%", value * 100)
   )) +
   geom_col() +
-  geom_text(position = position_stack(0.5), size = 2.5) +
-  scale_y_continuous(labels = scales::percent, expand = c(0, 0.01)) +
-  facet_grid(c("prog", "fuzzer"), scale = "free_y") +
-  labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
+  geom_text(position = position_stack(0.5), size = 3) +
+  scale_y_continuous(labels = scales::percent, expand = c(0, 0.04)) +
+  facet_grid(c("fuzzer", "prog")) +
+  labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations that are Killed") +
   theme_bw() +
-  theme(legend.position = "top", axis.title.x = element_blank())
+  theme(legend.position = "bottom", axis.title.x = element_blank())
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-stacked-full.pdf", device = "pdf", width = 5, height = 10)
+ggsave(p, filename = "plot/fig/oracle-percentages-stacked-full.pdf", device = "pdf", width = 8, height = 6)
+
+
+p <- rejiggered %>%
+  filter(fuzzer != "afl") %>%
+  ggplot(aes(
+    x = factor(type, levels = t_pos),
+    y = value,
+    fill = factor(name, levels = positions),
+    label = sprintf("%3.1f%%", value * 100)
+  )) +
+  geom_col() +
+  geom_text(position = position_stack(0.5), size = 3) +
+  scale_y_continuous(labels = scales::percent, expand = c(0, 0)) +
+  facet_grid(c("fuzzer", "prog")) +
+  labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations that are Killed") +
+  theme_bw() +
+  theme(legend.position = "bottom", axis.title.x = element_blank(), strip.text = element_text(size = 6.5))
+p
+ggsave(p, filename = "plot/fig/oracle-percentages-stacked-no-afl.pdf", device = "pdf", width = 8, height = 4)

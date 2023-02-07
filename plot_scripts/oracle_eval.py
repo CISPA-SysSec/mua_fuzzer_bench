@@ -68,7 +68,7 @@ def get_ctr(all_runs, keep):
         instr = get(run, "instr")
         covered_file_seen = get(run, "covered_file_seen")
         covered_by_seed = get(run, "covered_by_seed")
-        time_found = get(run, "time_found");
+        time_found = get(run, "time_found")
         found_by_seed = get(run, "found_by_seed")
         pairs[(prog, funname, instr, fuzzer)] = {
             "def_covered_by_seed": covered_by_seed,
