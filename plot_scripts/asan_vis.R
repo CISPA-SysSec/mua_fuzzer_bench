@@ -29,7 +29,7 @@ p <- res %>%
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-aflpp.pdf", device = "pdf", width = 8, height = 2.5)
+# ggsave(p, filename = "plot/fig/oracle-percentages-aflpp.pdf", device = "pdf", width = 8, height = 2.5)
 
 p <- res %>%
   ggplot(aes(x = factor(name, levels = positions), y = value, label = sprintf("%3.1f%%", value * 100))) +
@@ -41,7 +41,7 @@ p <- res %>%
   labs(fill = "Found By", x = "Subject", y = "Percentage of Covered Mutations") +
   theme(legend.position = "top", axis.title.x = element_blank())
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-full.pdf", device = "pdf", width = 5, height = 10)
+# ggsave(p, filename = "plot/fig/oracle-percentages-full.pdf", device = "pdf", width = 5, height = 10)
 
 
 # Stacked version
@@ -79,7 +79,7 @@ p <- rejiggered %>%
     # panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = 'black'),
   )
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-stacked-aflpp.pdf", device = "pdf", width = 8, height = 1.7)
+# ggsave(p, filename = "plot/fig/oracle-percentages-stacked-aflpp.pdf", device = "pdf", width = 8, height = 1.7)
 
 p <- rejiggered %>%
   ggplot(aes(
@@ -96,7 +96,7 @@ p <- rejiggered %>%
   theme_bw() +
   theme(legend.position = "bottom", axis.title.x = element_blank())
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-stacked-full.pdf", device = "pdf", width = 8, height = 6)
+# ggsave(p, filename = "plot/fig/oracle-percentages-stacked-full.pdf", device = "pdf", width = 8, height = 6)
 
 
 p <- rejiggered %>%

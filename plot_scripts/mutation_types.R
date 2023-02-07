@@ -7,7 +7,7 @@ muta_data <- as.data.frame(read.csv(file = "plot/tmp_data/mutation_types.csv"))
 p <- muta_data %>%
     mutate(not_found = covered - found, not_covered = done - covered) %>%
     mutate(Found = found / done, Covered = not_found / done) %>%
-    mutate(pattern_name = gsub('_', ' ', pattern_name)) %>%
+    mutate(pattern_name = gsub("_", " ", pattern_name)) %>%
     filter(covered > 0) %>%
     # pivot_longer(cols = c(not_covered, not_found, found)) %>%
     pivot_longer(cols = c(Found, Covered)) %>%
@@ -19,9 +19,9 @@ p <- muta_data %>%
     theme(
         legend.position = "bottom",
         axis.title.x = element_blank(),
-        strip.text = element_text(size = 9),
-        axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)
+        strip.text = element_text(size = 6),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
     ) +
     labs(y = "Percentage of Mutants", fill = "Result")
 
-ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width=8, height = 9)
+ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width = 5, height = 7)

@@ -46,7 +46,7 @@ TRANSLATE_PROG = {
     'curl': r'\curl',
     'guetzli': r'\guetzli',
     'woff2_new': r'\woffnew',
-    'cares_name': r'\cares_name',
+    'cares_name': r'\caresname',
     'cares_parse_reply': r'\caresparsereply',
     'libevent': r'\libevent',
     're2': r'\retwo',

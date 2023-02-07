@@ -24,6 +24,7 @@ plot/tmp_data/wayne.json: data/current/stats_all.db plot_scripts/wayne.py
 	python3 plot_scripts/wayne.py
 
 
+# mutation_types
 mutation_types: plot/fig/mutation_types.pdf
 
 plot/fig/mutation_types.pdf: plot_scripts/data/mutation_types.csv plot_scripts/mutation_types.R
