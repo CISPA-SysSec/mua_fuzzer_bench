@@ -1,4 +1,101 @@
 #%%
+
+"""
+Thank you for the detailed description of your reasoning.
+Due to the extreme expected runtime, it seems infeasible to us to actually do experiment C1 as you describe,
+thus we can not address reason 1 easily.
+Instead, we would suggest to use a different approach that hopefully addresses all issues.
+We keep both C1 and C2 as theoretical calculations. There are five values that influence the runtime reduction:
+r = the fuzzing time (previously 24hr for C1 and 48hr for C2)
+m = the number of mutants
+f = the mutant reduction factor, previously ~3.80 (thus the number of supermutants: s = m / f)
+r_s = the fuzzing time for supermutants (previously 1hr)
+n = the number of repetitions
+
+Thus we get the following equations to calculate the runtime for C1 and C2:
+
+s = m / f
+C1 = r * m * n
+C2 = r * n + r_s * s
+
+and the resulting reduction factor:
+rr = C1 / C2
+
+To showcase this calculation, we plug in the values in the paper, this results in:
+r = 24hr  # (changing the value for C2 from 48hr to 24hr)
+m = 141,278
+f = 3.80
+r_s = 1hr
+n = 1  # (again keeping C1 as a single repetition, against recommendation)
+
+Resulting in:
+C1 = 3390672
+C2 =   37202
+rr = 91.14
+
+Iterating on this configuration we modify m to get a sense of impact caused by reason 3:
+Here we modify m to be [10_000, 100_000, 1_000_000], resulting in the following rr: [90.37, 91.11, 91.19]
+While there is a difference, we find it to be of little impact. Thus, we set m to be 10_000.
+
+
+Let us now move on to reason 2, modifying r:
+Plugging in for r the values: [1, 10, 24, 48] we get the corresponding rr: [3.80, 37.86, 90.38, 179.13].
+As pointed out by the reviewers, we see a large influence here. 
+We propose to mention a range of number for r to let a reader decide on a reasonable result.
+Note, while risking to belabor the point, we want to mention again that a 24 hour fuzzing time is a recommended minimum.
+
+Would it be satisfactory to update the paper with the above discussion?
+"""
+
+# %%
+r = 24  # (changing the value for C2 from 48hr to 24hr)
+m = 100_000
+f = 3.80
+r_s = 1
+n = 1
+
+s = m / f
+C1 = r * m * n
+C2 = r * n + r_s * s
+rr = C1 / C2
+
+print("#", r, m, f, r_s, n)
+print("#", s, C1, C2, rr)
+# 24 141278 3.8 1 10
+# 37178.42105263158 33906720 37418.42105263158 906.150474716928
+
+# 24 141278 3.8 1 1
+# 37178.42105263158 3390672 37202.42105263158 91.1411651194178
+
+# 24 10000 3.8 1 1
+# 2631.5789473684213 240000 2655.5789473684213 90.37577295068971
+
+# 24 100000 3.8 1 1
+# 26315.78947368421 2400000 26339.78947368421 91.11690138593603
+
+# 24 1000000 3.8 1 1
+# 263157.89473684214 24000000 263181.89473684214 91.19168331848134
+
+# 24 1000 3.8 1 1
+# 263.15789473684214 24000 287.15789473684214 83.5777126099706
+
+# 24 10000 3.8 12 1
+# 2631.5789473684213 240000 31602.947368421053 7.594228386426316
+
+# 1 10000 3.8 1 1
+# 2631.5789473684213 10000 2632.5789473684213 3.798556548511565
+
+# 10 10000 3.8 1 1
+# 2631.5789473684213 100000 2641.5789473684213 37.856146642757516
+
+# 24 10000 3.8 1 1
+# 2631.5789473684213 240000 2655.5789473684213 90.37577295068971
+
+# 48 10000 3.8 1 1
+# 2631.5789473684213 480000 2679.5789473684213 179.1326209930861
+
+
+#%%
 # r = runtime (recommended) = 24 hr
 # m = mutations
 # f = mutant reduction factor
