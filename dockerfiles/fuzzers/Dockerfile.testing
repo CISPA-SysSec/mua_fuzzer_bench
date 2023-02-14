@@ -48,7 +48,7 @@ RUN rm -rf /var/cache/apt/archives/*
 
 WORKDIR /
 
-COPY eval/run_bin.sh .
+COPY dockerfiles/fuzzers/run_bin.sh .
 RUN chmod +x run_bin.sh
 COPY eval_scripts/iterate_seeds.py .
 RUN chmod +x iterate_seeds.py

@@ -75,6 +75,6 @@ WORKDIR /home/user
 RUN wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/compiler-rt-11.1.0.src.tar.xz -O compiler-rt.tar.xz && ls -lah && tar xfv compiler-rt.tar.xz
 
 RUN cd ~; git clone https://github.com/google/fuzzer-test-suite.git fuzzer-test-suite
-COPY --chown=user:user eval/system/build.sh /home/user/fuzzer-test-suite/
-COPY --chown=user:user eval/system/common.sh /home/user/fuzzer-test-suite/
+COPY --chown=user:user dockerfiles/fuzzers/system/build.sh /home/user/fuzzer-test-suite/
+COPY --chown=user:user dockerfiles/fuzzers/system/common.sh /home/user/fuzzer-test-suite/
 RUN chmod +x /home/user/fuzzer-test-suite/build.sh /home/user/fuzzer-test-suite/common.sh 

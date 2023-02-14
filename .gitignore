@@ -193,4 +193,5 @@ __pycache__/
 /*.json
 /*.db
 /plot/
+/backup/
 __pycache__

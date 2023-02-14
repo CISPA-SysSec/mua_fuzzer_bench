@@ -3715,7 +3715,7 @@ def build_docker_images(fuzzers, progs):
             "docker", "build",
             "-t", "mutator_testing",
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
-            "-f", "eval/Dockerfile.testing",
+            "-f", "dockerfiles/fuzzers/Dockerfile.testing",
             "."
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0:
@@ -3733,7 +3733,7 @@ def build_docker_images(fuzzers, progs):
             "docker", "build",
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
-            "-f", f"eval/{name}/Dockerfile",
+            "-f", f"dockerfiles/fuzzers/{name}/Dockerfile",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             try:

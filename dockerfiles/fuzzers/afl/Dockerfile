@@ -7,5 +7,5 @@ ENV PATH="$PATH:/home/user/afl/"
 ENV AFL_PATH="/home/user/afl/"
 COPY tmp/lib/ /home/user/lib/
 COPY samples/common/ /home/user/common/
-COPY eval/afl/eval.sh /home/user/eval.sh
-COPY eval/afl/minimize.sh /home/user/minimize.sh
+COPY dockerfiles/fuzzers/afl/eval.sh /home/user/eval.sh
+COPY dockerfiles/fuzzers/afl/minimize.sh /home/user/minimize.sh
