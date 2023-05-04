@@ -11,7 +11,7 @@ WORKDIR /home/mutator/samples/c-ares/
 RUN git checkout 809d5e84f3423ab8165650d923acb0e246cbd006
 
 # build
-COPY samples/c-ares_harness /home/mutator/samples/c-ares_harness
+COPY dockerfiles/samples/c-ares_harness /home/mutator/samples/c-ares_harness
 RUN CFLAGS="-g -O2" CXXFLAGS="-g -O2" \
     SRC="/home/mutator/samples/c-ares" \
     WORK="/home/mutator/samples/c-ares/work" \

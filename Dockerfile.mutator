@@ -55,7 +55,7 @@ RUN rm -rf /kcov
 
 ################################################################################
 # common files
-COPY samples/common /home/mutator/samples/common
+COPY dockerfiles/samples/common /home/mutator/samples/common
 
 WORKDIR /home/mutator
 COPY eval_scripts/* /home/mutator/

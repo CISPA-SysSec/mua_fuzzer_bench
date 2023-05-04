@@ -1,13 +1,18 @@
-# llvm-mutation-tool
+# mua-fuzzer-benchmark
 
 ## Mutation documentation
 
 The file [mutation_doc.json](mutation_doc.json) contains a documentation about the different mutation types implemented
 in this project as a machine readable json file.
 
+## License
+
+`mua-fuzzer-benchmark` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+
 ## Install
 
 ### Docker Install
+
 ```shell script
 # use the python script mutator-docker-wrapper.py
 
@@ -65,13 +70,17 @@ gradle build
 
 
 ## Invoke Generation of Mutation Files
+
 General invoke:
+
 ```shell script
 # invokes the mutation pipeline, check for details on how to invoke the project in detail
 ./run_mutation.py [-bc] [-ll] [-bn] [-cpp] [-m <int>] [-ml <int>*] <path-to-subject.c> (e.g. ./samples/simple_malloc/malloc.c) 
 ```
+
 Explanation of optional arguments (at least one must be chosen, otherwise the output would be empty):
-```
+
+```text
 -bc: Keeps the mutated bitcode files.
 -ll: Keeps the mutated bitcode files in human readable form.
 -bn: Generates runnable binaries if possible.
@@ -106,12 +115,14 @@ Invoke the binary ```*.opt_mutate``` (e.g. [samples/simple_malloc/malloc.c.opt_m
 the run as explained above.
 
 ## Clean
+
 ```shell script
 # run in root directory to delete all build products
 # can also be used if the build does not correctly update or another strange behavior is observed
 
 gradle clean
 ```
+
 ```shell script
 # run in root directory to delete all generated mutation files in samples
 
@@ -129,12 +140,14 @@ Additionally there is `minimize_seeds.sh`, a script to download the seed files f
 To run the python scripts, `python3` as well as the `docker` package for python is needed.
 
 For debian:
+
 ```
 sudo apt install python3-pip
 pip3 install docker
 ```
 
 ## Environment variables
+
 See beginning of `eval.py` for env variables that have influence on the eval.
 TODO describe them here.
 
@@ -153,9 +166,11 @@ TODO
 ## Managing Seeds
 
 ### Using existing seeds to reproduce results
+
 If you just want to reproduce our results download the seeds from: TODO
 Then extract the zip archive to tmp/active_seeds, the folder names inside active_seeds need to correspond to the subject names.
 Example:
+
 ```
 - <project>
   - eval.py
@@ -167,6 +182,7 @@ Example:
 ```
 
 ### Adding new seeds for a subject
+
 - Manually gather initial seeds.
 - Organize seeds into seed_base_dir/<subject name>/<seed files>
 - Import the seeds using `eval.py import_seeds`

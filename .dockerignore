@@ -1,6 +1,8 @@
 cov/
-tmp/
 seeds/
 data/
+benchmark-manager/
+bak/
+tmp/
 !tmp/lib
 

@@ -52,10 +52,11 @@ def get_seed_coverage(all_args):
                         retry += 1
                         continue
                     else:
-                        print("orig bin returncode != 0, crashing base bin:")
-                        print("args:", orig_cmd, "returncode:", orig_returncode)
-                        print(orig_res.read())
-                        sys.exit(2)
+                        raise ValueError(f"""
+orig bin returncode != 0, crashing base bin:
+args: {orig_cmd} returncode: {orig_returncode}
+{orig_res.read()}
+                        """)
                 else:
                     # Successful run
                     mutation_ids = []
@@ -66,6 +67,8 @@ def get_seed_coverage(all_args):
                     assert len(list(Path(triggered_folder).glob("*"))) == 0
                     # seed_results[str(path)] = mutation_ids
                     return str(seed), mutation_ids
+    else:
+        raise ValueError("seed is not a file:", seed)
 
 
 def run_seeds(seeds, binary, args, workdir, result_file):
@@ -74,10 +77,11 @@ def run_seeds(seeds, binary, args, workdir, result_file):
     print("triggered folder:", triggered_folder)
     seeds = Path(seeds)
     seed_results = {}
-    seeds = (str(pp) for pp in seeds.glob("**/*"))
+    seeds = list(str(pp) for pp in seeds.glob("**/*"))
     with ProcessPoolExecutor() as executor:
-        results = executor.map(get_seed_coverage, ((binary, args, workdir, triggered_folder, seed) for seed in seeds))
-        for path, mutation_ids in results:
+        args_list = list((binary, args, workdir, triggered_folder, seed) for seed in seeds)
+        for path, mutation_ids in executor.map(
+                get_seed_coverage, args_list):
             seed_results[path] = mutation_ids
 
     with open(result_file, 'wt') as f:

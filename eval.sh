@@ -42,4 +42,4 @@ sudo rm -rf tmp/samples/ && docker cp dummy:/home/mutator/samples/ tmp/ && \
     docker cp dummy:/home/mutator/build/install/LLVM_Mutation_Tool/lib/ tmp/lib/
 docker rm -f dummy
 
-exec ./eval.py "eval" "$@"
+exec src/mua_fuzzer_benchmark/eval.py "eval" "$@"

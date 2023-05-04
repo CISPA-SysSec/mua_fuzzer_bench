@@ -2493,11 +2493,12 @@ def measure_mutation_coverage_per_file(mutator, prog_info, seed_dir):
         result_file = Path(result_dir)/"results.json"
         in_docker_trigger_folder = Path('/home/mutator/tmp/').joinpath(Path(trigger_folder).relative_to(HOST_TMP_PATH))
         in_docker_result_file = Path('/home/mutator/tmp/').joinpath(Path(result_file).relative_to(HOST_TMP_PATH))
+        in_docker_seed_dir = Path('/home/mutator/tmp/').joinpath(Path(seed_dir).resolve().relative_to(HOST_TMP_PATH))
         # start detector and run through all seed files
         run = run_exec_in_container(mutator.name, False,
             [
                 '/home/mutator/iterate_seeds_individual.py',
-                '--seeds', seed_dir,
+                '--seeds', in_docker_seed_dir,
                 '--args', args,
                 '--binary', detector_path,
                 '--workdir', '/home/mutator',
@@ -2505,6 +2506,7 @@ def measure_mutation_coverage_per_file(mutator, prog_info, seed_dir):
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
             timeout=60*60*4)
+
         if run['timed_out'] or run['returncode'] != 0:
             logger.info(f"Got returncode != 0: {run['returncode']}")
             print(run['out'])
@@ -3656,7 +3658,7 @@ def build_subject_docker_images(progs):
             "docker", "build",
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
-            "-f", f"subjects/Dockerfile.{name}",
+            "-f", f"dockerfiles/subjects/Dockerfile.{name}",
             "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             try:
