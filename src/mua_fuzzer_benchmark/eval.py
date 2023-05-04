@@ -3721,7 +3721,13 @@ def build_docker_images(fuzzers, progs):
             "."
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0:
-        logger.info("Could not build testing image.", proc)
+        try:
+            stdout = proc.stdout.decode()
+        except:
+            stdout = str(proc.stdout)
+        logger.info(f"Could not build testing image.\n"
+                f"{proc.args} -> {proc.returncode}\n"
+                f"{stdout}")
         sys.exit(1)
 
     # build the fuzzer docker images
