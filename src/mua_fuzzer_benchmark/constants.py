@@ -55,10 +55,15 @@ TRIGGERED_STR = "Triggered!\r\n"
 
 MAX_RUN_EXEC_IN_CONTAINER_TIME = 60*15
 
-SHARED_DIR = Path(os.getenv("MUT_SHARED_DIR", "/dev/shm/")).absolute()
-SHARED_DIR.mkdir(parents=True, exist_ok=True)
+SHARED_DIR = Path(os.getenv("MUT_SHARED_DIR", "/dev/shm/mua_fuzzer_benchmark/")).absolute()
 
 IN_DOCKER_SHARED_DIR = Path("/shared/")
+
+MUTATOR_LLVM_DOCKERFILE_PATH = "dockerfiles/mutator/Dockerfile.llvm"
+MUTATOR_MUTATOR_DOCKERFILE_PATH = "dockerfiles/mutator/Dockerfile.mutator"
+MUTATOR_LLVM_IMAGE_NAME = "mutator_deps:2004"
+MUTATOR_MUATATOR_IMAGE_NAME = "mutator_mutator:latest"
+
 
 BLOCK_SIZE = 1024*4
 

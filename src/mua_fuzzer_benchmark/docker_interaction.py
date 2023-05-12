@@ -121,13 +121,15 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
     finally: # This will stop the container if there is an exception or not.
         try:
             container.kill(2)
-            for _ in range(50):
-                time.sleep(.1)
+            time.sleep(.5)
+            container.reload()
+            for _ in range(10):
+                time.sleep(5)
                 container.reload()
             while True:
                 container.stop()
                 logger.info(f"! Mutation container still alive {container.name}, keep killing it.")
-                time.sleep(1)
+                time.sleep(10)
         except docker.errors.NotFound:
             # container is dead
             pass

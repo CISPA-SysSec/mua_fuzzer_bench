@@ -28,7 +28,7 @@ import docker
 import logging
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container
 
-from constants import EXEC_ID, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
+from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR, PROGRAMS
 from fuzzer_helpers import SEED_HANDLERS
@@ -1191,12 +1191,12 @@ def get_supermutations_seed_reachable(prog, prog_info, mutations, mutator_contai
         not_covered_supermutants.append(supermutant)
 
     logger.info(
-        f"Generated {len(supermutants)} supermutants out of {len(covered_mutations)}" +
+        f"Generated {len(supermutants)} supermutants out of {len(covered_mutations)} " +
         f"covered mutants a reduction of {(len(covered_mutations)) / len(supermutants):.2f}")
 
     logger.info(
-        f"Generated {len(not_covered_supermutants)} supermutants out of {len(not_covered_mutations)}" +
-        "not covered mutants a reduction of {(len(not_covered_mutations)) / len(not_covered_supermutants):.2f}")
+        f"Generated {len(not_covered_supermutants)} supermutants out of {len(not_covered_mutations)} " +
+        f"not covered mutants a reduction of {(len(not_covered_mutations)) / len(not_covered_supermutants):.2f}")
 
     return supermutants + not_covered_supermutants, {
         'covered': list(covered_mutations),
@@ -1843,7 +1843,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                 assert len(mutation_ids) >= 1
                 if len(mutation_ids) > 1:
                     logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
-                    logger.info(f"rerunning in chunks (unexpected completion time: {actual_time}, expected: {expected_time})")
+                    logger.info(f"! rerunning in chunks (unexpected completion time: {actual_time}, expected: {expected_time})")
 
                     chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
                     recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
@@ -1855,7 +1855,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                     stats.done_run('unexpected_completion_time', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
                     logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
-                    logger.info(f"unexpected completion time: {actual_time}, expected: {expected_time}")
+                    logger.info(f"! unexpected completion time: {actual_time}, expected: {expected_time}")
             else:
                 logger.info(f"= run [+]:      {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
                 total_time = run_result['total_time']
@@ -2194,7 +2194,7 @@ class CpuCores():
             return None
 
     def release_core(self, idx):
-        assert self.cores[idx] == True, "Trying to release a already free core"
+        assert self.cores[idx] == True, "Trying to release an already free core"
         self.cores[idx] = False
 
     def has_free(self):
@@ -2370,7 +2370,6 @@ def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stat
             # No runs are ready, prepare a mutation and all corresponding runs.
             try:
                 # Get the next mutant
-                print("="*100)
                 ii, (mut_data, fuzzer_runs) = next(all_runs)
 
                 prepared_runs.add('mut', (mut_data, fuzzer_runs))
@@ -2405,11 +2404,14 @@ def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stat
     return ii
 
 
-def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, rerun, rerun_mutations):
+def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, rerun, rerun_mutations, fresh_images):
     global should_run
 
     if rerun_mutations is not None:
         assert rerun is not None, "To use the --rerun-mutations options the --rerun option is required."
+
+    prepare_mutator_docker_image(fresh_images)
+    prepare_shared_dir_and_tmp_dir()
 
     seed_base_dir = Path(seed_base_dir)
     execution_start_time = time.time()
@@ -3614,6 +3616,102 @@ def seed_coverage(seed_path, res_path, prog):
     get_kcov(prog, seed_path, res_path)
 
 
+def prepare_mutator_docker_image(fresh_images):
+    """
+    Prepare the docker image for the mutator.
+    """
+    def run_command(command):
+        proc = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if proc.returncode != 0:
+            try:
+                stdout = proc.stdout.decode()
+            except:
+                stdout = str(proc.stdout)
+
+            logger.error(f"Could not run command.\n"
+                  f"{proc.args} -> {proc.returncode}\n"
+                  f"{stdout}")
+            raise ValueError("Could not run command.")
+
+    # build llvm image
+    logger.info("Building LLVM container.")
+    run_command([
+        "docker", "build",
+        *(["--pull", "--no-cache"] if fresh_images else []),
+        "-t", MUTATOR_LLVM_IMAGE_NAME,
+        "-f", MUTATOR_LLVM_DOCKERFILE_PATH, "."
+    ])
+
+    logger.info("Building mutator container.")
+    run_command([
+        "docker", "build",
+        *(["--no-cache"] if fresh_images else []),
+        "-t", MUTATOR_MUATATOR_IMAGE_NAME,
+        "-f", MUTATOR_MUTATOR_DOCKERFILE_PATH, "."
+    ])
+
+    # # build Mutator image
+    # if proc.returncode != 0:
+    #     print_fail("LLVM image was not properly built. Check output for details.")
+    #     exit(1)
+    # print("Building Mutator container.")
+    # if args.no_cache:
+    # else:
+    #     proc = subprocess.run(["docker", "build", "-t", mutator_image, "-f", mutator_dockerfile, "."])
+    # if proc.returncode != 0:
+    #     print_fail("Mutator image was not properly built. Check output for details.")
+    #     exit(1)
+    # print_pass("Successfully built Mutator Docker container.")
+
+
+def prepare_shared_dir_and_tmp_dir():
+    """
+    Prepare the shared dir and ./tmp dir for the evaluation containers.
+    The shared dir will be deleted if it already exists.
+    """
+
+    # SHARED_DIR
+    if SHARED_DIR.exists():
+        if SHARED_DIR.is_dir():
+            logger.info(f"Cleaning up already existing shared dir: {SHARED_DIR}.")
+            try:
+                shutil.rmtree(SHARED_DIR)
+            except OSError as err:
+                logger.info(f"Could not clean up {SHARED_DIR}: {err}")
+        if SHARED_DIR.is_file():
+            raise Exception(f"The specified location for shared dir is a file: {SHARED_DIR}.")
+
+    SHARED_DIR.mkdir(parents=True)
+
+    # ./tmp
+    for td in ['lib', 'samples', 'unsolved_mutants']:
+        tmp_dir = HOST_TMP_PATH/td
+        if tmp_dir.exists():
+            if tmp_dir.is_dir():
+                logger.info(f"Cleaning up already existing tmp dir: {tmp_dir}.")
+                try:
+                    shutil.rmtree(tmp_dir)
+                except OSError as err:
+                    logger.info(f"Could not clean up {tmp_dir}: {err}")
+            if tmp_dir.is_file():
+                raise Exception(f"The specified location for tmp dir is a file: {tmp_dir}.")
+
+        tmp_dir.mkdir(parents=True)
+    
+
+    proc = subprocess.run(f"""
+        docker rm dummy || true
+        docker create -ti --name dummy mutator_mutator bash
+        docker cp dummy:/home/mutator/samples/ tmp/ && \
+            docker cp dummy:/home/mutator/build/install/LLVM_Mutation_Tool/lib/ tmp/
+        docker rm -f dummy
+    """, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        logger.info(f"Could not extract mutator files.", proc)
+        sys.exit(1)
+
+
+
 def main():
     import sys
     import argparse
@@ -3649,6 +3747,8 @@ def main():
              "as well as a mode specifying if the original supermutants should be restored (keep) or each "
              "mutation should be analyzed individually (single). "
              "Requires the --rerun option to be used. Example: {'prog': {'ids': [1, 2, 3], 'mode': 'single'}")
+    parser_eval.add_argument("--fresh-images", default=False, action="store_true",
+        help='If the docker images should be rebuild from scratch. This will call pull on the base images, and build with --no-cache.')
     del parser_eval
 
     # CMD: coverage_fuzzing
@@ -3758,24 +3858,31 @@ def main():
 
     if args.cmd == 'eval':
         run_eval(args.progs, args.fuzzers, args.fuzz_time, args.num_repeats,
-                 args.seed_dir, args.rerun, args.rerun_mutations)
+                 args.seed_dir, args.rerun, args.rerun_mutations, args.fresh_images)
     elif args.cmd == 'coverage_fuzzing':
+        raise NotImplementedError("Coverage fuzzing is not implemented yet.")
         coverage_fuzzing(args.progs, args.fuzzers, args.fuzz_time,
         args.seed_dir, args.result_dir, args.instances)
     elif args.cmd == 'check_seeds':
+        raise NotImplementedError("Check seeds is not implemented yet.")
         check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
+        raise NotImplementedError("Gather seeds is not implemented yet.")
         gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,
         args.per_fuzzer, args.seed_dir, args.dest_dir)
     elif args.cmd == 'import_seeds':
+        raise NotImplementedError("Import seeds is not implemented yet.")
         import_seeds(args.source, args.dest)
     # elif args.cmd == 'plot':
     #     generate_plots(args.db_path, args.seed_dir, args.artifacts, args.skip_script)
     elif args.cmd == 'merge':
+        raise NotImplementedError("Merge is not implemented yet.")
         merge_dbs(args.out_db_path, args.in_db_paths)
     elif args.cmd == 'minimize_seeds':
+        raise NotImplementedError("Minimize seeds is not implemented yet.")
         minimize_seeds(args.seed_path, args.res_path, args.fuzzers, args.progs, args.per_fuzzer)
     elif args.cmd == 'seed_coverage':
+        raise NotImplementedError("Seed coverage is not implemented yet.")
         seed_coverage(args.seed_path, args.res_path, args.prog)
     else:
         parser.print_help(sys.stderr)
