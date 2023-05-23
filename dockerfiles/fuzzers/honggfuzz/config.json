@@ -1,0 +1,6 @@
+{
+    "queue_dir": "output",
+    "queue_ignore_files": [],
+    "crash_dir": "crashes",
+    "crash_ignore_files": []
+}

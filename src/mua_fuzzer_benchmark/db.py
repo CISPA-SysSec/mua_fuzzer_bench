@@ -192,27 +192,6 @@ class Stats():
         )''')
 
         c.execute('''
-        CREATE TABLE aflpp_runs (
-            exec_id,
-            prog,
-            mutation_id INTEGER,
-            run_ctr,
-            fuzzer,
-            time,
-            cycles_done,
-            cur_path,
-            paths_total,
-            pending_total,
-            pending_favs,
-            map_size,
-            unique_crashes,
-            unique_hangs,
-            max_depth,
-            execs_per_sec,
-            totals_execs
-        )''')
-
-        c.execute('''
         CREATE TABLE seed_crashing_inputs (
             exec_id,
             prog,
@@ -478,7 +457,7 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_run_executed(self, c, plot_data, exec_id, run_ctr, prog, mutation_id, fuzzer, cf_seen, total_time):
+    def new_run_executed(self, c, exec_id, run_ctr, prog, mutation_id, fuzzer, cf_seen, total_time):
         c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -490,38 +469,6 @@ class Stats():
                 total_time,
             )
         )
-        start_time = None
-        if plot_data is not None:
-            for row in plot_data:
-                cur_time = int(row['# unix_time'].strip())
-                if start_time is None:
-                    start_time = cur_time
-                cur_time -= start_time
-                try:
-                    rest = row[None][0].strip()
-                except:
-                    rest = None
-                c.execute('INSERT INTO aflpp_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (
-                        exec_id,
-                        prog,
-                        mutation_id,
-                        run_ctr,
-                        fuzzer,
-                        cur_time,
-                        row[' cycles_done'].strip(),
-                        row[' cur_path'].strip(),
-                        row[' paths_total'].strip(),
-                        row[' pending_total'].strip(),
-                        row[' pending_favs'].strip(),
-                        row[' map_size'].strip(),
-                        row[' unique_crashes'].strip(),
-                        row[' unique_hangs'].strip(),
-                        row[' max_depth'].strip(),
-                        row[' execs_per_sec'].strip(),
-                        rest,
-                    )
-                )
         self.conn.commit()
 
     @connection

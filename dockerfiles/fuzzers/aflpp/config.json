@@ -1,0 +1,6 @@
+{
+    "queue_dir": "output/default/queue",
+    "queue_ignore_files": [".state"],
+    "crash_dir": "output/default/crashes",
+    "crash_ignore_files": ["README.txt"]
+}

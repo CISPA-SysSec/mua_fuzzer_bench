@@ -1,0 +1,6 @@
+{
+    "queue_dir": "seeds",
+    "queue_ignore_files": [],
+    "crash_dir": "artifacts",
+    "crash_ignore_files": []
+}

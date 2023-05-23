@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import defaultdict
+from functools import partial
 import sys
 import os
 import time
@@ -31,7 +32,6 @@ from docker_interaction import DockerLogStreamer, run_exec_in_container, start_m
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR, PROGRAMS
-from fuzzer_helpers import SEED_HANDLERS
 from helpers import CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, mutation_detector_path, mutation_locations_graph_path, \
     mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag
 from db import ReadStatsDb, Stats
@@ -479,72 +479,47 @@ def base_eval(run_data, docker_image):
         }
 
 
-def get_aflpp_logs(workdir, all_logs):
-    try:
-        plot_path = list(Path(workdir).glob("**/plot_data"))
-        if len(plot_path) == 1:
-            # Get the final stats and report them
-            with open(plot_path[0]) as csvfile:
-                plot_data = list(csv.DictReader(csvfile))
-                # only get last row, to reduce memory usage
-                # The very last row sometimes has wrong data, try second to last first.
-                try:
-                    return [plot_data[-2]]
-                except IndexError:
-                    pass
-                # Second to last row not found, there is probably only one row, get it.
-                try:
-                    return [plot_data[-1]]
-                except IndexError:
-                    pass
-                # No data found, return nothing
-                return []
-        else:
-            # Did not find a plot
-            return []
-
-    except Exception as exc:
-        raise ValueError(''.join(all_logs)) from exc
-
-
-def aflpp_eval(run_data, run_func):
-    run_data['crash_dir'] = "output/default/crashes"
-    result = run_func(run_data, fuzzer_container_tag("aflpp"))
-    # result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
-    result['plot_data'] = []
+def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
+    run_data['crash_dir'] = crash_dir
+    result = run_func(run_data, fuzzer_container_tag(container_tag))
     return result
 
-def aflpp_asan_eval(run_data, run_func):
-    run_data['crash_dir'] = "output/default/crashes"
-    result = run_func(run_data, fuzzer_container_tag("aflpp_asan"))
-    # result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
-    result['plot_data'] = []
-    return result
 
-def afl_eval(run_data, run_func):
-    run_data['crash_dir'] = "output/crashes"
-    result = run_func(run_data, fuzzer_container_tag("afl"))
-    # result['plot_data'] = get_aflpp_logs(run_data['workdir'], result['all_logs'])
-    result['plot_data'] = []
-    return result
+def load_fuzzers():
+    fuzzers = {}
+    for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
+        if fuzzer_dir.name.startswith("."):
+            continue # skip hidden files
 
-def honggfuzz_eval(run_data, run_func):
-    run_data['crash_dir'] = "crashes"
-    result = run_func(run_data, fuzzer_container_tag("honggfuzz"))
-    result['plot_data'] = []
-    return result
+        if fuzzer_dir.name == "system":
+            continue
 
-def libfuzzer_eval(run_data, run_func):
-    run_data['crash_dir'] = "artifacts"
-    result = run_func(run_data, fuzzer_container_tag("libfuzzer"))
-    result['plot_data'] = []
-    return result
+        if not fuzzer_dir.is_dir():
+            continue
+        
+        fuzzer_config_path = fuzzer_dir/"config.json"
+        with open(fuzzer_config_path, "r") as f:
+            fuzzer_config = json.load(f)
 
-def libfuzzer_asan_eval(run_data, run_func):
-    run_data['crash_dir'] = "artifacts"
-    result = run_func(run_data, fuzzer_container_tag("libfuzzer_asan"))
-    result['plot_data'] = []
-    return result
+        fuzzer_name = fuzzer_dir.name
+        fuzzer_crash_dir = fuzzer_config["crash_dir"]
+        partial_eval_func = partial(
+            eval_dispatch_func,
+            crash_dir=fuzzer_crash_dir, container_tag=fuzzer_name
+        )
+
+        fuzzers[fuzzer_name] = {
+            "eval_func": partial_eval_func,
+            "queue_dir": fuzzer_config["queue_dir"],
+            "queue_ignore_files": fuzzer_config["queue_ignore_files"],
+            "crash_dir": fuzzer_crash_dir,
+            "crash_ignore_files": fuzzer_config["crash_ignore_files"],
+        }
+
+    return fuzzers
+
+
+FUZZERS = load_fuzzers()
 
 
 def resolve_compile_args(args, workdir):
@@ -569,25 +544,6 @@ def prepend_main_arg(args):
 def build_compile_args(args, workdir):
     args = resolve_compile_args(args, workdir)
     return " ".join(map(shlex.quote, args))
-
-# The fuzzers that can be evaluated, value is the function used to start an
-# evaluation run
-# A evaluation function should do following steps:
-    # execute the fuzzer while monitoring if the crash was found
-    # this includes running the crashing input in the uninstrumented
-    # binary to see if it still crashes, as well as running it in the
-    # original unmutated binary to see that it does not crash
-    # once the crash is found update the stats (executions, time) but
-    # also store the crashing input and path to the corresponding
-    # mutated binary
-FUZZERS = {
-    "libfuzzer": libfuzzer_eval,
-    "libfuzzer_asan": libfuzzer_asan_eval,
-    "afl": afl_eval,
-    "aflpp": aflpp_eval,
-    "aflpp_asan": aflpp_asan_eval,
-    "honggfuzz": honggfuzz_eval,
-}
 
 
 def check_run(run_data):
@@ -627,7 +583,6 @@ def check_run(run_data):
         shutil.rmtree(inputs_to_check)
 
         if res is not None:
-            res['plot_data'] = []
             return res
 
         # did not find a crash, restart this mutation
@@ -636,7 +591,6 @@ def check_run(run_data):
             'total_time': time.time() - start_time,
             'data': results,
             'all_logs': [],
-            'plot_data': [],
         }
 
 
@@ -1407,7 +1361,7 @@ def get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rer
             fuzzer_runs = []
             for fuzzer in fuzzers:
                 try:
-                    eval_func = FUZZERS[fuzzer]
+                    eval_func = FUZZERS[fuzzer]['eval_func']
                 except Exception as err:
                     logger.info(err)
                     logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
@@ -1499,10 +1453,26 @@ def has_result(mut_id, results, to_search):
             return res
     return None
 
+def collect_input_paths(workdir, fuzzer_name):
+    queue_dir = FUZZERS[fuzzer_name]['queue_dir']
+    queue_ignore_files = FUZZERS[fuzzer_name]['queue_ignore_files']
+    crash_dir = FUZZERS[fuzzer_name]['crash_dir']
+    crash_ignore_files = FUZZERS[fuzzer_name]['crash_ignore_files']
+
+    found = [
+        pp for pp in (workdir/queue_dir).glob("*")
+        if pp.name not in queue_ignore_files
+    ]
+    crashes = [
+        pp for pp in (workdir/crash_dir).glob("*")
+        if pp.name not in crash_ignore_files
+    ]
+    return list(found) + list(crashes)
 
 def copy_fuzzer_inputs(data):
     tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
-    found_inputs = SEED_HANDLERS[data['fuzzer']](data['workdir'])
+    found_inputs = collect_input_paths(data['workdir'], data['fuzzer'])
+    logger.warning(f"collect_input_paths: {found_inputs}")
     for fi in found_inputs:
         file_hash = hash_file(fi)
         dest_path = tmp_dir/file_hash
@@ -1635,9 +1605,8 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                     seed_timeout,
                     None)
 
-            def record_run_done(plot_data, covered_time, total_time, prog, fuzzer, run_ctr, mut_id):
+            def record_run_done(covered_time, total_time, prog, fuzzer, run_ctr, mut_id):
                 stats.new_run_executed(
-                    plot_data,
                     EXEC_ID,
                     run_ctr,
                     prog,
@@ -1671,7 +1640,6 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             # killed by the fuzzer (but not already by seeds)
             # but the run is not completed, filter out the killed mutations and try again with remaining
             total_time = run_result['total_time']
-            plot_data = run_result['plot_data']
             results = sorted(run_result['data'].values(), key=lambda x: x['time'])
             del run_result
 
@@ -1752,7 +1720,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         covered_time = has_result(mut_id, results, ['covered', 'killed'])
                         if covered_time:
                             covered_time = covered_time.get('time', None)
-                        record_run_done(plot_data, covered_time, total_time, prog, data['fuzzer'], data['run_ctr'], mut_id)
+                        record_run_done(covered_time, total_time, prog, data['fuzzer'], data['run_ctr'], mut_id)
 
                         # record killed or timeout
                         if killed:
@@ -1798,7 +1766,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                                 covered_time = has_result(mut_id, results, ['covered', 'killed'])
                                 if covered_time:
                                     covered_time = covered_time.get('time', None)
-                                record_run_done(plot_data, covered_time, total_time,
+                                record_run_done(covered_time, total_time,
                                     prog, data['fuzzer'], data['run_ctr'], mut_id)
 
                                 record_run_timeout(timeout['time'], timeout['path'], [], timeout['args'],
@@ -1859,7 +1827,6 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
             else:
                 logger.info(f"= run [+]:      {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
                 total_time = run_result['total_time']
-                plot_data = run_result['plot_data']
                 results = sorted(run_result['data'].values(), key=lambda x: x['time'])
                 del run_result
 
@@ -1897,7 +1864,6 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                         if covered_time:
                             covered_time = covered_time.get('time', None)
                         stats.new_run_executed(
-                            plot_data,
                             EXEC_ID,
                             data['run_ctr'],
                             prog,
@@ -2502,7 +2468,7 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
 
         for fuzzer in fuzzers:
             try:
-                eval_func = FUZZERS[fuzzer]
+                eval_func = FUZZERS[fuzzer]['eval_func']
             except Exception as err:
                 logger.info(err)
                 logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
@@ -2740,7 +2706,7 @@ def get_seed_checking_runs(fuzzers, progs, num_splits, base_dir):
 
         for fuzzer in fuzzers:
             try:
-                eval_func = FUZZERS[fuzzer]
+                eval_func = FUZZERS[fuzzer]['eval_func']
             except Exception as err:
                 logger.info(err)
                 logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
@@ -3012,8 +2978,8 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         fuzzed_seed_dir = all_runs_dir/prog/fuzzer/instance
         fuzzed_seed_dir.mkdir(parents=True, exist_ok=True)
 
-        collector = SEED_HANDLERS[fuzzer]
-        found_seeds = collector(seed_source)
+        logger.debug(f"Collecting seeds from {seed_source} for {prog} {fuzzer} {instance}")
+        found_seeds = collect_input_paths(seed_source, fuzzer)
 
         for fs in found_seeds:
             file_hash = hash_file(fs)
@@ -3162,24 +3128,6 @@ def import_seeds(source_dir, dest_dir):
         logger.info(f"Copied {num_copied} and ignored: {num_already_exist} (same hash) + {num_too_big} (size too large).")
 
 
-def parse_afl_paths(paths):
-    if paths is None:
-        return []
-    paths = paths.split('/////')
-    paths_elements = []
-    for path in paths:
-        elements = {}
-        split_path = path.split(',')
-        elements['path'] = split_path[0]
-        for elem in split_path[1:]:
-            parts = elem.split(":")
-            if len(parts) == 2:
-                elements[parts[0]] = parts[1]
-            else:
-                raise ValueError("Unexpected afl path format: ", path)
-        paths_elements.append(elements)
-    return paths_elements
-
 def merge_dbs(out_path, in_paths):
     logger.info(f"{out_path}, {in_paths}")
 
@@ -3201,7 +3149,7 @@ def merge_dbs(out_path, in_paths):
     for in_db in in_paths[1:]:
         inserts = "\n".join((
                 f"insert into {table} select * from to_merge.{table};"
-                for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 'aflpp_runs',
+                for table in ['execution', 'all_runs', 'mutations', 'progs', 'executed_runs', 'executed_seeds', 
                               'seed_crashing_inputs', 'crashing_inputs', 'crashing_supermutation_preparation', 'crashing_mutation_preparation', 'run_crashed',
                               'initial_super_mutants', 'started_super_mutants']))
         command = f'''sqlite3 {out_db_path} "
@@ -3356,7 +3304,7 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
         logger.info(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
         sys.exit(1)
     try:
-        eval_func = FUZZERS[fuzzer]
+        eval_func = FUZZERS[fuzzer]['eval_func']
     except Exception as err:
         logger.info(err)
         logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")

@@ -74,7 +74,6 @@ args: {orig_cmd} returncode: {orig_returncode}
 def run_seeds(seeds, binary, args, workdir, result_file):
     os.environ['TRIGGERED_OUTPUT'] = ""  # set OUTPUT
     triggered_folder = os.environ['TRIGGERED_FOLDER']  # get FOLDER
-    print("triggered folder:", triggered_folder)
     seeds = Path(seeds)
     seed_results = {}
     seeds = list(str(pp) for pp in seeds.glob("**/*"))

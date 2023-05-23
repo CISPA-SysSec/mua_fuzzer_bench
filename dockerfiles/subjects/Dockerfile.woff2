@@ -12,7 +12,7 @@ RUN git checkout 4721483ad780ee2b63cb787bfee4aa64b61a0446
 RUN git submodule update --init --recursive
 
 # build
-COPY samples/woff2_harness /home/mutator/samples/woff2_harness
+COPY dockerfiles/samples/woff2_harness /home/mutator/samples/woff2_harness
 RUN CC=gclang CXX=gclang++ CFLAGS="-g -O2" CXXFLAGS="-g -O2" \
     SRC="/home/mutator/samples/woff2" \
     WORK="/home/mutator/samples/woff2/work" \

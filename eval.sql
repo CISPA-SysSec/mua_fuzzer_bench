@@ -307,30 +307,6 @@ from run_results_by_mut_type_and_fuzzer
 group by prog, fuzzer;
 
 -- ---------------------------------------------------------------------------------
--- -- afl++
-
--- get the last line of the plot data based on time for each mutation_id
-DROP VIEW IF EXISTS aflpp_runs_last_line;
-CREATE VIEW aflpp_runs_last_line
-as
-select * from (
-	select * from aflpp_runs
-	order by totals_execs
-) a
-group by exec_id, prog, mutation_id, run_ctr, fuzzer;
-
--- get runtime stats for afl++ based fuzzers
-DROP VIEW IF EXISTS aflpp_runtime_stats;
-CREATE VIEW aflpp_runtime_stats
-as
-select prog, fuzzer,
-	   sum(totals_execs) / 1000000.0 as million_execs,
-	   cast(count(nullif(unique_crashes, "0")) as float) / count(*) as percent_crashing_runs,
-	   cast(count(nullif(unique_hangs, "0")) as float) / count(*) as percent_hanging_runs,
-	   cast(sum(map_size) as float) / count(*) as average_map_size
-from aflpp_runs_last_line
-group by prog, fuzzer;
-
 -- get the number of mutations only one of two fuzzers finds, this is one fuzzer compared to all other fuzzers
 DROP VIEW IF EXISTS unique_finds;
 CREATE VIEW unique_finds

@@ -13,7 +13,7 @@ RUN git -C curl_fuzzer checkout -f 543b9926cc322a18ad30945dc55d78dbbfa679e1
 
 # build
 WORKDIR /home/mutator/samples/curl/curl_fuzzer/
-COPY samples/curl_harness /home/mutator/samples/curl_harness
+COPY dockerfiles/samples/curl_harness /home/mutator/samples/curl_harness
 RUN CFLAGS="-g -O2" CXXFLAGS="-g -O2" \
     SRC="/home/mutator/samples/curl" \
     WORK="/home/mutator/samples/curl/work" \

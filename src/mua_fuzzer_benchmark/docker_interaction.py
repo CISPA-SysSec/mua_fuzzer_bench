@@ -166,8 +166,8 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         stdout = str(stdout)
 
     if raise_on_error and proc.returncode != 0:
-        logger.debug(f"process error (timed out: {timed_out}):", proc.args, stdout)
-        raise ValueError(f"exec_in_docker failed\ntimed out: {timed_out}\nexec_code: {proc.returncode}\n{stdout}")
+        logger.debug(f"process error (timed out): {proc.args}\n{stdout}")
+        raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {proc.returncode}\n{stdout}")
 
     return {'returncode': proc.returncode, 'out': stdout, 'timed_out': timed_out}
     ##################
