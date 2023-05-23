@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import defaultdict
+from concurrent.futures import Future
 from functools import partial
 import sys
 import os
@@ -13,7 +14,7 @@ import json
 import shutil
 import random
 import re
-from typing import Union, List, Tuple, Set, Dict, Any
+from typing import List, Tuple, Set, Dict, Any, Optional, cast
 import concurrent.futures
 import shlex
 import platform
@@ -85,7 +86,7 @@ class PreparedRuns():
     def __init__(self):
         self.runs = queue.Queue()
 
-    def get_next(self) -> Union[None, dict]:
+    def get_next(self) -> Optional[dict]:
         try:
             return self.runs.get_nowait()
         except queue.Empty:
@@ -100,6 +101,29 @@ class PreparedRuns():
             logger.debug(f"Adding run: {type_} {data}")
 
         self.runs.put_nowait({'type': type_, 'data': data})
+
+
+class CpuCores():
+    def __init__(self, num_cores):
+        self.cores: list[bool] = [False]*num_cores
+
+    def try_reserve_core(self) -> Optional[int]:
+        try:
+            idx = self.cores.index(False)
+            self.cores[idx] = True
+            return idx
+        except ValueError:
+            return None
+
+    def release_core(self, idx):
+        assert self.cores[idx] == True, "Trying to release an already free core"
+        self.cores[idx] = False
+
+    def has_free(self):
+        return any(cc is False for cc in self.cores)
+
+    def usage(self):
+        return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
 # returns true if a crashing input is found that only triggers for the
@@ -763,8 +787,8 @@ def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
     :param orig_graph:
     :return:
     """
-    result = dict()
-    mapping = dict()
+    result: Dict[str, List[str]] = dict()
+    mapping: Dict[Tuple, List[str]] = dict()
     # first get an initial mapping of the result set and collect all known functions
     for key in orig_graph.keys():
         key_splitted = key.split(SPLITTER)[:-1]
@@ -1423,7 +1447,7 @@ def split_up_supermutant(multi, all_muts):
     return mut_chunks
 
 
-def split_up_supermutant_by_distance(mutation_ids: List[int]) -> Tuple[List[int], List[int]]:
+def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[List[int], List[int]]:
     m_ids = [int(mm) for mm in mutation_ids]
     chunk_1, chunk_2 = [], []
     for ii, m_id in enumerate(sorted(m_ids)):
@@ -1442,7 +1466,7 @@ HANDLED_RESULT_TYPES = set([
     'orig_timeout', 'orig_crash',
 ])
 
-def has_result(mut_id, results, to_search):
+def has_result(mut_id: int, results: List[Dict[str, Any]], to_search: List[str]) -> Optional[Dict[str, Any]]:
     unhandled_search_types = set(to_search) - HANDLED_RESULT_TYPES
     assert unhandled_search_types == set(), f'Unhandled search types: {unhandled_search_types}'
     unhandled_result_types = set(rr['result'] for rr in results) - HANDLED_RESULT_TYPES
@@ -1498,7 +1522,7 @@ def record_supermutant_multi(stats, mut_data, results, fuzzer, run_ctr, descript
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
-def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
+def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) -> None:
     mut_data = data['mut_data']
     prog_bc = mut_data['prog_bc']
     prog = mut_data['prog']
@@ -1560,16 +1584,16 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             record_supermutant_multi(stats, mut_data, results, data['fuzzer'], data['run_ctr'], 'killed_by_seed')
 
-            killed_mutants = set()
+            killed_mutants: set[int] = set()
             for mut_id in all_mutation_ids:
-                seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
-                timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+                num_seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
+                num_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
                 killed = has_result(mut_id, results, ['killed_by_seed'])
 
-                if killed or timeout:
+                if killed or num_timeout:
                     stats.new_seeds_executed(
                         EXEC_ID, prog, mut_id, data['run_ctr'], data['fuzzer'],
-                        seed_covered, timeout, total_time)
+                        num_seed_covered, num_timeout, total_time)
 
                     if killed is not None:
                         stats.new_seed_crashing_inputs(EXEC_ID, prog, mut_id, data['fuzzer'], [killed])
@@ -1670,7 +1694,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                     # there can also be mutants that are killed but not part of a multi kill
                     # so just get every mutation that was killed and recheck all of them
-                    killed_mutants: set[int] = set(chain(*[rr['mutation_ids']
+                    killed_mutants = set(chain(*[rr['mutation_ids']
                                     for rr in results
                                     if rr['result'] in ['killed']]))
                     
@@ -1788,7 +1812,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
                     else:
                         # find and start the new supermutant with the remaining mutations
-                        cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
+                        cur_mutations = set((int(m_id) for m_id in mut_data['mutation_ids']))
                         assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
 
                         remaining_mutations = cur_mutations - killed_mutants
@@ -2032,7 +2056,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     active_mutants[mut_data['prog_bc']]['ref_cnt'] += len(fuzzer_runs)
 
 
-def wait_for_task(stats, tasks, cores, prepared_runs, active_mutants):
+def wait_for_task(stats, tasks: Dict[Future, Tuple[str, CpuCores, Any]], cores: CpuCores, prepared_runs, active_mutants):
     "Wait for a task to complete and process the result."
     if len(tasks) == 0:
         logger.info("WARN: Trying to wait for a task but there are none.")
@@ -2147,27 +2171,7 @@ def prepare_mutation(core_to_use, data):
             raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
 
 
-class CpuCores():
-    def __init__(self, num_cores):
-        self.cores: list[bool] =  [False]*num_cores
 
-    def try_reserve_core(self) -> Union[int, None]:
-        try:
-            idx = self.cores.index(False)
-            self.cores[idx] = True
-            return idx
-        except ValueError:
-            return None
-
-    def release_core(self, idx):
-        assert self.cores[idx] == True, "Trying to release an already free core"
-        self.cores[idx] = False
-
-    def has_free(self):
-        return any(cc is False for cc in self.cores)
-
-    def usage(self):
-        return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
 def print_run_start_msg(run_data):
@@ -2326,7 +2330,7 @@ def print_stats(ii, start_time, num_mutations):
     return True
 
 
-def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stats, start_time, num_runs, core, ii):
+def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks: Dict[Future, Tuple[str, CpuCores, Any]], executor, stats, start_time, num_runs, core: CpuCores, ii):
     # Check if any runs are prepared
     while True:
         run_data = prepared_runs.get_next()
@@ -2347,12 +2351,14 @@ def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stat
     # A task is ready to start, get it and start the run.
     if run_data['type'] == 'fuzz':
         run_data = run_data['data']
+        run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         run_data['used_core'] = core
         print_run_start_msg(run_data)
         tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
     elif run_data['type'] == 'check':
         run_data = run_data['data']
+        run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         run_data['used_core'] = core
         print_run_start_msg(run_data)
@@ -2508,7 +2514,7 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
     return all_runs
 
 
-def wait_for_seed_run(tasks, cores, all_runs):
+def wait_for_seed_run(tasks: Dict[Future, Tuple[str, CpuCores, Any]], cores: CpuCores, all_runs):
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
 
