@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 
-import docker
+import docker   # type: ignore
 
 from constants import HOST_TMP_PATH, IN_DOCKER_SHARED_DIR, IN_DOCKER_WORKDIR, MAX_RUN_EXEC_IN_CONTAINER_TIME, SHARED_DIR, SHOW_CONTAINER_LOGS
 from helpers import CoveredFile

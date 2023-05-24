@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-import docker
+import docker   # type: ignore
 
 import logging
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container
