@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import traceback
+from typing import Union, Dict
 
 import docker   # type: ignore
 
@@ -135,7 +136,7 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
             pass
 
 
-def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None):
+def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None) -> Dict[str, Union[int, str, bool]]:
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
@@ -152,6 +153,7 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
     proc = subprocess.Popen(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             close_fds=True,
+            errors='backslashreplace',  # text mode: stdout is a str
             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
     try:
         stdout, _ = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout)
@@ -160,13 +162,8 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         stdout, _ = proc.communicate()
         timed_out = True
 
-    try:
-        stdout = stdout.decode()
-    except UnicodeDecodeError:
-        stdout = str(stdout)
-
     if raise_on_error and proc.returncode != 0:
-        logger.debug(f"process error (timed out): {proc.args}\n{stdout}")
+        logger.debug(f"process error (timed out): {str(proc.args)}\n{stdout}")
         raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {proc.returncode}\n{stdout}")
 
     return {'returncode': proc.returncode, 'out': stdout, 'timed_out': timed_out}

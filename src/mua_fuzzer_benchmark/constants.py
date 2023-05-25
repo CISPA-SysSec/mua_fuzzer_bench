@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import uuid
+from typing import Dict, Any
 
 import psutil
 
@@ -69,7 +70,7 @@ BLOCK_SIZE = 1024*4
 
 
 # The programs that can be evaluated
-PROGRAMS = {
+PROGRAMS: Dict[str, Dict[str, Any]] = {
     "dev": {
         "bc_compile_args": [
         ],

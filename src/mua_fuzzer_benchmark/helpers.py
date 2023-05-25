@@ -119,13 +119,13 @@ class CoveredFile:
     def check(self):
         cur_time = time.time() - self.start_time
         cur = set(int(cf.stem) for cf in self.host_path.glob("*"))
-        new = cur - self.found.keys()
-        new = {nn: cur_time for nn in new}
+        new_keys = cur - self.found.keys()
+        new = {nn: cur_time for nn in new_keys}
         self.found = {**self.found, **new}
         return new
 
-    def file_path(self):
-        return self.path
+    # def file_path(self):
+    #     return self.path
 
     def __del__(self):
         shutil.rmtree(self.host_path)

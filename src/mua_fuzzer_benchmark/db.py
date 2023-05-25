@@ -3,6 +3,7 @@ import sqlite3
 import time
 import json
 from pathlib import Path
+from typing import List, Dict, Any
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import mutation_locations_path, mutation_prog_source_path
@@ -52,6 +53,7 @@ class Stats():
         self.supermutant_ctr = 0
 
     def _init_tables(self):
+        assert self.conn is not None, "Directly before this, conn was initialised. It cannot be None!"
         c = self.conn.cursor()
 
         c.execute('''
@@ -265,11 +267,12 @@ class Stats():
         self.supermutant_ctr += 1
         return cur
 
-    def commit(self):
-        self.conn.commit()
+    # def commit(self):
+    #     self.conn.commit()
 
     @connection
     def new_execution(self, c, exec_id, hostname, git_status, rerun, start_time, args, env):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO execution VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -288,6 +291,7 @@ class Stats():
 
     @connection
     def execution_done(self, c, exec_id, total_time):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('UPDATE execution SET total_time = ? where exec_id = ?',
             (
                 total_time,
@@ -298,6 +302,7 @@ class Stats():
 
     @connection
     def new_mutation_type(self, c, mutation_type):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO mutation_types VALUES (?, ?, ?, ?, ?, ?)',
             (
                 mutation_type['pattern_name'],
@@ -312,6 +317,7 @@ class Stats():
 
     @connection
     def new_run(self, c, exec_id, data):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         mut_data = data['mut_data']
         for m_id in mut_data['mutation_ids']:
             c.execute('INSERT INTO all_runs VALUES (?, ?, ?, ?, ?)',
@@ -327,6 +333,7 @@ class Stats():
 
     @connection
     def done_run(self, c, reason, exec_id, prog, mut_id, run_ctr, fuzzer):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         logger.info(f"! mut done: {reason} :: {prog} {fuzzer} {run_ctr} {mut_id}")
         c.execute('INSERT INTO done_runs VALUES (?, ?, ?, ?, ?, ?)',
             (
@@ -342,6 +349,7 @@ class Stats():
 
     @connection
     def new_initial_supermutant(self, c, exec_id, prog, sm_id, mut_ids):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for m_id in mut_ids:
             c.execute('INSERT INTO initial_super_mutants VALUES (?, ?, ?, ?)',
                 (
@@ -355,6 +363,7 @@ class Stats():
 
     @connection
     def new_supermutant(self, c, exec_id, mut_data):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for m_id in mut_data['mutation_ids']:
             c.execute('INSERT INTO started_super_mutants VALUES (?, ?, ?, ?, ?, ?)',
                 (
@@ -370,6 +379,7 @@ class Stats():
 
     @connection
     def new_supermutant_multi(self, c, exec_id, mut_data, multi_groups, fuzzer, run_ctr, description):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for group_id, (result, multi) in enumerate(multi_groups):
             for m_id in multi:
                 c.execute('INSERT INTO super_mutants_multi VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -389,6 +399,7 @@ class Stats():
 
     @connection
     def new_mutation(self, c, exec_id, data):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         import copy
         mut_data = copy.deepcopy(data['mutation_data'])
         mut_id = mut_data.pop('UID')
@@ -422,6 +433,7 @@ class Stats():
 
     @connection
     def new_prog(self, c, exec_id, prog, data):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         with open(data['orig_bc'], 'rb') as f:
             bc_file_data = f.read()
         with open(mutation_prog_source_path(data), 'rt') as f:
@@ -446,6 +458,7 @@ class Stats():
 
     @connection
     def new_supermutant_graph_info(self, c, exec_id, prog, graph_info):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         # c.execute('UPDATE execution SET total_time = ? where exec_id = ?',
         c.execute('UPDATE progs SET supermutant_graph_info = ? where exec_id = ? and prog = ?',
             (
@@ -458,6 +471,7 @@ class Stats():
 
     @connection
     def new_run_executed(self, c, exec_id, run_ctr, prog, mutation_id, fuzzer, cf_seen, total_time):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -473,6 +487,7 @@ class Stats():
 
     @connection
     def new_seeds_executed(self, c, exec_id, prog, mutation_id, run_ctr, fuzzer, cf_seen, timed_out, total_time):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -489,6 +504,7 @@ class Stats():
 
     @connection
     def new_crashing_inputs(self, c, crashing_inputs, exec_id, prog, mutation_id, run_ctr, fuzzer):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
                 c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -517,6 +533,7 @@ class Stats():
 
     @connection
     def new_seed_crashing_inputs(self, c, exec_id, prog, mutation_id, fuzzer, crashing_inputs):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
                 c.execute('INSERT INTO seed_crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -542,6 +559,7 @@ class Stats():
 
     @connection
     def run_crashed(self, c, exec_id, prog, mutation_id, run_ctr, fuzzer, trace):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO run_crashed VALUES (?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -556,6 +574,7 @@ class Stats():
 
     @connection
     def supermutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, trace):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO crashing_supermutation_preparation VALUES (?, ?, ?, ?)',
             (
                 exec_id,
@@ -568,6 +587,7 @@ class Stats():
 
     @connection
     def mutation_preparation_crashed(self, c, exec_id, prog, supermutant_id, mutation_id):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO crashing_mutation_preparation VALUES (?, ?, ?, ?)',
             (
                 exec_id,
@@ -580,6 +600,7 @@ class Stats():
 
     @connection
     def locator_seed_covered(self, c, exec_id, prog, fuzzer, mutation_ids):
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
         for mm in mutation_ids:
             c.execute('INSERT INTO locator_seed_covered VALUES (?, ?, ?, ?, ?)',
                 (
@@ -598,30 +619,30 @@ class ReadStatsDb():
         super().__init__()
         self.db = sqlite3.connect(str(db_path))
 
-    def get_bc_file_content(self, prog):
+    def get_bc_file_content(self, prog: str) -> str:
         c = self.db.cursor()
-        res = c.execute('select orig_bc_file_data from progs where prog = ?', (prog,))
-        res = [r for r in res]
+        res_cur = c.execute('select orig_bc_file_data from progs where prog = ?', (prog,))
+        res = [r for r in res_cur]
         assert len(res) == 1
         return res[0][0]
 
-    def get_mutation_locations_content(self, prog):
+    def get_mutation_locations_content(self, prog: str) -> str:
         c = self.db.cursor()
-        res = c.execute('select mutation_locations_data from progs where prog = ?', (prog,))
-        res = [r for r in res]
+        res_cur = c.execute('select mutation_locations_data from progs where prog = ?', (prog,))
+        res = [r for r in res_cur]
         assert len(res) == 1
         return res[0][0]
 
-    def get_prog_source_content(self, prog):
+    def get_prog_source_content(self, prog: str) -> str:
         c = self.db.cursor()
-        res = c.execute('select prog_source_file_data from progs where prog = ?', (prog,))
-        res = [r for r in res]
+        res_cur = c.execute('select prog_source_file_data from progs where prog = ?', (prog,))
+        res = [r for r in res_cur]
         assert len(res) == 1
         return res[0][0]
 
-    def get_supermutations(self, prog):
+    def get_supermutations(self, prog: str) -> List[Dict[str, Any]]:
         c = self.db.cursor()
-        res = c.execute('select * from initial_super_mutants where prog = ?', (prog,))
+        res_cur = c.execute('select * from initial_super_mutants where prog = ?', (prog,))
         res = [
             {
                 'exec_id': r[0],
@@ -629,6 +650,6 @@ class ReadStatsDb():
                 'super_mutant_id': r[2],
                 'mutation_id': r[3],
             }
-            for r in res
+            for r in res_cur
         ]
         return res
