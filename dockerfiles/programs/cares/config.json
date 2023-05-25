@@ -1,0 +1,24 @@
+{
+    "parse_reply": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": false,
+        "dict": null,
+        "orig_bin": "c-ares/out/ares-parse-reply",
+        "orig_bc": "c-ares/out/ares-parse-reply.bc",
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    },
+    "name": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": false,
+        "dict": null,
+        "orig_bin": "c-ares/out/ares-name",
+        "orig_bc": "c-ares/out/ares-name.bc",
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

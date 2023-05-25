@@ -1,0 +1,14 @@
+{
+    "default": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+            {"val": "-lstdc++", "action": null}
+        ],
+        "is_cpp": false,
+        "orig_bin": "libevent/out/parse_query_fuzzer",
+        "orig_bc": "libevent/out/parse_query_fuzzer.bc",
+        "dict": null,
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

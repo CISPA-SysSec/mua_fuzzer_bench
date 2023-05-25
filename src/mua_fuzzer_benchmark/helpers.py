@@ -1,11 +1,13 @@
+from functools import partial
 import hashlib
 from inspect import getframeinfo, stack
+import json
 import logging
 from pathlib import Path
 import shutil
 import time
 
-from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR
+from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -129,3 +131,87 @@ class CoveredFile:
 
     def __del__(self):
         shutil.rmtree(self.host_path)
+
+
+def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
+    run_data['crash_dir'] = crash_dir
+    result = run_func(run_data, fuzzer_container_tag(container_tag))
+    return result
+
+
+def load_fuzzers():
+    fuzzers = {}
+    for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
+        if fuzzer_dir.name.startswith("."):
+            continue # skip hidden files
+
+        if fuzzer_dir.name == "system":
+            continue
+
+        if not fuzzer_dir.is_dir():
+            continue
+        
+        fuzzer_config_path = fuzzer_dir/"config.json"
+        with open(fuzzer_config_path, "r") as f:
+            fuzzer_config = json.load(f)
+
+        fuzzer_name = fuzzer_dir.name
+        fuzzer_crash_dir = fuzzer_config["crash_dir"]
+        partial_eval_func = partial(
+            eval_dispatch_func,
+            crash_dir=fuzzer_crash_dir, container_tag=fuzzer_name
+        )
+
+        fuzzers[fuzzer_name] = {
+            "eval_func": partial_eval_func,
+            "queue_dir": fuzzer_config["queue_dir"],
+            "queue_ignore_files": fuzzer_config["queue_ignore_files"],
+            "crash_dir": fuzzer_crash_dir,
+            "crash_ignore_files": fuzzer_config["crash_ignore_files"],
+        }
+
+    return fuzzers
+
+
+def load_programs():
+    programs = {}
+    for prog_dir in Path("dockerfiles/programs").iterdir():
+        prog_dir_name = prog_dir.name
+        if prog_dir_name.startswith("."):
+            continue # skip hidden files
+
+        if prog_dir_name == "common":
+            continue
+
+        if not prog_dir.is_dir():
+            continue
+        
+        prog_config_path = prog_dir/"config.json"
+        with open(prog_config_path, "r") as f:
+            prog_config = json.load(f)
+
+        for prog_config_name, prog_config_data in prog_config.items():
+
+            prog_name = f"{prog_dir_name}_{prog_config_name}"
+
+            assert prog_name not in programs
+
+            dict_path = prog_config_data["dict"]
+            if dict_path is not None:
+                dict_path = Path("tmp/programs")/prog_dir_name/dict_path
+
+            try:
+                programs[prog_name] = {
+                    "bc_compile_args": prog_config_data["bc_compile_args"],
+                    "bin_compile_args": prog_config_data["bin_compile_args"],
+                    "is_cpp": prog_config_data["is_cpp"],
+                    "dict": dict_path,
+                    "orig_bin": Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bin"],
+                    "orig_bc": Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bc"],
+                    "omit_functions": prog_config_data["omit_functions"],
+                    "dir_name": prog_dir_name,
+                }
+            except KeyError as e:
+                raise KeyError(f"Key {e} not found in {prog_config_path}")
+
+    return programs

@@ -1,0 +1,13 @@
+{
+    "default": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": false,
+        "orig_bin": "out/test",
+        "orig_bc": "out/test.bc",
+        "dict": null,
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

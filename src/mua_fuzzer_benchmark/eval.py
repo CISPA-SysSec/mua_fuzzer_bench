@@ -31,8 +31,8 @@ from docker_interaction import DockerLogStreamer, run_exec_in_container, start_m
 
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
-    HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR, PROGRAMS
-from helpers import CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, mutation_detector_path, mutation_locations_graph_path, \
+    HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
+from helpers import CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
     mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag
 from db import ReadStatsDb, Stats
 
@@ -73,6 +73,10 @@ def sigint_handler(signum, frame):
     global should_run
     logger.info(f"Got stop signal: ({signum}), stopping!")
     should_run = False
+
+
+FUZZERS = load_fuzzers()
+PROGRAMS = load_programs()
 
 
 class CoverageException(Exception):
@@ -479,49 +483,6 @@ def base_eval(run_data, docker_image):
         }
 
 
-def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
-    run_data['crash_dir'] = crash_dir
-    result = run_func(run_data, fuzzer_container_tag(container_tag))
-    return result
-
-
-def load_fuzzers():
-    fuzzers = {}
-    for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
-        if fuzzer_dir.name.startswith("."):
-            continue # skip hidden files
-
-        if fuzzer_dir.name == "system":
-            continue
-
-        if not fuzzer_dir.is_dir():
-            continue
-        
-        fuzzer_config_path = fuzzer_dir/"config.json"
-        with open(fuzzer_config_path, "r") as f:
-            fuzzer_config = json.load(f)
-
-        fuzzer_name = fuzzer_dir.name
-        fuzzer_crash_dir = fuzzer_config["crash_dir"]
-        partial_eval_func = partial(
-            eval_dispatch_func,
-            crash_dir=fuzzer_crash_dir, container_tag=fuzzer_name
-        )
-
-        fuzzers[fuzzer_name] = {
-            "eval_func": partial_eval_func,
-            "queue_dir": fuzzer_config["queue_dir"],
-            "queue_ignore_files": fuzzer_config["queue_ignore_files"],
-            "crash_dir": fuzzer_crash_dir,
-            "crash_ignore_files": fuzzer_config["crash_ignore_files"],
-        }
-
-    return fuzzers
-
-
-FUZZERS = load_fuzzers()
-
-
 def resolve_compile_args(args, workdir):
     resolved = []
     for arg in args:
@@ -536,7 +497,7 @@ def resolve_compile_args(args, workdir):
 
 def prepend_main_arg(args):
     return [
-        {'val': "tmp/samples/common/main.cc", 'action': 'prefix_workdir'},
+        {'val': "tmp/programs/common/main.cc", 'action': 'prefix_workdir'},
         *args
     ]
 
@@ -606,6 +567,18 @@ def load_rerun_prog(rerun, prog, prog_info):
 
 def instrument_prog(container, prog_info):
     # Compile the mutation location detector for the prog.
+    bc_path = Path(prog_info['orig_bc'])
+    parents = []
+    while bc_path not in [Path('/'), Path('.')]:
+        parents.append(bc_path)
+        bc_path = bc_path.parent
+
+    for p in reversed(parents):
+        print(p)
+        print(run_exec_in_container(container.name, True, ["ls", "-la", p])['out'])
+
+    print(flush=True)
+
     args = ["./run_mutation.py",
             "-bc", prog_info['orig_bc'],
             *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
@@ -1148,9 +1121,14 @@ def get_supermutations_seed_reachable(prog, prog_info, mutations, mutator_contai
         f"Generated {len(supermutants)} supermutants out of {len(covered_mutations)} " +
         f"covered mutants a reduction of {(len(covered_mutations)) / len(supermutants):.2f}")
 
+    try:
+        reduction = (len(not_covered_mutations)) / len(not_covered_supermutants)
+    except ZeroDivisionError:
+        reduction = 0
+
     logger.info(
         f"Generated {len(not_covered_supermutants)} supermutants out of {len(not_covered_mutations)} " +
-        f"not covered mutants a reduction of {(len(not_covered_mutations)) / len(not_covered_supermutants):.2f}")
+        f"not covered mutants a reduction of {reduction:.2f}")
 
     return supermutants + not_covered_supermutants, {
         'covered': list(covered_mutations),
@@ -2208,15 +2186,18 @@ def build_subject_docker_images(progs):
             logger.info(f"Unknown program: {prog}, known programs are: {' '.join(known_programs)}")
             sys.exit(1)
 
-    for name in set(PROGRAMS[prog]['name'] for prog in progs):
-        tag = subject_container_tag(name)
-        logger.info(f"Building docker image for {tag} ({name})")
+    for prog in set(progs):
+        dir_name = PROGRAMS[prog]['dir_name']
+        tag = subject_container_tag(prog)
+        logger.info(f"Building docker image for {tag} ({prog})")
         proc = subprocess.run([
             "docker", "build",
             "--build-arg", f"CUSTOM_USER_ID={os.getuid()}",
             "--tag", tag,
-            "-f", f"dockerfiles/subjects/Dockerfile.{name}",
-            "."], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            # "-f", f"dockerfiles/programs/{dir_name}/Dockerfile",
+            "."],
+            cwd=f"dockerfiles/programs/{dir_name}/",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             try:
                 stdout = proc.stdout.decode()
@@ -2230,7 +2211,7 @@ def build_subject_docker_images(progs):
         proc = subprocess.run(f"""
             docker rm dummy || true
             docker create -ti --name dummy {tag} bash
-            docker cp dummy:/home/mutator/samples tmp/
+            docker cp dummy:/home/mutator/sample tmp/programs/{dir_name}
             docker rm -f dummy""", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             logger.info(f"Could not extract {tag} image sample files.", proc)
@@ -3632,7 +3613,7 @@ def prepare_shared_dir_and_tmp_dir():
     SHARED_DIR.mkdir(parents=True)
 
     # ./tmp
-    for td in ['lib', 'samples', 'unsolved_mutants']:
+    for td in ['lib', 'programs', 'unsolved_mutants']:
         tmp_dir = HOST_TMP_PATH/td
         if tmp_dir.exists():
             if tmp_dir.is_dir():
@@ -3650,8 +3631,8 @@ def prepare_shared_dir_and_tmp_dir():
     proc = subprocess.run(f"""
         docker rm dummy || true
         docker create -ti --name dummy mutator_mutator bash
-        docker cp dummy:/home/mutator/samples/ tmp/ && \
-            docker cp dummy:/home/mutator/build/install/LLVM_Mutation_Tool/lib/ tmp/
+        docker cp dummy:/home/mutator/programs/common/ tmp/programs/common/
+        docker cp dummy:/home/mutator/build/install/LLVM_Mutation_Tool/lib/ tmp/
         docker rm -f dummy
     """, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0:

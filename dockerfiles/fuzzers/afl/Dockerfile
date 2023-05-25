@@ -6,6 +6,6 @@ RUN cd afl && make -j && cd llvm_mode && make -j
 ENV PATH="$PATH:/home/user/afl/"
 ENV AFL_PATH="/home/user/afl/"
 COPY tmp/lib/ /home/user/lib/
-COPY dockerfiles/samples/common/ /home/user/common/
+COPY dockerfiles/programs/common/ /home/user/common/
 COPY dockerfiles/fuzzers/afl/eval.sh /home/user/eval.sh
 COPY dockerfiles/fuzzers/afl/minimize.sh /home/user/minimize.sh

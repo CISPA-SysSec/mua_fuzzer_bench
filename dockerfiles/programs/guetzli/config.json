@@ -1,0 +1,13 @@
+{
+    "default": {
+        "bc_compile_args": [
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": true,
+        "orig_bin": "guetzli/guetzli-orig",
+        "orig_bc": "guetzli/guetzli.bc", 
+        "dict": "guetzli_harness/guetzli.dict",
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

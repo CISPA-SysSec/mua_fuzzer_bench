@@ -4,5 +4,7 @@ data/
 benchmark-manager/
 bak/
 tmp/
+dockerfiles/programs/
+!dockerfiles/programs/common/
 !tmp/lib
 

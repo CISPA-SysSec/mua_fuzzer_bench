@@ -1,0 +1,15 @@
+{
+    "default": {
+        "bc_compile_args": [
+            {"val": "-std=c++11", "action": null}
+        ],
+        "bin_compile_args": [
+            {"val": "-lpthread", "action": null}
+        ],
+        "is_cpp": true,
+        "orig_bin": "re2-code/out/re2_fuzzer",
+        "orig_bc": "re2-code/out/re2.bc",
+        "dict": "re2_harness/re2.dict",
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

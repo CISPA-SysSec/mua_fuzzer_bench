@@ -1,0 +1,19 @@
+{
+    "default": {
+        "bc_compile_args": [
+           {"val": "-L", "action": null},
+           {"val": "tmp/samples/curl/out/lib/", "action": "prefix_workdir"},
+           {"val": "-lpthread", "action": null},
+           {"val": "-lidn2", "action": null},
+           {"val": "-lnghttp2", "action": null},
+           {"val": "-lz", "action": null}
+        ],
+        "bin_compile_args": [
+        ],
+        "is_cpp": false,
+        "orig_bin": "out/curl_fuzzer",
+        "orig_bc": "out/curl.bc",
+        "dict": null,
+        "omit_functions": ["LLVMFuzzerTestOneInput"]
+    }
+}

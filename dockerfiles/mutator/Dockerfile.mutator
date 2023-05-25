@@ -19,7 +19,7 @@ RUN gradle clean && gradle build
 # set library paths for used shared libraries s.t. the system finds them
 ENV LD_LIBRARY_PATH /home/mutator/build/install/LLVM_Mutation_Tool/lib/
 # For all subjects provide the path to the default main here. This is based on oss-fuzz convention.
-ENV LIB_FUZZING_ENGINE="/home/mutator/samples/common/main.cc"
+ENV LIB_FUZZING_ENGINE="/home/mutator/programs/common/main.cc"
 ENV CC=gclang
 ENV CXX=gclang++ 
 
@@ -55,7 +55,7 @@ RUN rm -rf /kcov
 
 ################################################################################
 # common files
-COPY dockerfiles/samples/common /home/mutator/samples/common
+COPY dockerfiles/programs/common /home/mutator/programs/common
 
 WORKDIR /home/mutator
 COPY eval_scripts/* /home/mutator/
