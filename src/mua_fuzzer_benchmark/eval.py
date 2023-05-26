@@ -1055,7 +1055,7 @@ def get_supermutations_simple_reachable(prog_info, mutations):
     # supermutants = [sm for sm in supermutants if len(sm) > 1]
 
     return supermutants, None
- """
+"""
 
 def measure_mutation_coverage_per_file(mutator, prog_info, seed_dir):
     detector_path = mutation_detector_path(prog_info)
@@ -2679,7 +2679,7 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-
+""""
 def split_seed_dir(prog, num_splits, seed_base_dir, base_dir):
     split_size = 256*4
     seed_dir = seed_base_dir/prog
@@ -2924,7 +2924,7 @@ def check_seeds(progs, fuzzers, seed_base_dir):
                 shutil.copy2(ff, seed_dir)
 
     logger.info("seed checking done :)")
-
+"""
 
 def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, destination_dir):
     global should_run
@@ -3825,7 +3825,7 @@ def main():
         args.seed_dir, args.result_dir, args.instances)
     elif args.cmd == 'check_seeds':
         raise NotImplementedError("Check seeds is not implemented yet.")
-        check_seeds(args.progs, args.fuzzers)
+        # check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
         raise NotImplementedError("Gather seeds is not implemented yet.")
         gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,
