@@ -129,13 +129,16 @@ class CpuCores():
     def usage(self):
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
+
 run_result_type = Dict[str, Any] # more precise value type: Union[bool, int, str, None, List[Dict[str, Any]]]
 callgraph_type = Dict[str, List[str]]
 tasks_type = Dict[Future, Tuple[str, int, Any]]
+run_data_type = Dict[str, Any]
+
 
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
-def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_dir,
+def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_inputs, crash_dir,
                           workdir, cur_time) -> run_result_type:
     if not crash_dir.is_dir():
         return { 'result': 'check_done', 'results': [] }
@@ -174,7 +177,7 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
     return res
 
 
-def base_eval_crash_check(input_dir, run_data, cur_time, testing) -> run_result_type:
+def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing) -> run_result_type:
     mut_data = run_data['mut_data']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
@@ -346,7 +349,7 @@ def stop_container(container):
 
 # Does all the eval steps, each fuzzer eval function is based on this one.
 # Compiles the mutated program and fuzzes it. Finally the eval data is returned.
-def base_eval(run_data, docker_image):
+def base_eval(run_data: run_data_type, docker_image):
     # get start time for the eval
     start_time = time.time()
 
@@ -534,7 +537,7 @@ def build_compile_args(args, workdir):
     return " ".join(map(shlex.quote, args))
 
 
-def check_run(run_data):
+def check_run(run_data: run_data_type):
     # get start time for the eval
     start_time = time.time()
 
@@ -2158,7 +2161,7 @@ def prepare_mutation(core_to_use, data):
 
 
 
-def print_run_start_msg(run_data):
+def print_run_start_msg(run_data: run_data_type):
     prog = run_data['mut_data']['prog']
     mutation_id = printable_m_id(run_data['mut_data'])
     fuzzer = run_data['fuzzer']
@@ -2447,7 +2450,7 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, rerun, rerun_m
     logger.info("eval done :)")
 
 
-def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats):
+def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats) -> List[run_data_type]:
     assert num_repeats >= 1
     all_runs = []
 
@@ -2521,13 +2524,13 @@ def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs):
     cores.release_core(core)
 
 
-def print_seed_run_start_msg(run_data):
+def print_seed_run_start_msg(run_data: run_data_type):
     prog = run_data['mut_data']['prog']
     fuzzer = run_data['fuzzer']
     logger.info(f"> run:     {prog}:{fuzzer}")
 
 
-def handle_seed_run_result(run_future, run_data, all_runs):
+def handle_seed_run_result(run_future, run_data: run_data_type, all_runs):
     workdir = run_data['workdir']
     try:
         # if there was no exception get the data
@@ -2561,7 +2564,7 @@ def handle_seed_run_result(run_future, run_data, all_runs):
         logger.info(f"= run    : {workdir}")
 
 
-def seed_gathering_run(run_data, docker_image):
+def seed_gathering_run(run_data: run_data_type, docker_image):
     global should_run
     start_time = time.time()
     # extract used values
@@ -3200,7 +3203,7 @@ def measure_mutation_coverage(mutator, prog_info, seed_dir):
         return mutation_ids
 
 
-def seed_minimization_run(run_data, docker_image):
+def seed_minimization_run(run_data: run_data_type, docker_image: str) -> Dict[str, List[str]]:
     global should_run
     start_time = time.time()
     # extract used values
@@ -3280,7 +3283,7 @@ def seed_minimization_run(run_data, docker_image):
     all_logs = []
     while True:
         line = logs_queue.get()
-        if line == None:
+        if line is None:
             break
         all_logs.append(line)
 
@@ -3289,7 +3292,7 @@ def seed_minimization_run(run_data, docker_image):
     }
 
 
-def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
+def minimize_seeds_one(base_shm_dir, prog: str, fuzzer: str, in_path: Path, out_path: Path) -> None:
     try:
         prog_info = PROGRAMS[prog]
     except Exception as err:
@@ -3343,7 +3346,7 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
             'mut_data': mut_data,
         }
 
-            # start the fuzzer in seed minimization mode on the prog
+        # start the fuzzer in seed minimization mode on the prog
         eval_func(run_data, seed_minimization_run)
 
         # move minimized seeds to result path
@@ -3353,7 +3356,7 @@ def minimize_seeds_one(base_shm_dir, prog, fuzzer, in_path, out_path):
             shutil.copy2(ff, out_path)
 
 
-def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
+def minimize_seeds(seed_path_base: str, res_path_base: str, fuzzers: List[str], progs: List[str], per_fuzzer: bool) -> None:
     global should_run
     seed_path_base = Path(seed_path_base)
     res_path_base = Path(res_path_base)
@@ -3387,8 +3390,7 @@ def minimize_seeds(seed_path_base, res_path_base, fuzzers, progs, per_fuzzer):
     logger.info("seed minimization done :)")
 
 
-
-def seed_coverage_run(run_data, docker_image):
+def seed_coverage_run(run_data: run_data_type, docker_image: str) -> List[str]:
     global should_run
 
     # extract used values
@@ -3464,14 +3466,14 @@ def seed_coverage_run(run_data, docker_image):
     all_logs = []
     while True:
         line = logs_queue.get()
-        if line == None:
+        if line is None:
             break
         all_logs.append(line)
 
     return all_logs
 
 
-def get_kcov(prog, seed_path, res_path):
+def get_kcov(prog: str, seed_path: str, res_path: str) -> None:
     global should_run
     prog_info = PROGRAMS[prog]
     seed_path = Path(seed_path)
@@ -3539,7 +3541,8 @@ def get_kcov(prog, seed_path, res_path):
             logger.warning(f"{logs_message}")
             raise e
 
-def seed_coverage(seed_path, res_path, prog):
+
+def seed_coverage(seed_path: str, res_path: str, prog: str) -> None:
     # prepare environment
     base_shm_dir = SHARED_DIR/"seed_coverage"
     shutil.rmtree(base_shm_dir, ignore_errors=True)
@@ -3557,7 +3560,7 @@ def seed_coverage(seed_path, res_path, prog):
     get_kcov(prog, seed_path, res_path)
 
 
-def prepare_mutator_docker_image(fresh_images):
+def prepare_mutator_docker_image(fresh_images: bool) -> None:
     """
     Prepare the docker image for the mutator.
     """
@@ -3605,7 +3608,7 @@ def prepare_mutator_docker_image(fresh_images):
     # print_pass("Successfully built Mutator Docker container.")
 
 
-def prepare_shared_dir_and_tmp_dir():
+def prepare_shared_dir_and_tmp_dir() -> None:
     """
     Prepare the shared dir and ./tmp dir for the evaluation containers.
     The shared dir will be deleted if it already exists.
@@ -3652,8 +3655,7 @@ def prepare_shared_dir_and_tmp_dir():
         sys.exit(1)
 
 
-
-def main():
+def main() -> None:
     import sys
     import argparse
 
@@ -3828,9 +3830,6 @@ def main():
     else:
         parser.print_help(sys.stderr)
 
+
 if __name__ == "__main__":
     main()
-
-
-
-
