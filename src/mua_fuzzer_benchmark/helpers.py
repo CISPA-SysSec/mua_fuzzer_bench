@@ -22,11 +22,11 @@ def dbg(*args, **kwargs):
     return args
 
 
-def fuzzer_container_tag(name):
+def fuzzer_container_tag(name: str) -> str:
     return f"mutation-testing-fuzzer-{name}"
 
 
-def subject_container_tag(name):
+def subject_container_tag(name: str) -> str:
     return f"mutation-testing-subject-{name}"
 
 
@@ -79,7 +79,7 @@ def shared_dir_to_docker(dir: Path) -> Path:
     return res
 
 
-def get_seed_dir(seed_base_dir, prog, fuzzer):
+def get_seed_dir(seed_base_dir: Path, prog: str, fuzzer: str) -> Path:
     """
     Gets the seed dir inside of seed_base_dir based on the program name.
     Further if there is a directory inside with the name of the fuzzer, that dir is used as the seed dir.

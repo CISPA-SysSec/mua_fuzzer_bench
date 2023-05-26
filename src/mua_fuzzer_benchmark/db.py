@@ -3,7 +3,7 @@ import sqlite3
 import time
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import mutation_locations_path, mutation_prog_source_path
@@ -26,13 +26,13 @@ def connection(f):
 # to the database.
 class Stats():
 
-    def __init__(self, db_path):
+    def __init__(self, db_path_s: Optional[str]):
         super().__init__()
-        if db_path is None:
+        if db_path_s is None:
             logger.info(f"Didn't get db_path env, not writing history.")
-            self.conn = None
+            self.conn: Optional[sqlite3.Connection] = None
             return
-        db_path = Path(db_path)
+        db_path = Path(db_path_s)
         logger.info(f"Writing history to: {db_path}")
         if db_path.is_file():
             logger.info(f"DB exists, deleting: {db_path}")
@@ -262,7 +262,7 @@ class Stats():
 
         self.conn.commit()
 
-    def next_supermutant_id(self):
+    def next_supermutant_id(self) -> int:
         cur = self.supermutant_ctr
         self.supermutant_ctr += 1
         return cur

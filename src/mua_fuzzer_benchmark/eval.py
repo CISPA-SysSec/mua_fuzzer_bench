@@ -14,7 +14,7 @@ import json
 import shutil
 import random
 import re
-from typing import Any, Dict, List, Set, Optional, Tuple, Union, cast
+from typing import Any, Dict, Generator, List, Set, Optional, Tuple, Union, cast
 import concurrent.futures
 import shlex
 import platform
@@ -28,7 +28,7 @@ import numpy as np
 import docker   # type: ignore
 
 import logging
-from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container
+from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container, docker_container_type
 
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
@@ -81,13 +81,13 @@ PROGRAMS = load_programs()
 
 
 class CoverageException(Exception):
-    def __init__(self, run):
+    def __init__(self, run: Dict[str, Union[int, str, bool]]):
         super().__init__(run)
         self.run = run
 
 
 class PreparedRuns():
-    def __init__(self):
+    def __init__(self) -> None:
         self.runs: queue.Queue = queue.Queue()
 
     def get_next(self) -> Optional[dict]:
@@ -96,7 +96,7 @@ class PreparedRuns():
         except queue.Empty:
             return None
 
-    def add(self, type_: str, data: Any):
+    def add(self, type_: str, data: Any) -> None:
         if type_ in ['fuzz', 'check']:
             logger.debug(f"Adding run, type: {type_} supermutant_id: {data['mut_data']['supermutant_id']} prog_bc: {data['mut_data']['prog_bc']} mutation_ids: {data['mut_data']['mutation_ids']}")
         elif type_ == 'mut':
@@ -108,7 +108,7 @@ class PreparedRuns():
 
 
 class CpuCores():
-    def __init__(self, num_cores):
+    def __init__(self, num_cores: int):
         self.cores: list[bool] = [False]*num_cores
 
     def try_reserve_core(self) -> Optional[int]:
@@ -119,14 +119,14 @@ class CpuCores():
         except ValueError:
             return None
 
-    def release_core(self, idx):
-        assert self.cores[idx] == True, "Trying to release an already free core"
+    def release_core(self, idx: int) -> None:
+        assert self.cores[idx] is True, "Trying to release an already free core"
         self.cores[idx] = False
 
-    def has_free(self):
+    def has_free(self) -> bool:
         return any(cc is False for cc in self.cores)
 
-    def usage(self):
+    def usage(self) -> float:
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
@@ -513,7 +513,7 @@ def base_eval(run_data: run_data_type, docker_image):
         }
 
 
-def resolve_compile_args(args, workdir):
+def resolve_compile_args(args: List[Dict[str, str]], workdir: str) -> List[str]:
     resolved = []
     for arg in args:
         if arg['action'] is None:
@@ -525,16 +525,16 @@ def resolve_compile_args(args, workdir):
     return resolved
 
 
-def prepend_main_arg(args):
+def prepend_main_arg(args: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return [
         {'val': "tmp/programs/common/main.cc", 'action': 'prefix_workdir'},
         *args
     ]
 
 
-def build_compile_args(args, workdir):
-    args = resolve_compile_args(args, workdir)
-    return " ".join(map(shlex.quote, args))
+def build_compile_args(args: List[Dict[str, str]], workdir: str) -> str:
+    args_flat = resolve_compile_args(args, workdir)
+    return " ".join(map(shlex.quote, args_flat))
 
 
 def check_run(run_data: run_data_type):
@@ -605,7 +605,7 @@ def instrument_prog(container, prog_info: prog_info_type):
 
     for p in reversed(parents):
         print(p)
-        print(run_exec_in_container(container.name, True, ["ls", "-la", p])['out'])
+        print(run_exec_in_container(container.name, True, ["ls", "-la", str(p)])['out'])
 
     print(flush=True)
 
@@ -1047,9 +1047,9 @@ def measure_mutation_coverage_per_file(mutator, prog_info: prog_info_type, seed_
         run = run_exec_in_container(mutator.name, False,
             [
                 '/home/mutator/iterate_seeds_individual.py',
-                '--seeds', in_docker_seed_dir,
+                '--seeds', str(in_docker_seed_dir),
                 '--args', args,
-                '--binary', detector_path,
+                '--binary', str(detector_path),
                 '--workdir', '/home/mutator',
                 '--results-file', str(in_docker_result_file),
             ],
@@ -1168,7 +1168,7 @@ def get_supermutations_seed_reachable(prog, prog_info: prog_info_type, mutations
     }
 
 
-def get_all_mutations(stats: Stats, mutator, progs: List[str], seed_base_dir, fuzzers: List[str], rerun_p: Optional[Path], rerun_mutations_p: Optional[Path]) -> List[Tuple[Union[int, List[int]], str, prog_info_type, List[mut_data_type]]]:
+def get_all_mutations(stats: Stats, mutator, progs: List[str], seed_base_dir, fuzzers: List[str], rerun_p: Optional[Path], rerun_mutations_p: Optional[Path]) -> List[Tuple[List[int], str, prog_info_type, List[mut_data_type]]]:
     if rerun_p:
         rerun = ReadStatsDb(rerun_p)
 
@@ -1176,7 +1176,7 @@ def get_all_mutations(stats: Stats, mutator, progs: List[str], seed_base_dir, fu
         with open(rerun_mutations_p, 'rt') as f:
             rerun_mutations = json.load(f)
 
-    all_mutations: List[Tuple[Union[int, List[int]], str, prog_info_type, List[mut_data_type]]] = []
+    all_mutations: List[Tuple[List[int], str, prog_info_type, List[mut_data_type]]] = []
     # For all programs that can be done by our evaluation
     for prog in progs:
         try:
@@ -1321,6 +1321,7 @@ def sequence_mutations(all_mutations):
     # return sequenced_mutations
     return all_mutations
 
+
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
 def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_dir: Path, timeout: str, num_repeats: int, rerun: Optional[Path], rerun_mutations: Optional[Path]) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
@@ -1453,6 +1454,7 @@ HANDLED_RESULT_TYPES = set([
     'orig_timeout', 'orig_crash',
 ])
 
+
 def has_result(mut_id: int, results: List[Dict[str, Any]], to_search: List[str]) -> Optional[Dict[str, Any]]:
     unhandled_search_types = set(to_search) - HANDLED_RESULT_TYPES
     assert unhandled_search_types == set(), f'Unhandled search types: {unhandled_search_types}'
@@ -1464,7 +1466,8 @@ def has_result(mut_id: int, results: List[Dict[str, Any]], to_search: List[str])
             return res
     return None
 
-def collect_input_paths(workdir, fuzzer_name):
+
+def collect_input_paths(workdir: Path, fuzzer_name: str) -> List[Path]:
     queue_dir = FUZZERS[fuzzer_name].queue_dir
     queue_ignore_files = FUZZERS[fuzzer_name].queue_ignore_files
     crash_dir = FUZZERS[fuzzer_name].crash_dir
@@ -1480,7 +1483,8 @@ def collect_input_paths(workdir, fuzzer_name):
     ]
     return list(found) + list(crashes)
 
-def copy_fuzzer_inputs(data):
+
+def copy_fuzzer_inputs(data) -> Path:
     tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
     found_inputs = collect_input_paths(data['workdir'], data['fuzzer'])
     logger.warning(f"collect_input_paths: {found_inputs}")
@@ -1491,7 +1495,7 @@ def copy_fuzzer_inputs(data):
     return tmp_dir
 
 
-def record_supermutant_multi(stats, mut_data: mut_data_type, results, fuzzer, run_ctr, description):
+def record_supermutant_multi(stats: Stats, mut_data: mut_data_type, results, fuzzer, run_ctr, description) -> None:
     multies = set()
     for rr in results:
         try:
@@ -1509,7 +1513,7 @@ def record_supermutant_multi(stats, mut_data: mut_data_type, results, fuzzer, ru
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
-def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) -> None:
+def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, data) -> None:
     mut_data = data['mut_data']
     prog_bc = mut_data['prog_bc']
     prog = mut_data['prog']
@@ -1605,7 +1609,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) ->
             else:
                 logger.info(f"! no more mutations (all: {len(all_mutation_ids)} killed: {len(killed_mutants)})")
         elif result_type == 'killed':
-            def record_seed_result(seed_covered, seed_timeout, prog, fuzzer, run_ctr, mut_id):
+            def record_seed_result(seed_covered, seed_timeout: Optional[int], prog: str, fuzzer: str, run_ctr: int, mut_id: int) -> None:
                 stats.new_seeds_executed(
                     EXEC_ID,
                     prog,
@@ -1616,7 +1620,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) ->
                     seed_timeout,
                     None)
 
-            def record_run_done(covered_time, total_time, prog, fuzzer, run_ctr, mut_id):
+            def record_run_done(covered_time, total_time: float, prog: str, fuzzer: str, run_ctr: int, mut_id: int) -> None:
                 stats.new_run_executed(
                     EXEC_ID,
                     run_ctr,
@@ -1626,7 +1630,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) ->
                     covered_time,
                     total_time)
 
-            def record_run_timeout(time, path, orig_cmd, mut_cmd, prog, fuzzer, run_ctr, mut_id):
+            def record_run_timeout(time: float, path: Path, orig_cmd: List[str], mut_cmd: List[str], prog: str, fuzzer: str, run_ctr: int, mut_id: int) -> None:
                 data = {
                     'time': time,
                     'path': path,
@@ -1937,7 +1941,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) ->
                 break
 
 
-def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
+def recompile_and_run(prepared_runs, data, new_supermutand_id: int, mutations) -> None:
     old_supermutant_id = data['mut_data']['supermutant_id']
     data = copy.deepcopy(data)
     mut_data = data['mut_data']
@@ -1954,7 +1958,7 @@ def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
     prepared_runs.add('mut', (mut_data, [data]))
 
 
-def recompile_and_run_from_mutation(prepared_runs, mut_data: mut_data_type, fuzzer_runs, new_supermutand_id, mutations):
+def recompile_and_run_from_mutation(prepared_runs, mut_data: mut_data_type, fuzzer_runs, new_supermutand_id: int, mutations):
     old_supermutant_id = mut_data['supermutant_id']
     mut_data = copy.deepcopy(mut_data)
     mut_data['mutation_ids'] = list(mutations)
@@ -1976,8 +1980,7 @@ def recompile_and_run_from_mutation(prepared_runs, mut_data: mut_data_type, fuzz
     prepared_runs.add('mut', (mut_data, fuzzer_runs))
 
 
-
-def start_check_run(prepared_runs, data, new_supermutand_id, mutations, input_dir):
+def start_check_run(prepared_runs, data, new_supermutand_id: int, mutations: List[int], input_dir: Path) -> None:
     data = copy.deepcopy(data)
     mut_data = data['mut_data']
     mut_data['mutation_ids'] = list(mutations)
@@ -1991,7 +1994,7 @@ def start_check_run(prepared_runs, data, new_supermutand_id, mutations, input_di
     prepared_runs.add('mut', (mut_data, [data]))
 
 
-def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, data):
+def handle_mutation_result(stats: Stats, prepared_runs, active_mutants, task_future, data) -> None:
     _, mut_data, fuzzer_runs = data
     logger.debug(f"mut finished for: {mut_data['prog_bc']}")
     prog = mut_data['prog']
@@ -2043,7 +2046,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     active_mutants[mut_data['prog_bc']]['ref_cnt'] += len(fuzzer_runs)
 
 
-def wait_for_task(stats, tasks: tasks_type, cores: CpuCores, prepared_runs, active_mutants):
+def wait_for_task(stats: Stats, tasks: tasks_type, cores: CpuCores, prepared_runs, active_mutants) -> None:
     "Wait for a task to complete and process the result."
     if len(tasks) == 0:
         logger.info("WARN: Trying to wait for a task but there are none.")
@@ -2068,7 +2071,7 @@ def wait_for_task(stats, tasks: tasks_type, cores: CpuCores, prepared_runs, acti
         raise ValueError("Unknown task type.")
 
 
-def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result_dir):
+def check_crashing(testing_container: docker_container_type, input_dir: Path, orig_bin: Path, mut_bin: Path, args: str, result_dir: Path) -> Tuple[int, str, bool]:
     if not input_dir.is_dir():
         raise ValueError(f"Given seed dir path is not a directory: {input_dir}")
 
@@ -2081,10 +2084,10 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
 
         proc = run_exec_in_container(testing_container.name, False,
                 ['/iterate_seeds.py',
-                    '--seeds', input_dir,
+                    '--seeds', str(input_dir),
                     '--args', args,
-                    '--orig', orig_bin,
-                    '--mut', mut_bin,
+                    '--orig', str(orig_bin),
+                    '--mut', str(mut_bin),
                     '--workdir', IN_DOCKER_WORKDIR,
                     '--results', str(result_dir),
                 ],
@@ -2093,10 +2096,13 @@ def check_crashing(testing_container, input_dir, orig_bin, mut_bin, args, result
                     '--env', f'MUT_MAX_RUN={max_runtime}'
                 ], timeout=120*60)
 
-    return proc['returncode'], proc['out'], proc['timed_out']
+    returncode = cast(int, proc['returncode'])
+    out = cast(str, proc['out'])
+    timed_out = cast(bool, proc['timed_out'])
+    return returncode, out, timed_out #proc['returncode'], proc['out'], proc['timed_out']
 
 
-def prepare_mutation(core_to_use, data):
+def prepare_mutation(core_to_use: int, data: mut_data_type) -> None:
     assert len(data['mutation_ids']) > 0, "No mutations to prepare!"
 
     compile_args = data['compile_args']
@@ -2158,7 +2164,7 @@ def prepare_mutation(core_to_use, data):
             raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
 
 
-def print_run_start_msg(run_data: run_data_type):
+def print_run_start_msg(run_data: run_data_type) -> None:
     prog = run_data['mut_data']['prog']
     mutation_id = printable_m_id(run_data['mut_data'])
     fuzzer = run_data['fuzzer']
@@ -2166,7 +2172,7 @@ def print_run_start_msg(run_data: run_data_type):
     logger.info(f"> run:          {prog}:{mutation_id}:{fuzzer}:{run_ctr}")
 
 
-def print_mutation_prepare_start_msg(mut_data, fuzzer_runs):
+def print_mutation_prepare_start_msg(mut_data: mut_data_type, fuzzer_runs) -> bool:
     fuzzers = " ".join(set(ff['fuzzer'] for ff in fuzzer_runs))
     num_repeats = max(ff['run_ctr'] for ff in fuzzer_runs) + 1
     logger.info(f"> mutation:     {mut_data['prog']}:{printable_m_id(mut_data)} - {num_repeats} - {fuzzers} " +
@@ -2174,7 +2180,7 @@ def print_mutation_prepare_start_msg(mut_data, fuzzer_runs):
     return True
 
 
-def get_git_status():
+def get_git_status() -> str:
     proc_rev = subprocess.run(['git', 'rev-parse', 'HEAD'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc_rev.returncode != 0:
         logger.info("Could not get git rev.", proc_rev)
@@ -2501,7 +2507,7 @@ def get_seed_gathering_runs(fuzzers: List[str], progs: List[str], timeout: str, 
     return all_runs
 
 
-def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs):
+def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs: List[run_data_type]) -> None:
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
 
@@ -2521,13 +2527,13 @@ def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs):
     cores.release_core(core)
 
 
-def print_seed_run_start_msg(run_data: run_data_type):
+def print_seed_run_start_msg(run_data: run_data_type) -> None:
     prog = run_data['mut_data']['prog']
     fuzzer = run_data['fuzzer']
     logger.info(f"> run:     {prog}:{fuzzer}")
 
 
-def handle_seed_run_result(run_future, run_data: run_data_type, all_runs):
+def handle_seed_run_result(run_future: Future, run_data: run_data_type, all_runs: List[run_data_type]) -> None:
     workdir = run_data['workdir']
     try:
         # if there was no exception get the data
@@ -2606,7 +2612,7 @@ def seed_gathering_run(run_data: run_data_type, docker_image: str) -> Dict[str, 
         detach=True
     )
 
-    logs_queue: queue.Queue = queue.Queue()
+    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     fuzz_time = time.time()
@@ -2638,10 +2644,10 @@ def seed_gathering_run(run_data: run_data_type, docker_image: str) -> Dict[str, 
         # container is dead just continue maybe it worked
         pass
 
-    all_logs = []
+    all_logs: List[str] = []
     while True:
         line = logs_queue.get()
-        if line == None:
+        if line is None:
             break
         all_logs.append(line)
 
@@ -2655,7 +2661,7 @@ def seed_gathering_run(run_data: run_data_type, docker_image: str) -> Dict[str, 
     }
 
 
-def chunks(lst, n):
+def chunks(lst: List[Any], n: int) -> Generator[List[Any], None, None]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
@@ -2907,11 +2913,11 @@ def check_seeds(progs, fuzzers, seed_base_dir):
     logger.info("seed checking done :)")
 """
 
-def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int, per_fuzzer, source_dir_s: str, destination_dir_s: str) -> None:
+def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int, per_fuzzer: bool, source_dir: Path, destination_dir: Path) -> None:
     global should_run
 
-    source_dir = Path(source_dir_s)
-    destination_dir = Path(destination_dir_s)
+    # source_dir = Path(source_dir_s)
+    # destination_dir = Path(destination_dir_s)
     destination_dir.mkdir(parents=True, exist_ok=True)
 
     # prepare environment
@@ -3073,7 +3079,7 @@ def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats
     logger.info(f"Done gathering seeds.")
 
 
-def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances):
+def coverage_fuzzing(progs: List[str], fuzzers: List[str], fuzz_time: str, seed_dir: Path, result_dir: Path, instances: int) -> None:
     seed_dir = Path(seed_dir)
     result_dir = Path(result_dir)
 
@@ -3084,7 +3090,7 @@ def coverage_fuzzing(progs, fuzzers, fuzz_time, seed_dir, result_dir, instances)
 
 
 # dest dir is seed_base_dir
-def import_seeds(source_dir_s: str, dest_dir_s: str):
+def import_seeds(source_dir_s: str, dest_dir_s: str) -> None:
     source_dir = Path(source_dir_s)
     dest_dir = Path(dest_dir_s)
     for seed_source in source_dir.glob("*"):
@@ -3121,7 +3127,7 @@ def import_seeds(source_dir_s: str, dest_dir_s: str):
         logger.info(f"Copied {num_copied} and ignored: {num_already_exist} (same hash) + {num_too_big} (size too large).")
 
 
-def merge_dbs(out_path: str, in_paths: List[str]):
+def merge_dbs(out_path: str, in_paths: List[str]) -> None:
     logger.info(f"{out_path}, {in_paths}")
 
     out_db_path = Path(out_path)
@@ -3175,7 +3181,7 @@ def update_signal_list(signal_list: List[Tuple[Any, Set[int]]], to_delete: Set[i
     return result
 
 
-def measure_mutation_coverage(mutator, prog_info: prog_info_type, seed_dir: str):
+def measure_mutation_coverage(mutator: docker_container_type, prog_info: prog_info_type, seed_dir: Path) -> List[str]:
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals
@@ -3185,9 +3191,9 @@ def measure_mutation_coverage(mutator, prog_info: prog_info_type, seed_dir: str)
         run = run_exec_in_container(mutator.name, False,
             [
                 '/home/mutator/iterate_seeds_simple.py',
-                '--seeds', seed_dir,
+                '--seeds', str(seed_dir),
                 '--args', args,
-                '--binary', detector_path,
+                '--binary', str(detector_path),
                 '--workdir', '/home/mutator'
             ],
             exec_args=['--env', f"TRIGGERED_FOLDER={in_docker_trigger_folder}"],
@@ -3246,7 +3252,7 @@ def seed_minimization_run(run_data: run_data_type, docker_image: str) -> Dict[st
     del seeds_out
     del workdir
 
-    logs_queue: queue.Queue[str] = queue.Queue()
+    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:
@@ -3429,7 +3435,7 @@ def seed_coverage_run(run_data: run_data_type, docker_image: str) -> List[str]:
         detach=True
     )
 
-    logs_queue: queue.Queue[str] = queue.Queue()
+    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:

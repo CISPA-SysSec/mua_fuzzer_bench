@@ -1,12 +1,13 @@
 import contextlib
 import logging
 import os
+from queue import Queue
 import signal
 import subprocess
 import threading
 import time
 import traceback
-from typing import List, Union, Dict
+from typing import Any, Dict, Generator, List, Optional, Union
 
 import docker   # type: ignore
 
@@ -14,10 +15,11 @@ from constants import HOST_TMP_PATH, IN_DOCKER_SHARED_DIR, IN_DOCKER_WORKDIR, MA
 from helpers import CoveredFile
 
 logger = logging.getLogger(__name__)
+docker_container_type = Any # docker has no typing stubs, so we just treat containers as Any
 
 
 class DockerLogStreamer(threading.Thread):
-    def __init__(self, q, container, *args, **kwargs):
+    def __init__(self, q: Queue[Optional[str]], container: docker_container_type, *args, **kwargs):
         self.q = q
         self.container = container
         super().__init__(*args, **kwargs)
@@ -43,7 +45,7 @@ class DockerLogStreamer(threading.Thread):
 
 
 @contextlib.contextmanager
-def start_testing_container(core_to_use, trigger_file: CoveredFile, timeout):
+def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout: int) -> Generator[docker_container_type, None, None]:
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -91,7 +93,7 @@ def start_testing_container(core_to_use, trigger_file: CoveredFile, timeout):
 
 
 @contextlib.contextmanager
-def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
+def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int], docker_run_kwargs=None) -> Generator[docker_container_type, None, None]:
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -136,7 +138,7 @@ def start_mutation_container(core_to_use, timeout, docker_run_kwargs=None):
             pass
 
 
-def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeout=None) -> Dict[str, Union[int, str, bool]]:
+def run_exec_in_container(container: docker_container_type, raise_on_error: bool, cmd: List[str], exec_args: Optional[List[str]] = None, timeout: Optional[int] = None) -> Dict[str, Union[int, str, bool]]:
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
@@ -149,7 +151,7 @@ def run_exec_in_container(container, raise_on_error, cmd, exec_args=None, timeou
         container_name = container.name
 
     timed_out = False
-    sub_cmd = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
+    sub_cmd: List[str] = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
     proc = subprocess.Popen(sub_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             close_fds=True,
