@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 import traceback
-from typing import Union, Dict
+from typing import List, Union, Dict
 
 import docker   # type: ignore
 
@@ -23,9 +23,9 @@ class DockerLogStreamer(threading.Thread):
         super().__init__(*args, **kwargs)
 
     def run(self):
-        def add_lines(lines):
-            for line in lines:
-                line = line.decode()
+        def add_lines(lines: List[bytes]) -> None:
+            for ll in lines:
+                line = ll.decode()
                 if SHOW_CONTAINER_LOGS:
                     logger.info(line.rstrip())
                 if "Fuzzing test case #" in line:

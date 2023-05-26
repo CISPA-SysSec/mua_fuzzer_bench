@@ -6,10 +6,14 @@ import logging
 from pathlib import Path
 import shutil
 import time
+from typing import Any, Dict
 
 from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
 logger = logging.getLogger(__name__)
+
+prog_info_type = Dict[str, Any]
+mut_data_type = Dict[str, Any]
 
 def dbg(*args, **kwargs):
     caller = getframeinfo(stack()[1][0])
@@ -25,31 +29,31 @@ def subject_container_tag(name):
     return f"mutation-testing-subject-{name}"
 
 
-def mutation_locations_path(prog_info):
+def mutation_locations_path(prog_info: prog_info_type) -> Path:
     orig_bc = Path(prog_info['orig_bc'])
     return orig_bc.with_suffix('.ll.mutationlocations')
 
 
-def mutation_locations_graph_path(prog_info):
+def mutation_locations_graph_path(prog_info: prog_info_type) -> Path:
     orig_bc = Path(prog_info['orig_bc'])
     return orig_bc.with_suffix('.ll.mutationlocations.graph')
 
 
-def mutation_detector_path(prog_info):
+def mutation_detector_path(prog_info: prog_info_type) -> Path:
     orig_bc = Path(prog_info['orig_bc'])
     return  orig_bc.with_suffix(".ll.opt_mutate")
 
 
-def mutation_prog_source_path(prog_info):
+def mutation_prog_source_path(prog_info: prog_info_type) -> Path:
     orig_bc = Path(prog_info['orig_bc'])
     return orig_bc.with_suffix('.ll.ll')
 
 
-def printable_m_id(mut_data):
+def printable_m_id(mut_data: mut_data_type) -> str:
     return f"S{mut_data['supermutant_id']}"
 
 
-def get_mut_base_dir(data: dict) -> Path:
+def get_mut_base_dir(data: mut_data_type) -> Path:
     return SHARED_DIR/"mut_base"/data['prog']/printable_m_id(data)
 
 
@@ -58,7 +62,7 @@ def get_mut_base_bin(mut_data: dict) -> Path:
     return get_mut_base_dir(mut_data)/"mut_base"
 
 
-def hash_file(file_path):
+def hash_file(file_path: Path) -> str:
     h = hashlib.sha512()
     b  = bytearray(BLOCK_SIZE)
     mv = memoryview(b)
