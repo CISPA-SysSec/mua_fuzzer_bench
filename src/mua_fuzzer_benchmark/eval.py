@@ -1369,7 +1369,7 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
             fuzzer_runs = []
             for fuzzer in fuzzers:
                 try:
-                    eval_func = FUZZERS[fuzzer]['eval_func']
+                    eval_func = FUZZERS[fuzzer].eval_func
                 except Exception as err:
                     logger.info(err)
                     logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
@@ -1465,10 +1465,10 @@ def has_result(mut_id: int, results: List[Dict[str, Any]], to_search: List[str])
     return None
 
 def collect_input_paths(workdir, fuzzer_name):
-    queue_dir = FUZZERS[fuzzer_name]['queue_dir']
-    queue_ignore_files = FUZZERS[fuzzer_name]['queue_ignore_files']
-    crash_dir = FUZZERS[fuzzer_name]['crash_dir']
-    crash_ignore_files = FUZZERS[fuzzer_name]['crash_ignore_files']
+    queue_dir = FUZZERS[fuzzer_name].queue_dir
+    queue_ignore_files = FUZZERS[fuzzer_name].queue_ignore_files
+    crash_dir = FUZZERS[fuzzer_name].crash_dir
+    crash_ignore_files = FUZZERS[fuzzer_name].crash_ignore_files
 
     found = [
         pp for pp in (workdir/queue_dir).glob("*")
@@ -2461,7 +2461,7 @@ def get_seed_gathering_runs(fuzzers: List[str], progs: List[str], timeout: str, 
 
         for fuzzer in fuzzers:
             try:
-                eval_func = FUZZERS[fuzzer]['eval_func']
+                eval_func = FUZZERS[fuzzer].eval_func
             except Exception as err:
                 logger.info(err)
                 logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
@@ -3297,7 +3297,7 @@ def minimize_seeds_one(base_shm_dir: Path, prog: str, fuzzer: str, in_path: Path
         logger.info(f"Prog: {prog} is not known, known progs are: {PROGRAMS.keys()}")
         sys.exit(1)
     try:
-        eval_func = FUZZERS[fuzzer]['eval_func']
+        eval_func = FUZZERS[fuzzer].eval_func
     except Exception as err:
         logger.info(err)
         logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")

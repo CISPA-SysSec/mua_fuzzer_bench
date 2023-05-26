@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import partial
 import hashlib
 from inspect import getframeinfo, stack
@@ -6,7 +7,7 @@ import logging
 from pathlib import Path
 import shutil
 import time
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List
 
 from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
@@ -143,7 +144,16 @@ def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
     return result
 
 
-def load_fuzzers():
+@dataclass
+class Fuzzer:
+    eval_func: Callable
+    queue_dir: str
+    queue_ignore_files: List[str]
+    crash_dir: str
+    crash_ignore_files: List[str]
+
+
+def load_fuzzers() -> Dict[str, Fuzzer]:
     fuzzers = {}
     for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
         if fuzzer_dir.name.startswith("."):
@@ -166,13 +176,13 @@ def load_fuzzers():
             crash_dir=fuzzer_crash_dir, container_tag=fuzzer_name
         )
 
-        fuzzers[fuzzer_name] = {
-            "eval_func": partial_eval_func,
-            "queue_dir": fuzzer_config["queue_dir"],
-            "queue_ignore_files": fuzzer_config["queue_ignore_files"],
-            "crash_dir": fuzzer_crash_dir,
-            "crash_ignore_files": fuzzer_config["crash_ignore_files"],
-        }
+        fuzzers[fuzzer_name] = Fuzzer(
+            eval_func=partial_eval_func,
+            queue_dir=fuzzer_config["queue_dir"],
+            queue_ignore_files=fuzzer_config["queue_ignore_files"],
+            crash_dir=fuzzer_crash_dir,
+            crash_ignore_files=fuzzer_config["crash_ignore_files"],
+        )
 
     return fuzzers
 
