@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import defaultdict
 from concurrent.futures import Future
+from dataclasses import dataclass, field
 from functools import partial
 import sys
 import os
@@ -33,8 +34,8 @@ from docker_interaction import DockerLogStreamer, run_exec_in_container, start_m
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
-from helpers import CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
-    mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag,prog_info_type, mut_data_type
+from helpers import CompileArg, Program, CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
+    mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag, MutationData
 from db import ReadStatsDb, Stats
 
 # set up logging to file
@@ -130,7 +131,26 @@ class CpuCores():
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
-run_result_type = Dict[str, Any] # more precise value type: Union[bool, int, str, None, List[Dict[str, Any]]]
+@dataclass
+class CheckResult:
+    result: str
+    results: List[Dict[str, Any]] = field(default_factory=list)
+    total_time: Optional[float] = field(default=None)
+    returncode: Optional[int] = field(default=None)
+    covered_file_seen: Optional[float] = field(default=None)
+    timed_out: bool = field(default=False)
+    all_logs: List[str] = field(default_factory=list)
+    out: Optional[str] = field(default=None)
+
+
+@dataclass
+class RunResult:
+    result: str
+    total_time: float
+    all_logs: List[str]
+    unexpected_completion_time: Optional[Tuple[float, float]] = field(default=None)
+    data: Dict[Any, Any] = field(default_factory=dict)
+
 callgraph_type = Dict[str, List[str]]
 tasks_type = Dict[Future, Tuple[str, int, Any]]
 run_data_type = Dict[str, Any]
@@ -139,12 +159,12 @@ run_data_type = Dict[str, Any]
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_inputs, crash_dir,
-                          workdir, cur_time) -> run_result_type:
+                          workdir, cur_time) -> CheckResult:
     if not crash_dir.is_dir():
-        return { 'result': 'check_done', 'results': [] }
+        return CheckResult(result='check_done')
     check_start_time = time.time()
 
-    res: run_result_type = {'result': 'check_done', 'results': []}
+    res = CheckResult(result='check_done')
     file_ctr = 0
     new_files = list(pp for pp in crash_dir.glob("**/*") if pp not in crashing_inputs and pp.is_file())
     if new_files:
@@ -165,7 +185,7 @@ def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_i
             res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container)
             
             # update from the symlink paths to the actual file paths
-            for sub_res in res.get('results', []):
+            for sub_res in res.results:
                 if sub_res.get('path') is not None:
                     sub_res['path'] = Path(sub_res['path']).resolve()
 
@@ -177,7 +197,7 @@ def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_i
     return res
 
 
-def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing) -> run_result_type:
+def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing) -> CheckResult:
     mut_data = run_data['mut_data']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
@@ -192,19 +212,19 @@ def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing)
     (returncode, out, timed_out) = check_crashing(
         testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
     if timed_out:
-        return {
-            'result': 'timeout_check_crashing',
-            'total_time': cur_time,
-            'covered_file_seen': None,
-            'timed_out': True,
-            'all_logs': out[-1000:]
-        }
+        return CheckResult(
+            result='timeout_check_crashing',
+            total_time=cur_time,
+            covered_file_seen=None,
+            timed_out=True,
+            all_logs=out[-1000:]
+        )
     if returncode != 0:
-        return {
-            'result': 'check_crashed',
-            'returncode': returncode,
-            'out': out,
-        }
+        return CheckResult(
+            result='check_crashed',
+            returncode=returncode,
+            out=out,
+        )
 
     results = []
     for rf in result_dir.glob("*"):
@@ -215,10 +235,16 @@ def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing)
         results.append(res)
 
     # all good report results
-    return { 'result': 'check_done', 'results': results }
+    return CheckResult(
+        result='check_done',
+        results=results
+    )
 
 
-def update_results(results, new_results, start_time):
+def update_results(
+        results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any],
+        new_results, start_time
+) -> Optional[RunResult]:
     if new_results['result'] not in ['check_done', 'covered', 'multiple']:
         raise ValueError(f"Error during seed crash check: {new_results}")
     new_results = new_results['results']
@@ -271,57 +297,57 @@ def update_results(results, new_results, start_time):
             raise ValueError(f"Unhandled result: {res} {new_results}")
 
     if has_multiple:
-        return {
-            'result': 'multiple',
-            'data': new_results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='multiple',
+            data=new_results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_orig_timeout_by_seed:
-        return {
-            'result': 'orig_timeout_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='orig_timeout_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_killed_by_seed:
-        return {
-            'result': 'killed_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_timeout_by_seed:
-        return {
-            'result': 'killed_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_killed:
-        return {
-            'result': 'killed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_timeout:
-        return {
-            'result': 'killed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
     
     return None
 
 
-def get_logs(logs_queue):
+def get_logs(logs_queue) -> List[str]:
     all_logs = []
     while True:
         try:
@@ -349,14 +375,14 @@ def stop_container(container):
 
 # Does all the eval steps, each fuzzer eval function is based on this one.
 # Compiles the mutated program and fuzzes it. Finally the eval data is returned.
-def base_eval(run_data: run_data_type, docker_image):
+def base_eval(run_data: run_data_type, docker_image) -> RunResult:
     # get start time for the eval
     start_time = time.time()
 
     global should_run
     # extract used values
     mut_data = run_data['mut_data']
-    timeout = run_data['timeout']
+    timeout: float = run_data['timeout']
 
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
@@ -378,7 +404,7 @@ def base_eval(run_data: run_data_type, docker_image):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: run_result_type = {}
+    results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
@@ -387,20 +413,20 @@ def base_eval(run_data: run_data_type, docker_image):
 
         new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container)
         # add suffix to identify seed results
-        for res in new_results.get('results', []):
+        for res in new_results.results:
             res['result'] += '_by_seed'
 
-        res = update_results(results, new_results, start_time)
-        if res is not None:
-            return res
+        update_res = update_results(results, new_results, start_time)
+        if update_res is not None:
+            return update_res
 
         if JUST_SEEDS:
-            return {
-                'result': 'completed',
-                'total_time': time.time() - start_time,
-                'data': results,
-                'all_logs': [],
-            }
+            return RunResult(
+                result='completed',
+                total_time=time.time() - start_time,
+                data=results,
+                all_logs=[],
+            )
 
 
         # set up data for crashing inputs
@@ -466,11 +492,11 @@ def base_eval(run_data: run_data_type, docker_image):
             # Check if a crashing input has already been found
             new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                                 crash_dir, workdir_host, time.time() - start_time)
-            res = update_results(results, new_results, start_time)
-            if res is not None:
+            update_res = update_results(results, new_results, start_time)
+            if update_res is not None:
                 stop_container(container)
-                res['all_logs'] = get_logs(logs_queue)
-                return res
+                update_res.all_logs = get_logs(logs_queue)
+                return update_res
 
             # Sleep so we only check sometimes and do not busy loop
             time.sleep(CHECK_INTERVAL)
@@ -487,10 +513,10 @@ def base_eval(run_data: run_data_type, docker_image):
         # Also collect all remaining crashing outputs
         new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                     crash_dir, workdir_host, time.time() - start_time)
-        res = update_results(results, new_results, start_time)
-        if res is not None:
-            res['all_logs'] = get_logs(logs_queue)
-            return res
+        update_res = update_results(results, new_results, start_time)
+        if update_res is not None:
+            update_res.all_logs = get_logs(logs_queue)
+            return update_res
 
         # Check if covered file is seen, one final time
         for new_covered, at_time in covered.check().items():
@@ -504,37 +530,37 @@ def base_eval(run_data: run_data_type, docker_image):
 
         all_logs = get_logs(logs_queue)
 
-        return {
-            'result': 'completed',
-            'total_time': time.time() - start_time,
-            'unexpected_completion_time': unexpected_completion_time,
-            'data': results,
-            'all_logs': all_logs,
-        }
+        return RunResult(
+            result='completed',
+            total_time=time.time() - start_time,
+            unexpected_completion_time=unexpected_completion_time,
+            data=results,
+            all_logs=all_logs,
+        )
 
 
-def resolve_compile_args(args: List[Dict[str, str]], workdir: str) -> List[str]:
+def resolve_compile_args(args: List[CompileArg], workdir: str) -> List[str]:
     resolved = []
     for arg in args:
-        if arg['action'] is None:
-            resolved.append(arg['val'])
-        elif arg['action'] == 'prefix_workdir':
-            resolved.append(str(Path(workdir)/arg['val']))
+        if arg.action is None:
+            resolved.append(arg.val)
+        elif arg.action == 'prefix_workdir':
+            resolved.append(str(Path(workdir)/arg.val))
         else:
             raise ValueError("Unknown action: {}", arg)
     return resolved
 
 
-def prepend_main_arg(args: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def prepend_main_arg(args: List[CompileArg]) -> List[CompileArg]:
     return [
-        {'val': "tmp/programs/common/main.cc", 'action': 'prefix_workdir'},
+        CompileArg(val="tmp/programs/common/main.cc", action='prefix_workdir'),
         *args
     ]
 
 
-def build_compile_args(args: List[Dict[str, str]], workdir: str) -> str:
-    args_flat = resolve_compile_args(args, workdir)
-    return " ".join(map(shlex.quote, args_flat))
+def build_compile_args(args: List[CompileArg], workdir: str) -> str:
+    resolved_args = resolve_compile_args(args, workdir)
+    return " ".join(map(shlex.quote, resolved_args))
 
 
 def check_run(run_data: run_data_type):
@@ -561,7 +587,7 @@ def check_run(run_data: run_data_type):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: run_result_type = {}
+    results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
@@ -585,7 +611,7 @@ def check_run(run_data: run_data_type):
         }
 
 
-def load_rerun_prog(rerun, prog, prog_info: prog_info_type):
+def load_rerun_prog(rerun, prog, prog_info: Program):
     prog_source_content = rerun.get_prog_source_content(prog)
     with open(mutation_prog_source_path(prog_info), 'wt') as f:
         f.write(prog_source_content)
@@ -595,29 +621,28 @@ def load_rerun_prog(rerun, prog, prog_info: prog_info_type):
         f.write(mutation_locations_content)
 
 
-def instrument_prog(container, prog_info: prog_info_type):
+def instrument_prog(container, prog_info: Program):
     # Compile the mutation location detector for the prog.
-    bc_path = Path(prog_info['orig_bc'])
-    parents = []
-    while bc_path not in [Path('/'), Path('.')]:
-        parents.append(bc_path)
-        bc_path = bc_path.parent
-
-    for p in reversed(parents):
-        print(p)
-        print(run_exec_in_container(container.name, True, ["ls", "-la", str(p)])['out'])
-
-    print(flush=True)
-
+    bc_path = Path(prog_info.orig_bc)
     args = ["./run_mutation.py",
-            "-bc", prog_info['orig_bc'],
-            *(["-cpp"] if prog_info['is_cpp'] else ['-cc']),  # specify compiler
-            "--bc-args=" + build_compile_args(prog_info['bc_compile_args'], '/home/mutator'),
-            "--bin-args=" + build_compile_args(prepend_main_arg(prog_info['bin_compile_args']), '/home/mutator')]
+            "-bc", prog_info.orig_bc,
+            *(["-cpp"] if prog_info.is_cpp else ['-cc']),  # specify compiler
+            "--bc-args=" + build_compile_args(prog_info.bc_compile_args, '/home/mutator'),
+            "--bin-args=" + build_compile_args(prepend_main_arg(prog_info.bin_compile_args), '/home/mutator')]
     try:
         run_exec_in_container(container.name, True, args)
     except Exception as e:
-        logger.warning(f"Exception during instrumenting {e}")
+
+        parents = []
+        while bc_path not in [Path('/'), Path('.')]:
+            parents.append(bc_path)
+            bc_path = bc_path.parent
+
+        for p in reversed(parents):
+            print(p)
+            print(run_exec_in_container(container.name, False, ["ls", "-la", p])['out'])
+
+        logger.warning(f"Exception during instrumenting (see above for files to out dir) {e}")
         raise e
 
 
@@ -804,7 +829,7 @@ def flatten_callgraph(call_graph):
     return caller_callee
 
 
-def get_callgraph(prog_info: prog_info_type, graph_info):
+def get_callgraph(prog_info: Program, graph_info):
     with open(mutation_locations_graph_path(prog_info), 'rt') as f:
         call_graph = json.load(f)
     graph_info['call_graph_raw'] = call_graph
@@ -813,7 +838,7 @@ def get_callgraph(prog_info: prog_info_type, graph_info):
     return flatten_callgraph(call_graph)
 
 
-def get_supermutations_callgraph(prog_info: prog_info_type, mutations):
+def get_supermutations_callgraph(prog_info: Program, mutations):
     graph_info: Dict[str, callgraph_type] = {}
     callgraph = get_callgraph(prog_info, graph_info)
 
@@ -1033,7 +1058,7 @@ def get_supermutations_simple_reachable(prog_info, mutations):
     return supermutants, None
 """
 
-def measure_mutation_coverage_per_file(mutator, prog_info: prog_info_type, seed_dir):
+def measure_mutation_coverage_per_file(mutator, prog_info: Program, seed_dir):
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals
@@ -1066,7 +1091,7 @@ def measure_mutation_coverage_per_file(mutator, prog_info: prog_info_type, seed_
         return data
 
 
-def get_supermutations_seed_reachable(prog, prog_info: prog_info_type, mutations, mutator_container, seed_base_dir, fuzzers):
+def get_supermutations_seed_reachable(prog, prog_info: Program, mutations, mutator_container, seed_base_dir, fuzzers):
     MAX_SM_SIZE = 200
 
     mut_data = {mm[0]: mm[3][mm[0]] for mm in mutations}
@@ -1168,15 +1193,27 @@ def get_supermutations_seed_reachable(prog, prog_info: prog_info_type, mutations
     }
 
 
-def get_all_mutations(stats: Stats, mutator, progs: List[str], seed_base_dir, fuzzers: List[str], rerun_p: Optional[Path], rerun_mutations_p: Optional[Path]) -> List[Tuple[List[int], str, prog_info_type, List[mut_data_type]]]:
+def get_all_mutations(
+        stats: Stats,
+        mutator,
+        progs: List[str],
+        seed_base_dir,
+        fuzzers: List[str],
+        rerun_p: Optional[Path],
+        rerun_mutations_p: Optional[Path]
+) -> List[Tuple[List[int], str, Program, List[MutationData]]]:
     if rerun_p:
         rerun = ReadStatsDb(rerun_p)
+    else:
+        rerun = None
 
     if rerun_mutations_p is not None:
         with open(rerun_mutations_p, 'rt') as f:
             rerun_mutations = json.load(f)
+    else:
+        rerun_mutations = None
 
-    all_mutations: List[Tuple[List[int], str, prog_info_type, List[mut_data_type]]] = []
+    all_mutations: List[Tuple[List[int], str, Program, List[MutationData]]] = []
     # For all programs that can be done by our evaluation
     for prog in progs:
         try:
@@ -1214,7 +1251,7 @@ def get_all_mutations(stats: Stats, mutator, progs: List[str], seed_base_dir, fu
         mutations = list((int(p['UID']), prog, prog_info, mutation_data) for p in mutation_data)
 
         # Remove mutations for functions that should not be mutated
-        omit_functions = prog_info['omit_functions']
+        omit_functions = prog_info.omit_functions
         mutations = [mm for mm in mutations if mm[3][int(mm[0])]['funname'] not in omit_functions]
 
         # If rerun_mutations is specified, collect those mutations
@@ -1349,15 +1386,15 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
             args = "@@"
             # Original binary to check if crashing inputs also crash on
             # unmodified version
-            orig_bin = str(Path(prog_info['orig_bin']).absolute())
+            orig_bin = str(Path(prog_info.orig_bin).absolute())
 
             mut_data = {
-                'orig_bc': prog_info['orig_bc'],
-                'compile_args': prog_info['bc_compile_args'] + prog_info['bin_compile_args'],
-                'is_cpp': prog_info['is_cpp'],
+                'orig_bc': prog_info.orig_bc,
+                'compile_args': prog_info.bc_compile_args + prog_info.bin_compile_args,
+                'is_cpp': prog_info.is_cpp,
                 'args': args,
                 'prog': prog,
-                'dict': prog_info['dict'],
+                'dict': prog_info.dict_path,
                 'orig_bin': orig_bin,
                 'seed_base_dir': seed_base_dir,
                 'supermutant_id': stats.next_supermutant_id(),
@@ -1395,7 +1432,7 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
     return all_runs
 
 
-def clean_up_mut_base_dir(mut_data: mut_data_type) -> None:
+def clean_up_mut_base_dir(mut_data: MutationData) -> None:
     # Remove mut base dir.
     mut_base_dir = get_mut_base_dir(mut_data)
     try:
@@ -1435,14 +1472,14 @@ def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int
     return mut_chunks
 
 
-def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[List[int], List[int]]:
+def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[Set[int], Set[int]]:
     m_ids = [int(mm) for mm in mutation_ids]
-    chunk_1, chunk_2 = [], []
+    chunk_1, chunk_2 = set(), set()
     for ii, m_id in enumerate(sorted(m_ids)):
         if ii % 2 == 0:
-            chunk_1.append(m_id)
+            chunk_1.add(m_id)
         else:
-            chunk_2.append(m_id)
+            chunk_2.add(m_id)
 
     return chunk_1, chunk_2
 
@@ -1495,7 +1532,7 @@ def copy_fuzzer_inputs(data) -> Path:
     return tmp_dir
 
 
-def record_supermutant_multi(stats: Stats, mut_data: mut_data_type, results, fuzzer, run_ctr, description) -> None:
+def record_supermutant_multi(stats, mut_data: MutationData, results, fuzzer, run_ctr, description) -> None:
     multies = set()
     for rr in results:
         try:
@@ -1941,42 +1978,44 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                 break
 
 
-def recompile_and_run(prepared_runs, data, new_supermutand_id: int, mutations) -> None:
-    old_supermutant_id = data['mut_data']['supermutant_id']
+def recompile_and_run(prepared_runs, data, new_supermutand_id: int, mutations: Set[int]) -> None:
+    old_supermutant_id = data['mut_data'].supermutant_id
     data = copy.deepcopy(data)
-    mut_data = data['mut_data']
-    mut_data['mutation_ids'] = list(mutations)
-    mut_data['supermutant_id'] = new_supermutand_id
-    if 'previous_supermutant_ids' in mut_data:
-        mut_data['previous_supermutant_ids'].append(old_supermutant_id)
+    mut_data: MutationData = data['mut_data']
+    mut_data.mutation_ids = set(mutations)
+    mut_data.supermutant_id = new_supermutand_id
+    if mut_data.previous_supermutant_ids is None:
+        mut_data.previous_supermutant_ids = [old_supermutant_id]
     else:
-        mut_data['previous_supermutant_ids'] = [old_supermutant_id]
-    workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+        mut_data.previous_supermutant_ids.append(old_supermutant_id)
+    workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, [data]))
 
 
-def recompile_and_run_from_mutation(prepared_runs, mut_data: mut_data_type, fuzzer_runs, new_supermutand_id: int, mutations):
-    old_supermutant_id = mut_data['supermutant_id']
+def recompile_and_run_from_mutation(
+    prepared_runs, mut_data: MutationData, fuzzer_runs, new_supermutand_id: int, mutations: Set[int]
+) -> None:
+    old_supermutant_id = mut_data.supermutant_id
     mut_data = copy.deepcopy(mut_data)
-    mut_data['mutation_ids'] = list(mutations)
-    mut_data['supermutant_id'] = new_supermutand_id
+    mut_data.mutation_ids = set(mutations)
+    mut_data.supermutant_id = new_supermutand_id
 
-    if 'previous_supermutant_ids' in mut_data:
-        mut_data['previous_supermutant_ids'].append(old_supermutant_id)
+    if mut_data.previous_supermutant_ids is None:
+        mut_data.previous_supermutant_ids = [old_supermutant_id]
     else:
-        mut_data['previous_supermutant_ids'] = [old_supermutant_id]
+        mut_data.previous_supermutant_ids.append(old_supermutant_id)
 
     fuzzer_runs = copy.deepcopy(fuzzer_runs)
     for fr in fuzzer_runs:
-        workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
+        workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
         workdir.mkdir(parents=True)
         fr['workdir'] = workdir
         fr['mut_data'] = mut_data
 
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, fuzzer_runs))
 
 
@@ -2203,7 +2242,7 @@ def build_subject_docker_images(progs: List[str]) -> None:
             sys.exit(1)
 
     for prog in set(progs):
-        dir_name = PROGRAMS[prog]['dir_name']
+        dir_name = PROGRAMS[prog].dir_name
         tag = subject_container_tag(prog)
         logger.info(f"Building docker image for {tag} ({prog})")
         proc = subprocess.run([
@@ -2242,18 +2281,18 @@ def build_subject_docker_images(progs: List[str]) -> None:
         with start_mutation_container(None, 60*60) as build_container:
             for prog in progs:
                 prog_info = PROGRAMS[prog]
-                if prog_info.get('san_is_built') is not None:
+                if prog_info.san_is_built is False:
                     continue
                 compile_args = build_compile_args(
-                    prepend_main_arg(prog_info['bc_compile_args'] + prog_info['bin_compile_args']),
+                    prepend_main_arg(prog_info.bc_compile_args + prog_info.bin_compile_args),
                     "/home/mutator/")
-                orig_bin = Path(prog_info['orig_bin'])
+                orig_bin = Path(prog_info.orig_bin)
                 orig_sanitizer_bin = str(orig_bin.parent.joinpath(orig_bin.stem + "_san" + orig_bin.suffix))
-                prog_info['orig_bin'] = orig_sanitizer_bin
-                orig_bc = prog_info['orig_bc']
+                prog_info.orig_bin = Path(orig_sanitizer_bin)
+                orig_bc = prog_info.orig_bc
 
                 run_exec_in_container(build_container, True, [
-                    'clang++' if prog_info['is_cpp'] else 'clang',
+                    'clang++' if prog_info.is_cpp else 'clang',
                     *(['-fsanitize=address'] if WITH_ASAN else []),
                     *(['-fsanitize=memory'] if WITH_MSAN else []),
                     "-g", "-D_FORTIFY_SOURCE=0",
@@ -2262,7 +2301,7 @@ def build_subject_docker_images(progs: List[str]) -> None:
                     "-o", str(Path("/home/mutator").joinpath(orig_sanitizer_bin))
                 ])
 
-                prog_info['san_is_built'] = True
+                prog_info.san_is_built = True
 
 
 def build_docker_images(fuzzers: List[str], progs: List[str]) -> None:
@@ -2476,14 +2515,14 @@ def get_seed_gathering_runs(fuzzers: List[str], progs: List[str], timeout: str, 
             # Gather all data to start a seed gathering run
 
             # Compile arguments
-            compile_args = prog_info['bc_compile_args'] + prog_info['bin_compile_args']
+            compile_args = prog_info.bc_compile_args + prog_info.bin_compile_args
 
             mut_data = {
-                'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+                'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info.orig_bc,
                 'compile_args': compile_args,
-                'is_cpp': prog_info['is_cpp'],
+                'is_cpp': prog_info.is_cpp,
                 'prog': prog,
-                'dict': prog_info['dict'],
+                'dict': prog_info.dict_path,
             }
 
             for ii in range(num_repeats):
@@ -3181,7 +3220,7 @@ def update_signal_list(signal_list: List[Tuple[Any, Set[int]]], to_delete: Set[i
     return result
 
 
-def measure_mutation_coverage(mutator: docker_container_type, prog_info: prog_info_type, seed_dir: Path) -> List[str]:
+def measure_mutation_coverage(mutator: docker_container_type, prog_info: Program, seed_dir: Path) -> List[str]:
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals
@@ -3324,17 +3363,17 @@ def minimize_seeds_one(base_shm_dir: Path, prog: str, fuzzer: str, in_path: Path
             shutil.copy2(ff, seed_in_tmp_dir)
 
         # Compile arguments
-        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+        compile_args = build_compile_args(prog_info.bc_compile_args + prog_info.bin_compile_args, IN_DOCKER_WORKDIR)
         # Arguments on how to execute the binary
         args = "@@"
 
         mut_data = {
-            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info.orig_bc,
             'compile_args': compile_args,
-            'is_cpp': prog_info['is_cpp'],
+            'is_cpp': prog_info.is_cpp,
             'args': args,
             'prog': prog,
-            'dict': prog_info['dict'],
+            'dict': prog_info.dict_path,
         }
 
         workdir = active_dir/"workdir"
@@ -3503,23 +3542,23 @@ def get_kcov(prog: str, seed_path_s: str, res_path_s: str) -> None:
             shutil.copy2(ff, seed_in_tmp_dir)
 
         # Compile arguments
-        compile_args = build_compile_args(prog_info['bc_compile_args'] + prog_info['bin_compile_args'], IN_DOCKER_WORKDIR)
+        compile_args = build_compile_args(prog_info.bc_compile_args + prog_info.bin_compile_args, IN_DOCKER_WORKDIR)
         # Arguments on how to execute the binary
         args = "@@"
 
         mut_data = {
-            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info['orig_bc'],
+            'orig_bc': Path(IN_DOCKER_WORKDIR)/prog_info.orig_bc,
             'compile_args': compile_args,
-            'is_cpp': prog_info['is_cpp'],
+            'is_cpp': prog_info.is_cpp,
             'args': args,
             'prog': prog,
-            'dict': prog_info['dict'],
+            'dict': prog_info.dict_path,
         }
 
         workdir = active_dir/"workdir"
         workdir.mkdir()
 
-        orig_bin = Path(prog_info['orig_bin'])
+        orig_bin = Path(prog_info.orig_bin)
 
         # copy bin into workdir for easy access
         shutil.copy2(orig_bin, workdir)
@@ -3533,7 +3572,7 @@ def get_kcov(prog: str, seed_path_s: str, res_path_s: str) -> None:
         }
 
         # collect the seed coverage
-        all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info['name']))
+        all_logs = seed_coverage_run(run_data, subject_container_tag(prog_info.name))
 
         res_path.parent.mkdir(parents=True, exist_ok=True)
         try:

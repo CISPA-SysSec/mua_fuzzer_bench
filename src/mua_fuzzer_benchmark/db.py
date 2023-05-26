@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from constants import WITH_ASAN, WITH_MSAN
-from helpers import mutation_locations_path, mutation_prog_source_path
+from helpers import Program, mutation_locations_path, mutation_prog_source_path
 
 logger = logging.getLogger(__name__)
 
@@ -432,9 +432,9 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_prog(self, c, exec_id, prog, data):
+    def new_prog(self, c, exec_id, prog, data: Program):
         assert self.conn is not None, "connection wrapper returns early if conn is None"
-        with open(data['orig_bc'], 'rb') as f:
+        with open(data.orig_bc, 'rb') as f:
             bc_file_data = f.read()
         with open(mutation_prog_source_path(data), 'rt') as f:
             prog_source_data = f.read()
@@ -444,10 +444,10 @@ class Stats():
             (
                 exec_id,
                 prog,
-                json.dumps(data['bc_compile_args']),
-                json.dumps(data['bin_compile_args']),
-                str(data['dict']),
-                str(data['orig_bin']),
+                json.dumps(data.bc_compile_args),
+                json.dumps(data.bin_compile_args),
+                str(data.dict_path),
+                str(data.orig_bin),
                 bc_file_data,
                 prog_source_data,
                 ml_data,

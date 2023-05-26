@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 import hashlib
 from inspect import getframeinfo, stack
@@ -7,14 +7,48 @@ import logging
 from pathlib import Path
 import shutil
 import time
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
 logger = logging.getLogger(__name__)
 
-prog_info_type = Dict[str, Any]
-mut_data_type = Dict[str, Any]
+
+@dataclass
+class Fuzzer:
+    eval_func: Callable
+    queue_dir: str
+    queue_ignore_files: List[str]
+    crash_dir: str
+    crash_ignore_files: List[str]
+
+
+@dataclass
+class CompileArg:
+    val: str
+    action: Optional[str]
+
+
+@dataclass
+class Program:
+    name: str
+    bc_compile_args: List[CompileArg]
+    bin_compile_args: List[CompileArg]
+    is_cpp: bool
+    dict_path: Path
+    orig_bin: Path
+    orig_bc: Path
+    omit_functions: List[str]
+    dir_name: str
+    san_is_built: bool = field(default=False, init=False)
+
+@dataclass
+class MutationData:
+    prog: str
+    supermutant_id: int
+    mutation_ids: Set[int]
+    previous_supermutant_ids: List[int]
+
 
 def dbg(*args, **kwargs):
     caller = getframeinfo(stack()[1][0])
@@ -30,35 +64,35 @@ def subject_container_tag(name: str) -> str:
     return f"mutation-testing-subject-{name}"
 
 
-def mutation_locations_path(prog_info: prog_info_type) -> Path:
-    orig_bc = Path(prog_info['orig_bc'])
+def mutation_locations_path(prog_info: Program) -> Path:
+    orig_bc = Path(prog_info.orig_bc)
     return orig_bc.with_suffix('.ll.mutationlocations')
 
 
-def mutation_locations_graph_path(prog_info: prog_info_type) -> Path:
-    orig_bc = Path(prog_info['orig_bc'])
+def mutation_locations_graph_path(prog_info: Program) -> Path:
+    orig_bc = Path(prog_info.orig_bc)
     return orig_bc.with_suffix('.ll.mutationlocations.graph')
 
 
-def mutation_detector_path(prog_info: prog_info_type) -> Path:
-    orig_bc = Path(prog_info['orig_bc'])
+def mutation_detector_path(prog_info: Program) -> Path:
+    orig_bc = Path(prog_info.orig_bc)
     return  orig_bc.with_suffix(".ll.opt_mutate")
 
 
-def mutation_prog_source_path(prog_info: prog_info_type) -> Path:
-    orig_bc = Path(prog_info['orig_bc'])
+def mutation_prog_source_path(prog_info: Program) -> Path:
+    orig_bc = Path(prog_info.orig_bc)
     return orig_bc.with_suffix('.ll.ll')
 
 
-def printable_m_id(mut_data: mut_data_type) -> str:
-    return f"S{mut_data['supermutant_id']}"
+def printable_m_id(mut_data: MutationData) -> str:
+    return f"S{mut_data.supermutant_id}"
 
 
-def get_mut_base_dir(data: mut_data_type) -> Path:
-    return SHARED_DIR/"mut_base"/data['prog']/printable_m_id(data)
+def get_mut_base_dir(data: MutationData) -> Path:
+    return SHARED_DIR/"mut_base"/data.prog/printable_m_id(data)
 
 
-def get_mut_base_bin(mut_data: dict) -> Path:
+def get_mut_base_bin(mut_data: MutationData) -> Path:
     "Get the path to the bin that is the mutated base binary."
     return get_mut_base_dir(mut_data)/"mut_base"
 
@@ -144,15 +178,6 @@ def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
     return result
 
 
-@dataclass
-class Fuzzer:
-    eval_func: Callable
-    queue_dir: str
-    queue_ignore_files: List[str]
-    crash_dir: str
-    crash_ignore_files: List[str]
-
-
 def load_fuzzers() -> Dict[str, Fuzzer]:
     fuzzers = {}
     for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
@@ -187,7 +212,7 @@ def load_fuzzers() -> Dict[str, Fuzzer]:
     return fuzzers
 
 
-def load_programs():
+def load_programs() -> Dict[str, Program]:
     programs = {}
     for prog_dir in Path("dockerfiles/programs").iterdir():
         prog_dir_name = prog_dir.name
@@ -210,21 +235,32 @@ def load_programs():
 
             assert prog_name not in programs
 
-            dict_path = prog_config_data["dict"]
-            if dict_path is not None:
-                dict_path = Path("tmp/programs")/prog_dir_name/dict_path
-
             try:
-                programs[prog_name] = {
-                    "bc_compile_args": prog_config_data["bc_compile_args"],
-                    "bin_compile_args": prog_config_data["bin_compile_args"],
-                    "is_cpp": prog_config_data["is_cpp"],
-                    "dict": dict_path,
-                    "orig_bin": Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bin"],
-                    "orig_bc": Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bc"],
-                    "omit_functions": prog_config_data["omit_functions"],
-                    "dir_name": prog_dir_name,
-                }
+                bc_compile_args = [
+                    CompileArg(arg['val'], arg['action'])
+                    for arg in prog_config_data["bc_compile_args"]
+                ]
+
+                bin_compile_args = [
+                    CompileArg(arg['val'], arg['action'])
+                    for arg in prog_config_data["bin_compile_args"]
+                ]
+
+                dict_path = prog_config_data["dict"]
+                if dict_path is not None:
+                    dict_path = Path("tmp/programs")/prog_dir_name/dict_path
+
+                programs[prog_name] = Program(
+                    name=prog_name,
+                    bc_compile_args=bc_compile_args,
+                    bin_compile_args=bin_compile_args,
+                    is_cpp=prog_config_data["is_cpp"],
+                    dict_path=dict_path,
+                    orig_bin=Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bin"],
+                    orig_bc=Path("tmp/programs")/prog_dir_name/prog_config_data["orig_bc"],
+                    omit_functions=prog_config_data["omit_functions"],
+                    dir_name=prog_dir_name,
+                )
             except KeyError as e:
                 raise KeyError(f"Key {e} not found in {prog_config_path}")
 
