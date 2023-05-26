@@ -2211,11 +2211,11 @@ def print_run_start_msg(run_data: run_data_type) -> None:
     logger.info(f"> run:          {prog}:{mutation_id}:{fuzzer}:{run_ctr}")
 
 
-def print_mutation_prepare_start_msg(mut_data: mut_data_type, fuzzer_runs) -> bool:
+def print_mutation_prepare_start_msg(mut_data: MutationData, fuzzer_runs) -> bool:
     fuzzers = " ".join(set(ff['fuzzer'] for ff in fuzzer_runs))
     num_repeats = max(ff['run_ctr'] for ff in fuzzer_runs) + 1
-    logger.info(f"> mutation:     {mut_data['prog']}:{printable_m_id(mut_data)} - {num_repeats} - {fuzzers} " +
-                f"(num muts: {len(mut_data['mutation_ids'])})")
+    logger.info(f"> mutation:     {mut_data.prog}:{printable_m_id(mut_data)} - {num_repeats} - {fuzzers} " +
+                f"(num muts: {len(mut_data.mutation_ids)})")
     return True
 
 
