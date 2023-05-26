@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import defaultdict
 from concurrent.futures import Future
+from dataclasses import dataclass, field
 from functools import partial
 import sys
 import os
@@ -130,7 +131,26 @@ class CpuCores():
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
-run_result_type = Dict[str, Any] # more precise value type: Union[bool, int, str, None, List[Dict[str, Any]]]
+@dataclass
+class CheckResult:
+    result: str
+    results: List[Dict[str, Any]] = field(default_factory=list)
+    total_time: Optional[float] = field(default=None)
+    returncode: Optional[int] = field(default=None)
+    covered_file_seen: Optional[float] = field(default=None)
+    timed_out: bool = field(default=False)
+    all_logs: List[str] = field(default_factory=list)
+    out: Optional[str] = field(default=None)
+
+
+@dataclass
+class RunResult:
+    result: str
+    total_time: float
+    all_logs: List[str]
+    unexpected_completion_time: Optional[Tuple[float, float]] = field(default=None)
+    data: Dict[Any, Any] = field(default_factory=dict)
+
 callgraph_type = Dict[str, List[str]]
 tasks_type = Dict[Future, Tuple[str, int, Any]]
 run_data_type = Dict[str, Any]
@@ -139,12 +159,12 @@ run_data_type = Dict[str, Any]
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_inputs, crash_dir,
-                          workdir, cur_time) -> run_result_type:
+                          workdir, cur_time) -> CheckResult:
     if not crash_dir.is_dir():
-        return { 'result': 'check_done', 'results': [] }
+        return CheckResult(result='check_done')
     check_start_time = time.time()
 
-    res: run_result_type = {'result': 'check_done', 'results': []}
+    res = CheckResult(result='check_done')
     file_ctr = 0
     new_files = list(pp for pp in crash_dir.glob("**/*") if pp not in crashing_inputs and pp.is_file())
     if new_files:
@@ -165,7 +185,7 @@ def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_i
             res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container)
             
             # update from the symlink paths to the actual file paths
-            for sub_res in res.get('results', []):
+            for sub_res in res.results:
                 if sub_res.get('path') is not None:
                     sub_res['path'] = Path(sub_res['path']).resolve()
 
@@ -177,7 +197,7 @@ def check_crashing_inputs(run_data: run_data_type, testing_container, crashing_i
     return res
 
 
-def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing) -> run_result_type:
+def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing) -> CheckResult:
     mut_data = run_data['mut_data']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
@@ -192,19 +212,19 @@ def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing)
     (returncode, out, timed_out) = check_crashing(
         testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
     if timed_out:
-        return {
-            'result': 'timeout_check_crashing',
-            'total_time': cur_time,
-            'covered_file_seen': None,
-            'timed_out': True,
-            'all_logs': out[-1000:]
-        }
+        return CheckResult(
+            result='timeout_check_crashing',
+            total_time=cur_time,
+            covered_file_seen=None,
+            timed_out=True,
+            all_logs=out[-1000:]
+        )
     if returncode != 0:
-        return {
-            'result': 'check_crashed',
-            'returncode': returncode,
-            'out': out,
-        }
+        return CheckResult(
+            result='check_crashed',
+            returncode=returncode,
+            out=out,
+        )
 
     results = []
     for rf in result_dir.glob("*"):
@@ -215,10 +235,16 @@ def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing)
         results.append(res)
 
     # all good report results
-    return { 'result': 'check_done', 'results': results }
+    return CheckResult(
+        result='check_done',
+        results=results
+    )
 
 
-def update_results(results, new_results, start_time):
+def update_results(
+        results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any],
+        new_results, start_time
+) -> Optional[RunResult]:
     if new_results['result'] not in ['check_done', 'covered', 'multiple']:
         raise ValueError(f"Error during seed crash check: {new_results}")
     new_results = new_results['results']
@@ -271,57 +297,57 @@ def update_results(results, new_results, start_time):
             raise ValueError(f"Unhandled result: {res} {new_results}")
 
     if has_multiple:
-        return {
-            'result': 'multiple',
-            'data': new_results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='multiple',
+            data=new_results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_orig_timeout_by_seed:
-        return {
-            'result': 'orig_timeout_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='orig_timeout_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_killed_by_seed:
-        return {
-            'result': 'killed_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_timeout_by_seed:
-        return {
-            'result': 'killed_by_seed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed_by_seed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_killed:
-        return {
-            'result': 'killed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
 
     if has_timeout:
-        return {
-            'result': 'killed',
-            'data': results,
-            'total_time': time.time() - start_time,
-            'all_logs': [],
-        }
+        return RunResult(
+            result='killed',
+            data=results,
+            total_time=time.time() - start_time,
+            all_logs=[],
+        )
     
     return None
 
 
-def get_logs(logs_queue):
+def get_logs(logs_queue) -> List[str]:
     all_logs = []
     while True:
         try:
@@ -349,14 +375,14 @@ def stop_container(container):
 
 # Does all the eval steps, each fuzzer eval function is based on this one.
 # Compiles the mutated program and fuzzes it. Finally the eval data is returned.
-def base_eval(run_data: run_data_type, docker_image):
+def base_eval(run_data: run_data_type, docker_image) -> RunResult:
     # get start time for the eval
     start_time = time.time()
 
     global should_run
     # extract used values
     mut_data = run_data['mut_data']
-    timeout = run_data['timeout']
+    timeout: float = run_data['timeout']
 
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
@@ -378,7 +404,7 @@ def base_eval(run_data: run_data_type, docker_image):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: run_result_type = {}
+    results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
@@ -387,20 +413,20 @@ def base_eval(run_data: run_data_type, docker_image):
 
         new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container)
         # add suffix to identify seed results
-        for res in new_results.get('results', []):
+        for res in new_results.results:
             res['result'] += '_by_seed'
 
-        res = update_results(results, new_results, start_time)
-        if res is not None:
-            return res
+        update_res = update_results(results, new_results, start_time)
+        if update_res is not None:
+            return update_res
 
         if JUST_SEEDS:
-            return {
-                'result': 'completed',
-                'total_time': time.time() - start_time,
-                'data': results,
-                'all_logs': [],
-            }
+            return RunResult(
+                result='completed',
+                total_time=time.time() - start_time,
+                data=results,
+                all_logs=[],
+            )
 
 
         # set up data for crashing inputs
@@ -466,11 +492,11 @@ def base_eval(run_data: run_data_type, docker_image):
             # Check if a crashing input has already been found
             new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                                 crash_dir, workdir_host, time.time() - start_time)
-            res = update_results(results, new_results, start_time)
-            if res is not None:
+            update_res = update_results(results, new_results, start_time)
+            if update_res is not None:
                 stop_container(container)
-                res['all_logs'] = get_logs(logs_queue)
-                return res
+                update_res.all_logs = get_logs(logs_queue)
+                return update_res
 
             # Sleep so we only check sometimes and do not busy loop
             time.sleep(CHECK_INTERVAL)
@@ -487,10 +513,10 @@ def base_eval(run_data: run_data_type, docker_image):
         # Also collect all remaining crashing outputs
         new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
                                     crash_dir, workdir_host, time.time() - start_time)
-        res = update_results(results, new_results, start_time)
-        if res is not None:
-            res['all_logs'] = get_logs(logs_queue)
-            return res
+        update_res = update_results(results, new_results, start_time)
+        if update_res is not None:
+            update_res.all_logs = get_logs(logs_queue)
+            return update_res
 
         # Check if covered file is seen, one final time
         for new_covered, at_time in covered.check().items():
@@ -504,13 +530,13 @@ def base_eval(run_data: run_data_type, docker_image):
 
         all_logs = get_logs(logs_queue)
 
-        return {
-            'result': 'completed',
-            'total_time': time.time() - start_time,
-            'unexpected_completion_time': unexpected_completion_time,
-            'data': results,
-            'all_logs': all_logs,
-        }
+        return RunResult(
+            result='completed',
+            total_time=time.time() - start_time,
+            unexpected_completion_time=unexpected_completion_time,
+            data=results,
+            all_logs=all_logs,
+        )
 
 
 def resolve_compile_args(args: List[CompileArg], workdir: str) -> List[str]:
@@ -561,7 +587,7 @@ def check_run(run_data: run_data_type):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: run_result_type = {}
+    results: Dict[Tuple[str, Optional[Tuple[int, ...]]], Any] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
