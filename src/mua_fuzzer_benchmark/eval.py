@@ -34,7 +34,7 @@ from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
 from helpers import CompileArg, Program, CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
-    mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag, mut_data_type
+    mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag, MutationData
 from db import ReadStatsDb, Stats
 
 # set up logging to file
@@ -1175,7 +1175,7 @@ def get_all_mutations(
         fuzzers: List[str],
         rerun_p: Optional[Path],
         rerun_mutations_p: Optional[Path]
-) -> List[Tuple[List[int], str, Program, List[mut_data_type]]]:
+) -> List[Tuple[List[int], str, Program, List[MutationData]]]:
     if rerun_p:
         rerun = ReadStatsDb(rerun_p)
     else:
@@ -1187,7 +1187,7 @@ def get_all_mutations(
     else:
         rerun_mutations = None
 
-    all_mutations: List[Tuple[List[int], str, Program, List[mut_data_type]]] = []
+    all_mutations: List[Tuple[List[int], str, Program, List[MutationData]]] = []
     # For all programs that can be done by our evaluation
     for prog in progs:
         try:
@@ -1405,7 +1405,7 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
     return all_runs
 
 
-def clean_up_mut_base_dir(mut_data: mut_data_type) -> None:
+def clean_up_mut_base_dir(mut_data: MutationData) -> None:
     # Remove mut base dir.
     mut_base_dir = get_mut_base_dir(mut_data)
     try:
@@ -1445,14 +1445,14 @@ def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int
     return mut_chunks
 
 
-def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[List[int], List[int]]:
+def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[Set[int], Set[int]]:
     m_ids = [int(mm) for mm in mutation_ids]
-    chunk_1, chunk_2 = [], []
+    chunk_1, chunk_2 = set(), set()
     for ii, m_id in enumerate(sorted(m_ids)):
         if ii % 2 == 0:
-            chunk_1.append(m_id)
+            chunk_1.add(m_id)
         else:
-            chunk_2.append(m_id)
+            chunk_2.add(m_id)
 
     return chunk_1, chunk_2
 
@@ -1502,7 +1502,7 @@ def copy_fuzzer_inputs(data):
     return tmp_dir
 
 
-def record_supermutant_multi(stats, mut_data: mut_data_type, results, fuzzer, run_ctr, description):
+def record_supermutant_multi(stats, mut_data: MutationData, results, fuzzer, run_ctr, description):
     multies = set()
     for rr in results:
         try:
@@ -1948,42 +1948,44 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) ->
                 break
 
 
-def recompile_and_run(prepared_runs, data, new_supermutand_id, mutations):
-    old_supermutant_id = data['mut_data']['supermutant_id']
+def recompile_and_run(prepared_runs, data, new_supermutand_id: int, mutations: Set[int]) -> None:
+    old_supermutant_id = data['mut_data'].supermutant_id
     data = copy.deepcopy(data)
-    mut_data = data['mut_data']
-    mut_data['mutation_ids'] = list(mutations)
-    mut_data['supermutant_id'] = new_supermutand_id
-    if 'previous_supermutant_ids' in mut_data:
-        mut_data['previous_supermutant_ids'].append(old_supermutant_id)
+    mut_data: MutationData = data['mut_data']
+    mut_data.mutation_ids = set(mutations)
+    mut_data.supermutant_id = new_supermutand_id
+    if mut_data.previous_supermutant_ids is None:
+        mut_data.previous_supermutant_ids = [old_supermutant_id]
     else:
-        mut_data['previous_supermutant_ids'] = [old_supermutant_id]
-    workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+        mut_data.previous_supermutant_ids.append(old_supermutant_id)
+    workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, [data]))
 
 
-def recompile_and_run_from_mutation(prepared_runs, mut_data: mut_data_type, fuzzer_runs, new_supermutand_id, mutations):
-    old_supermutant_id = mut_data['supermutant_id']
+def recompile_and_run_from_mutation(
+    prepared_runs, mut_data: MutationData, fuzzer_runs, new_supermutand_id, mutations: Set[int]
+) -> None:
+    old_supermutant_id = mut_data.supermutant_id
     mut_data = copy.deepcopy(mut_data)
-    mut_data['mutation_ids'] = list(mutations)
-    mut_data['supermutant_id'] = new_supermutand_id
+    mut_data.mutation_ids = set(mutations)
+    mut_data.supermutant_id = new_supermutand_id
 
-    if 'previous_supermutant_ids' in mut_data:
-        mut_data['previous_supermutant_ids'].append(old_supermutant_id)
+    if mut_data.previous_supermutant_ids is None:
+        mut_data.previous_supermutant_ids = [old_supermutant_id]
     else:
-        mut_data['previous_supermutant_ids'] = [old_supermutant_id]
+        mut_data.previous_supermutant_ids.append(old_supermutant_id)
 
     fuzzer_runs = copy.deepcopy(fuzzer_runs)
     for fr in fuzzer_runs:
-        workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
+        workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
         workdir.mkdir(parents=True)
         fr['workdir'] = workdir
         fr['mut_data'] = mut_data
 
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, fuzzer_runs))
 
 
