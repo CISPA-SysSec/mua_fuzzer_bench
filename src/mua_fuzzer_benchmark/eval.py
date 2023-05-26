@@ -525,9 +525,9 @@ def resolve_compile_args(args: List[CompileArg], workdir: str) -> List[str]:
     return resolved
 
 
-def prepend_main_arg(args):
+def prepend_main_arg(args: List[CompileArg]) -> List[CompileArg]:
     return [
-        {'val': "tmp/programs/common/main.cc", 'action': 'prefix_workdir'},
+        CompileArg(val="tmp/programs/common/main.cc", action='prefix_workdir'),
         *args
     ]
 
@@ -598,17 +598,6 @@ def load_rerun_prog(rerun, prog, prog_info: Program):
 def instrument_prog(container, prog_info: Program):
     # Compile the mutation location detector for the prog.
     bc_path = Path(prog_info.orig_bc)
-    parents = []
-    while bc_path not in [Path('/'), Path('.')]:
-        parents.append(bc_path)
-        bc_path = bc_path.parent
-
-    for p in reversed(parents):
-        print(p)
-        print(run_exec_in_container(container.name, True, ["ls", "-la", p])['out'])
-
-    print(flush=True)
-
     args = ["./run_mutation.py",
             "-bc", prog_info.orig_bc,
             *(["-cpp"] if prog_info.is_cpp else ['-cc']),  # specify compiler
@@ -617,7 +606,17 @@ def instrument_prog(container, prog_info: Program):
     try:
         run_exec_in_container(container.name, True, args)
     except Exception as e:
-        logger.warning(f"Exception during instrumenting {e}")
+
+        parents = []
+        while bc_path not in [Path('/'), Path('.')]:
+            parents.append(bc_path)
+            bc_path = bc_path.parent
+
+        for p in reversed(parents):
+            print(p)
+            print(run_exec_in_container(container.name, False, ["ls", "-la", p])['out'])
+
+        logger.warning(f"Exception during instrumenting (see above for files to out dir) {e}")
         raise e
 
 
@@ -1179,10 +1178,14 @@ def get_all_mutations(
 ) -> List[Tuple[List[int], str, Program, List[mut_data_type]]]:
     if rerun_p:
         rerun = ReadStatsDb(rerun_p)
+    else:
+        rerun = None
 
     if rerun_mutations_p is not None:
         with open(rerun_mutations_p, 'rt') as f:
             rerun_mutations = json.load(f)
+    else:
+        rerun_mutations = None
 
     all_mutations: List[Tuple[List[int], str, Program, List[mut_data_type]]] = []
     # For all programs that can be done by our evaluation
@@ -3183,7 +3186,7 @@ def update_signal_list(signal_list: List[Tuple[Any, Set[int]]], to_delete: Set[i
     return result
 
 
-def measure_mutation_coverage(mutator, prog_info: Program, seed_dir: str):
+def measure_mutation_coverage(mutator, prog_info: Program, seed_dir: Path):
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals
@@ -3193,7 +3196,7 @@ def measure_mutation_coverage(mutator, prog_info: Program, seed_dir: str):
         run = run_exec_in_container(mutator.name, False,
             [
                 '/home/mutator/iterate_seeds_simple.py',
-                '--seeds', seed_dir,
+                '--seeds', str(seed_dir),
                 '--args', args,
                 '--binary', detector_path,
                 '--workdir', '/home/mutator'
