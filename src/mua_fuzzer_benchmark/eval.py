@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import defaultdict
+from concurrent.futures import Future
 from functools import partial
 import sys
 import os
@@ -13,7 +14,7 @@ import json
 import shutil
 import random
 import re
-from typing import Union, List, Tuple, Set, Dict, Any
+from typing import Any, Dict, List, Set, Optional, Tuple, Union, cast
 import concurrent.futures
 import shlex
 import platform
@@ -24,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-import docker
+import docker   # type: ignore
 
 import logging
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container
@@ -87,9 +88,9 @@ class CoverageException(Exception):
 
 class PreparedRuns():
     def __init__(self):
-        self.runs = queue.Queue()
+        self.runs: queue.Queue = queue.Queue()
 
-    def get_next(self) -> Union[None, dict]:
+    def get_next(self) -> Optional[dict]:
         try:
             return self.runs.get_nowait()
         except queue.Empty:
@@ -106,15 +107,41 @@ class PreparedRuns():
         self.runs.put_nowait({'type': type_, 'data': data})
 
 
+class CpuCores():
+    def __init__(self, num_cores):
+        self.cores: list[bool] = [False]*num_cores
+
+    def try_reserve_core(self) -> Optional[int]:
+        try:
+            idx = self.cores.index(False)
+            self.cores[idx] = True
+            return idx
+        except ValueError:
+            return None
+
+    def release_core(self, idx):
+        assert self.cores[idx] == True, "Trying to release an already free core"
+        self.cores[idx] = False
+
+    def has_free(self):
+        return any(cc is False for cc in self.cores)
+
+    def usage(self):
+        return len([cc for cc in self.cores if cc]) / len(self.cores)
+
+run_result_type = Dict[str, Any] # more precise value type: Union[bool, int, str, None, List[Dict[str, Any]]]
+callgraph_type = Dict[str, List[str]]
+tasks_type = Dict[Future, Tuple[str, int, Any]]
+
 # returns true if a crashing input is found that only triggers for the
 # mutated binary
 def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_dir,
-                          workdir, cur_time):
+                          workdir, cur_time) -> run_result_type:
     if not crash_dir.is_dir():
         return { 'result': 'check_done', 'results': [] }
     check_start_time = time.time()
 
-    res = {'result': 'check_done', 'results': []}
+    res: run_result_type = {'result': 'check_done', 'results': []}
     file_ctr = 0
     new_files = list(pp for pp in crash_dir.glob("**/*") if pp not in crashing_inputs and pp.is_file())
     if new_files:
@@ -147,7 +174,7 @@ def check_crashing_inputs(run_data, testing_container, crashing_inputs, crash_di
     return res
 
 
-def base_eval_crash_check(input_dir, run_data, cur_time, testing):
+def base_eval_crash_check(input_dir, run_data, cur_time, testing) -> run_result_type:
     mut_data = run_data['mut_data']
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
@@ -201,9 +228,9 @@ def update_results(results, new_results, start_time):
     has_timeout = False
 
     for nr in new_results:
-        res = nr['result']
+        res: str = nr['result']
         if res in ['orig_crash', 'orig_timeout', 'orig_timeout_by_seed']:
-            key = (res, None)
+            key: Tuple[str, Optional[Tuple[int, ...]]] = (res, None)
         else:
             try:
                 m_ids = tuple(sorted(set(nr['mutation_ids'])))
@@ -348,7 +375,7 @@ def base_eval(run_data, docker_image):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results = {}
+    results: run_result_type = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
@@ -374,7 +401,7 @@ def base_eval(run_data, docker_image):
 
 
         # set up data for crashing inputs
-        crashing_inputs = {}
+        crashing_inputs: Dict[Path, dict] = {}
 
         # get access to the docker client to start the container
         docker_client = docker.from_env()
@@ -408,7 +435,7 @@ def base_eval(run_data, docker_image):
             detach=True
         )
 
-        logs_queue = queue.Queue()
+        logs_queue: queue.Queue = queue.Queue()
         DockerLogStreamer(logs_queue, container).start()
 
         fuzz_start_time = time.time()
@@ -531,7 +558,7 @@ def check_run(run_data):
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results = {}
+    results: run_result_type = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
@@ -592,7 +619,7 @@ def instrument_prog(container, prog_info):
 
 
 # Find functions that are reachable from fnA
-def find_reachable(call_g, fnA, reachable_keys=None, found_so_far=None):
+def find_reachable(call_g: callgraph_type, fnA: str, reachable_keys: Optional[Dict[str, Set[str]]] = None, found_so_far: Optional[Set[str]] = None) -> Set[str]:
     if reachable_keys is None: reachable_keys = {}
     if found_so_far is None: found_so_far = set()
 
@@ -610,8 +637,8 @@ def find_reachable(call_g, fnA, reachable_keys=None, found_so_far=None):
 
 # Produce reachability dictionary given the call graph.
 # For each function, we have functions that are reachable from it.
-def reachable_dict(call_g):
-    reachable = {}
+def reachable_dict(call_g: callgraph_type) -> Dict[str, Set[str]]:
+    reachable: Dict[str, Set[str]] = {}
     for fnA in call_g:
         keys = find_reachable(call_g, fnA, reachable)
         reachable[fnA] = keys
@@ -653,8 +680,8 @@ def location_mutation_mapping(mutations):
     return {**loc_mut_map}
 
 
-def load_call_graph(callgraph, mutants):
-    my_g = {}
+def load_call_graph(callgraph, mutants) -> callgraph_type:
+    my_g: callgraph_type = {}
     called = {}
 
     for fn_a, fn_b in callgraph:
@@ -694,7 +721,7 @@ def pop_mutant(mutants, eligible, has_mutants, indices, matrix, keys):
     eligible &= np.invert(matrix[:, chosen_idx])
     return mut
 
-def find_supermutants(matrix, keys, mutants):
+def find_supermutants(matrix, keys, mutants) -> List[List[int]]:
     indices = np.arange(len(matrix))
     # for each index a boolean value if there are any mutants remaining
     has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
@@ -736,8 +763,8 @@ def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
     :param orig_graph:
     :return:
     """
-    result = dict()
-    mapping = dict()
+    result: Dict[str, List[str]] = dict()
+    mapping: Dict[Tuple, List[str]] = dict()
     # first get an initial mapping of the result set and collect all known functions
     for key in orig_graph.keys():
         key_splitted = key.split(SPLITTER)[:-1]
@@ -784,7 +811,7 @@ def get_callgraph(prog_info, graph_info):
 
 
 def get_supermutations_callgraph(prog_info, mutations):
-    graph_info = {}
+    graph_info: Dict[str, callgraph_type] = {}
     callgraph = get_callgraph(prog_info, graph_info)
 
     loc_mut_map = location_mutation_mapping(mutations)
@@ -827,7 +854,7 @@ def get_supermutations_callgraph(prog_info, mutations):
         func_to_mutants[ff].append(mm)
 
     highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
-    new_supermutants = []
+    new_supermutants: List[List[int]] = []
     for ii in range(highest_mut_func_count):
         new_supermutants.append([])
 
@@ -882,7 +909,7 @@ def indirect_call_info(graph):
 
     return mapping
 
-
+"""
 def get_supermutations_cfg(prog_info, mutations):
     import cfg_supermutants
     entry_node = 'LLVMFuzzerTestOneInput'
@@ -1001,7 +1028,7 @@ def get_supermutations_simple_reachable(prog_info, mutations):
     # supermutants = [sm for sm in supermutants if len(sm) > 1]
 
     return supermutants, None
-
+"""
 
 def measure_mutation_coverage_per_file(mutator, prog_info, seed_dir):
     detector_path = mutation_detector_path(prog_info)
@@ -1042,7 +1069,7 @@ def get_supermutations_seed_reachable(prog, prog_info, mutations, mutator_contai
     mut_data = {mm[0]: mm[3][mm[0]] for mm in mutations}
 
     covered_mutations = set()
-    input_coverages = defaultdict(set)
+    input_coverages: Dict[int, Set[int]] = defaultdict(set)
     for fuzzer in fuzzers:
         seeds = get_seed_dir(seed_base_dir, prog, fuzzer)
         seed_covered_mutations = measure_mutation_coverage_per_file(mutator_container, prog_info, seeds)
@@ -1138,7 +1165,7 @@ def get_supermutations_seed_reachable(prog, prog_info, mutations, mutator_contai
     }
 
 
-def get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, rerun_mutations):
+def get_all_mutations(stats, mutator, progs: List[str], seed_base_dir, fuzzers: List[str], rerun, rerun_mutations):
     if rerun:
         rerun = ReadStatsDb(rerun)
 
@@ -1218,7 +1245,7 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, reru
             expected_exec_id = supermutations_raw[0]['exec_id']
             len_sm = max(sm['super_mutant_id'] for sm in supermutations_raw) + 1
             mutations_set = set(int(mm[0]) for mm in mutations)
-            supermutations = [[] for _ in range(len_sm)]
+            supermutations: List[List[int]] = [[] for _ in range(len_sm)]
             for sm in supermutations_raw:
                 assert sm['exec_id'] == expected_exec_id
                 mut_id = sm['mutation_id']
@@ -1256,9 +1283,9 @@ def get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, reru
         for ii, sm in enumerate(supermutations):
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sm)
 
-        mutations = list((sm, prog, prog_info, mutation_data) for sm in supermutations)
+        s_mutations = list((sm, prog, prog_info, mutation_data) for sm in supermutations)
 
-        all_mutations.extend(mutations)
+        all_mutations.extend(s_mutations)
         logger.info(f"Preparations for {prog} took: {time.time() - start:.2f} seconds")
 
     return all_mutations
@@ -1373,25 +1400,28 @@ def clean_up_mut_base_dir(mut_data):
         logger.info(f"Could not clean up {mut_base_dir}: {err}")
 
 
-def split_up_supermutant(multi, all_muts):
+def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int]):
     """
     Split up the mutants listed in all_muts, into as many chunks as there are mutants in multi, making sure that the
     mutants listed in multi end up in different chunks. This can be used to split up a supermutant where
     multiple mutations are covered at once.
     """
-    multi = set(chain(*multi))
-    all_muts = set([int(mm) for mm in all_muts])
-    assert all_muts & multi == multi, f"Not all covered mutations are in the possible mutations, something is wrong. " \
-                                      f"all_muts: {all_muts}, multi: {multi}"
-    others = all_muts - multi
+    multi_set: Set[int] = set(chain(*multi_tp))
+    all_muts = set([int(mm) for mm in all_muts_list])
+    assert all_muts & multi_set == multi_set, f"Not all covered mutations are in the possible mutations, something is wrong. " \
+                                      f"all_muts: {all_muts}, multi: {multi_set}"
+    others_set = all_muts - multi_set
 
-    chunk_size = int(len(others) / len(multi)) + 1
-    multi = list(multi)
-    others = list(others)
+    chunk_size = int(len(others_set) / len(multi_set)) + 1
+    multi = list(multi_set)
+    others = list(others_set)
 
     mut_chunks = []
 
+    ii: Union[int, list]
+    cc: Union[List[int], list]
     for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
+        ii = cast(int, ii)
         chosen = [multi[ii]] + cc
         mut_chunks.append(chosen)
 
@@ -1401,7 +1431,7 @@ def split_up_supermutant(multi, all_muts):
     return mut_chunks
 
 
-def split_up_supermutant_by_distance(mutation_ids: List[int]) -> Tuple[List[int], List[int]]:
+def split_up_supermutant_by_distance(mutation_ids: Set[int]) -> Tuple[List[int], List[int]]:
     m_ids = [int(mm) for mm in mutation_ids]
     chunk_1, chunk_2 = [], []
     for ii, m_id in enumerate(sorted(m_ids)):
@@ -1420,7 +1450,7 @@ HANDLED_RESULT_TYPES = set([
     'orig_timeout', 'orig_crash',
 ])
 
-def has_result(mut_id, results, to_search):
+def has_result(mut_id: int, results: List[Dict[str, Any]], to_search: List[str]) -> Optional[Dict[str, Any]]:
     unhandled_search_types = set(to_search) - HANDLED_RESULT_TYPES
     assert unhandled_search_types == set(), f'Unhandled search types: {unhandled_search_types}'
     unhandled_result_types = set(rr['result'] for rr in results) - HANDLED_RESULT_TYPES
@@ -1476,7 +1506,7 @@ def record_supermutant_multi(stats, mut_data, results, fuzzer, run_ctr, descript
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
-def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
+def handle_run_result(stats, prepared_runs, active_mutants, run_future, data) -> None:
     mut_data = data['mut_data']
     prog_bc = mut_data['prog_bc']
     prog = mut_data['prog']
@@ -1538,16 +1568,16 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
             record_supermutant_multi(stats, mut_data, results, data['fuzzer'], data['run_ctr'], 'killed_by_seed')
 
-            killed_mutants = set()
+            killed_mutants: set[int] = set()
             for mut_id in all_mutation_ids:
-                seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
-                timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+                num_seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
+                num_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
                 killed = has_result(mut_id, results, ['killed_by_seed'])
 
-                if killed or timeout:
+                if killed or num_timeout:
                     stats.new_seeds_executed(
                         EXEC_ID, prog, mut_id, data['run_ctr'], data['fuzzer'],
-                        seed_covered, timeout, total_time)
+                        num_seed_covered, num_timeout, total_time)
 
                     if killed is not None:
                         stats.new_seed_crashing_inputs(EXEC_ID, prog, mut_id, data['fuzzer'], [killed])
@@ -1648,7 +1678,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
 
                     # there can also be mutants that are killed but not part of a multi kill
                     # so just get every mutation that was killed and recheck all of them
-                    killed_mutants: set[int] = set(chain(*[rr['mutation_ids']
+                    killed_mutants = set(chain(*[rr['mutation_ids']
                                     for rr in results
                                     if rr['result'] in ['killed']]))
                     
@@ -1766,7 +1796,7 @@ def handle_run_result(stats, prepared_runs, active_mutants, run_future, data):
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
                     else:
                         # find and start the new supermutant with the remaining mutations
-                        cur_mutations: set[int] = set((int(m_id) for m_id in mut_data['mutation_ids']))
+                        cur_mutations = set((int(m_id) for m_id in mut_data['mutation_ids']))
                         assert len(cur_mutations & killed_mutants) == len(killed_mutants), "No mutations in common"
 
                         remaining_mutations = cur_mutations - killed_mutants
@@ -2010,7 +2040,7 @@ def handle_mutation_result(stats, prepared_runs, active_mutants, task_future, da
     active_mutants[mut_data['prog_bc']]['ref_cnt'] += len(fuzzer_runs)
 
 
-def wait_for_task(stats, tasks, cores, prepared_runs, active_mutants):
+def wait_for_task(stats, tasks: tasks_type, cores: CpuCores, prepared_runs, active_mutants):
     "Wait for a task to complete and process the result."
     if len(tasks) == 0:
         logger.info("WARN: Trying to wait for a task but there are none.")
@@ -2125,27 +2155,7 @@ def prepare_mutation(core_to_use, data):
             raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
 
 
-class CpuCores():
-    def __init__(self, num_cores):
-        self.cores: list[bool] =  [False]*num_cores
 
-    def try_reserve_core(self) -> Union[int, None]:
-        try:
-            idx = self.cores.index(False)
-            self.cores[idx] = True
-            return idx
-        except ValueError:
-            return None
-
-    def release_core(self, idx):
-        assert self.cores[idx] == True, "Trying to release an already free core"
-        self.cores[idx] = False
-
-    def has_free(self):
-        return any(cc is False for cc in self.cores)
-
-    def usage(self):
-        return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
 def print_run_start_msg(run_data):
@@ -2307,7 +2317,7 @@ def print_stats(ii, start_time, num_mutations):
     return True
 
 
-def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stats, start_time, num_runs, core, ii):
+def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks: tasks_type, executor, stats, start_time, num_runs, core: int, ii: int):
     # Check if any runs are prepared
     while True:
         run_data = prepared_runs.get_next()
@@ -2328,12 +2338,14 @@ def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks, executor, stat
     # A task is ready to start, get it and start the run.
     if run_data['type'] == 'fuzz':
         run_data = run_data['data']
+        run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         run_data['used_core'] = core
         print_run_start_msg(run_data)
         tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
     elif run_data['type'] == 'check':
         run_data = run_data['data']
+        run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         run_data['used_core'] = core
         print_run_start_msg(run_data)
@@ -2398,12 +2410,12 @@ def run_eval(progs, fuzzers, timeout, num_repeats, seed_base_dir, rerun, rerun_m
     cores = CpuCores(NUM_CPUS)
 
     # mutants in use
-    active_mutants = defaultdict(lambda: {'ref_cnt': 0, 'killed': False})
+    active_mutants: Dict[Path, Dict[str, Union[int, bool]]] = defaultdict(lambda: {'ref_cnt': 0, 'killed': False})
 
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
         # keep a list of all tasks
-        tasks = {}
+        tasks: tasks_type = {}
         # a list of currently prepared but not yet started runs
         prepared_runs = PreparedRuns()
         # start time
@@ -2489,7 +2501,7 @@ def get_seed_gathering_runs(fuzzers, progs, timeout, seed_base_dir, num_repeats)
     return all_runs
 
 
-def wait_for_seed_run(tasks, cores, all_runs):
+def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs):
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
 
@@ -2594,7 +2606,7 @@ def seed_gathering_run(run_data, docker_image):
         detach=True
     )
 
-    logs_queue = queue.Queue()
+    logs_queue: queue.Queue = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     fuzz_time = time.time()
@@ -2648,7 +2660,7 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-
+""""
 def split_seed_dir(prog, num_splits, seed_base_dir, base_dir):
     split_size = 256*4
     seed_dir = seed_base_dir/prog
@@ -2773,7 +2785,7 @@ def seed_checking_run(run_data, docker_image):
         detach=True
     )
 
-    logs_queue = queue.Queue()
+    logs_queue: queue.Queue = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     fuzz_time = time.time()
@@ -2893,7 +2905,7 @@ def check_seeds(progs, fuzzers, seed_base_dir):
                 shutil.copy2(ff, seed_dir)
 
     logger.info("seed checking done :)")
-
+"""
 
 def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, destination_dir):
     global should_run
@@ -2945,7 +2957,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
 
     logger.info("Copying seeds to target dir ...")
     all_runs_dir = destination_dir/"all_runs"
-    seed_runs = []
+    seed_runs: List[Dict[str, Any]] = []
     coverage_dirs = list(seed_coverage_base_shm_dir.glob("*"))
     for ii, seed_source in enumerate(coverage_dirs):
         logger.info(f"{ii+1} / {len(coverage_dirs)}")
@@ -2987,11 +2999,11 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
         logger.info(f"{ii+1} / {len(seed_runs)}")
         sr_fuzzer = sr['fuzzer']
         sr_prog = sr['prog']
-        sr_seed_dir = Path(sr['dir'])
-        sr_minimized_dir = all_minimized_runs_dir.joinpath(sr_seed_dir.relative_to(all_runs_dir))
+        sr_seed_path = Path(sr['dir'])
+        sr_minimized_dir = all_minimized_runs_dir.joinpath(sr_seed_path.relative_to(all_runs_dir))
         sr_minimized_dir.mkdir(parents=True)
         sr['minimized_dir'] = str(sr_minimized_dir)
-        minimize_seeds_one(minimize_shm_dir, sr_prog, sr_fuzzer, sr_seed_dir, sr_minimized_dir)
+        minimize_seeds_one(minimize_shm_dir, sr_prog, sr_fuzzer, sr_seed_path, sr_minimized_dir)
         minimized_files = list(Path(sr['minimized_dir']).glob("*"))
         sr['num_seeds_minimized'] = len(minimized_files)
 
@@ -3038,7 +3050,7 @@ def gather_seeds(progs, fuzzers, timeout, num_repeats, per_fuzzer, source_dir, d
             logger.info(f"{sr['prog']} {sr['fuzzer']} {sr['instance']}: "
                   f"created {sr['num_seeds_minimized']} seeds inputs covering {len(covered_mutations)} mutations")
 
-    runs_by_prog_fuzzer = defaultdict(list)
+    runs_by_prog_fuzzer: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for sr in seed_runs:
         runs_by_prog_fuzzer[(sr['prog'], sr['fuzzer'])].append(sr)
 
@@ -3234,7 +3246,7 @@ def seed_minimization_run(run_data, docker_image):
     del seeds_out
     del workdir
 
-    logs_queue = queue.Queue()
+    logs_queue: queue.Queue = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:
@@ -3418,7 +3430,7 @@ def seed_coverage_run(run_data, docker_image):
         detach=True
     )
 
-    logs_queue = queue.Queue()
+    logs_queue: queue.Queue = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:
@@ -3473,8 +3485,8 @@ def get_kcov(prog, seed_path, res_path):
         logger.info(f"Result path already exists, to avoid data loss, it is required that this dir does not exist: {res_path}")
         sys.exit(1)
 
-    with tempfile.TemporaryDirectory(dir=str(SHARED_DIR/"seed_coverage")) as active_dir:
-        active_dir = Path(active_dir)
+    with tempfile.TemporaryDirectory(dir=str(SHARED_DIR/"seed_coverage")) as ad:
+        active_dir = Path(ad)
 
         # copy seed_path dir into a tmp dir to make sure to not disturb the original seeds
         seed_in_tmp_dir = active_dir/"seeds_in"
@@ -3794,7 +3806,7 @@ def main():
         args.seed_dir, args.result_dir, args.instances)
     elif args.cmd == 'check_seeds':
         raise NotImplementedError("Check seeds is not implemented yet.")
-        check_seeds(args.progs, args.fuzzers)
+        # check_seeds(args.progs, args.fuzzers)
     elif args.cmd == 'gather_seeds':
         raise NotImplementedError("Gather seeds is not implemented yet.")
         gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,

@@ -112,7 +112,7 @@ def get_seed_dir(seed_base_dir, prog, fuzzer):
 class CoveredFile:
     def __init__(self, workdir, start_time) -> None:
         super().__init__()
-        self.found = {}
+        self.found: dict = {}
         self.host_path = SHARED_DIR/"covered"/workdir
         self.host_path.mkdir(parents=True)
         self.docker_path = IN_DOCKER_SHARED_DIR/"covered"/workdir
@@ -121,13 +121,13 @@ class CoveredFile:
     def check(self):
         cur_time = time.time() - self.start_time
         cur = set(int(cf.stem) for cf in self.host_path.glob("*"))
-        new = cur - self.found.keys()
-        new = {nn: cur_time for nn in new}
+        new_keys = cur - self.found.keys()
+        new = {nn: cur_time for nn in new_keys}
         self.found = {**self.found, **new}
         return new
 
-    def file_path(self):
-        return self.path
+    # def file_path(self):
+    #     return self.path
 
     def __del__(self):
         shutil.rmtree(self.host_path)
