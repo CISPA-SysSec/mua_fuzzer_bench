@@ -138,13 +138,18 @@ def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int],
             pass
 
 
-def run_exec_in_container(container: docker_container_type, raise_on_error: bool, cmd: List[str], exec_args: Optional[List[str]] = None, timeout: Optional[int] = None) -> Dict[str, Union[int, str, bool]]:
+def run_exec_in_container(
+        container: docker_container_type,
+        raise_on_error: bool,
+        cmd: List[str],
+        exec_args: Optional[List[str]] = None,
+        timeout: Optional[int] = None
+) -> Dict[str, Union[int, str, bool]]:
     """
     Start a short running command in the given container,
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
-    container_name = None
     if isinstance(container, str):
         container_name = container
     else:

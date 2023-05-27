@@ -15,7 +15,7 @@ import json
 import shutil
 import random
 import re
-from typing import Any, Dict, Generator, List, Set, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, Generator, List, Set, Optional, Tuple, Union, cast
 import concurrent.futures
 import shlex
 import platform
@@ -34,8 +34,8 @@ from docker_interaction import DockerLogStreamer, run_exec_in_container, start_m
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
-from helpers import CompileArg, Program, CoveredFile, dbg, fuzzer_container_tag, get_mut_base_bin, get_mut_base_dir, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
-    mutation_locations_path, mutation_prog_source_path, printable_m_id, shared_dir_to_docker, subject_container_tag, MutationData
+from helpers import CompileArg, Program, CoveredFile, fuzzer_container_tag, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
+    mutation_locations_path, mutation_prog_source_path, shared_dir_to_docker, subject_container_tag
 from db import ReadStatsDb, Stats
 
 # set up logging to file
@@ -87,27 +87,6 @@ class CoverageException(Exception):
         self.run = run
 
 
-class PreparedRuns():
-    def __init__(self) -> None:
-        self.runs: queue.Queue = queue.Queue()
-
-    def get_next(self) -> Optional[dict]:
-        try:
-            return self.runs.get_nowait()
-        except queue.Empty:
-            return None
-
-    def add(self, type_: str, data: Any) -> None:
-        if type_ in ['fuzz', 'check']:
-            logger.debug(f"Adding run, type: {type_} supermutant_id: {data['mut_data']['supermutant_id']} prog_bc: {data['mut_data']['prog_bc']} mutation_ids: {data['mut_data']['mutation_ids']}")
-        elif type_ == 'mut':
-            logger.debug(f"Adding run: {type_} {data[0]['supermutant_id']} {data[0]['mutation_ids']}")
-        else:
-            logger.debug(f"Adding run: {type_} {data}")
-
-        self.runs.put_nowait({'type': type_, 'data': data})
-
-
 class CpuCores():
     def __init__(self, num_cores: int):
         self.cores: list[bool] = [False]*num_cores
@@ -132,6 +111,122 @@ class CpuCores():
 
 
 @dataclass
+class MutationDataTodo:
+    pass
+
+
+@dataclass
+class SuperMutantUninitialized:
+    mutation_ids: List[int]
+    prog: Program
+    mutation_data: List[MutationDataTodo]
+
+
+@dataclass
+class SuperMutant:
+    supermutant_id: int
+    mutation_ids: set[int]
+    mutation_data: List[MutationDataTodo]
+    prog: Program
+    compile_args: List[CompileArg]
+    args: str
+    seed_base_dir: Path
+    previous_supermutant_ids: List[int] = field(default_factory=list)
+
+
+    def printable_m_id(self) -> str:
+        return f"S{self.supermutant_id}"
+
+
+    def get_mut_base_dir(self) -> Path:
+        return SHARED_DIR/"mut_base"/self.prog.name/self.printable_m_id()
+
+
+    def get_mut_base_bin(self) -> Path:
+        "Get the path to the bin that is the mutated base binary."
+        return self.get_mut_base_dir()/"mut_base"
+
+
+@dataclass
+class FuzzerRun:
+    mut_data: SuperMutant
+    fuzzer: str
+    run_ctr: int
+    eval_func: Callable
+    timeout: int
+    core: Optional[int] = field(default=None)
+
+    def set_core(self, core: int) -> None:
+        assert self.core is None
+        self.core = core
+
+
+@dataclass
+class MutationRun:
+    mut_data: SuperMutant
+    fuzzer_runs: List[FuzzerRun]
+    core: Optional[int] = field(default=None)
+
+    def set_core(self, core: int) -> None:
+        assert self.core is None
+        self.core = core
+
+
+@dataclass
+class CheckRun:
+    run_ctr: int
+    fuzzer: str
+    mut_data: SuperMutant
+    core: Optional[int] = field(default=None)
+
+    def set_core(self, core: int) -> None:
+        assert self.core is None
+        self.core = core
+
+
+@dataclass
+class PreparedRun:
+    run_type: str
+    data: FuzzerRun | MutationRun | CheckRun
+
+    def get_fuzz_run(self) -> FuzzerRun:
+        assert self.run_type == 'fuzz'
+        assert type(self.data) == FuzzerRun
+        return self.data
+
+    def get_mut_run(self) -> MutationRun:
+        assert self.run_type == 'mut'
+        assert type(self.data) == MutationRun
+        return self.data
+
+    def get_check_run(self) -> CheckRun:
+        assert self.run_type == 'mut'
+        assert type(self.data) == CheckRun
+        return self.data
+
+
+class PreparedRuns():
+    def __init__(self) -> None:
+        self.runs: queue.Queue = queue.Queue()
+
+    def get_next(self) -> Optional[PreparedRun]:
+        try:
+            return self.runs.get_nowait()
+        except queue.Empty:
+            return None
+
+    def add(self, type_: str, data: MutationRun) -> None:
+        if type_ in ['fuzz', 'check']:
+            logger.debug(f"Adding run, type: {type_} supermutant_id: {data.mut_data.supermutant_id} prog_bc: {data.mut_data.prog.orig_bc} mutation_ids: {data.mut_data.mutation_ids}")
+        elif type_ == 'mut':
+            logger.debug(f"Adding run: {type_} {data.mut_data.supermutant_id} {data.mut_data.mutation_ids}")
+        else:
+            logger.debug(f"Adding run: {type_} {data}")
+
+        self.runs.put_nowait(PreparedRun(type_, data))
+
+
+@dataclass
 class CheckResult:
     result: str
     results: List[Dict[str, Any]] = field(default_factory=list)
@@ -139,8 +234,8 @@ class CheckResult:
     returncode: Optional[int] = field(default=None)
     covered_file_seen: Optional[float] = field(default=None)
     timed_out: bool = field(default=False)
-    all_logs: List[str] = field(default_factory=list)
-    out: Optional[str] = field(default=None)
+    all_logs: str = field(default_factory=str)
+    out: str = field(default_factory=str)
 
 
 @dataclass
@@ -202,7 +297,7 @@ def base_eval_crash_check(input_dir, run_data: run_data_type, cur_time, testing)
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data['orig_bin']).relative_to(HOST_TMP_PATH)
     args = "@@"
     workdir = run_data['workdir']
-    docker_mut_bin = shared_dir_to_docker(get_mut_base_bin(mut_data))
+    docker_mut_bin = shared_dir_to_docker(mut_data.get_mut_base_bin())
     result_dir = Path(workdir)/'crash_check'
     result_dir.mkdir(parents=True, exist_ok=True)
     for rf in result_dir.glob("*"):
@@ -382,12 +477,12 @@ def base_eval(run_data: run_data_type, docker_image) -> RunResult:
     global should_run
     # extract used values
     mut_data = run_data['mut_data']
-    timeout: float = run_data['timeout']
+    timeout: int = run_data['timeout']
 
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
     run_ctr = run_data['run_ctr']
-    workdir_path = Path("mutator")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
+    workdir_path = Path("mutator")/prog/mut_data.printable_m_id()/fuzzer/str(run_ctr)
     workdir_host = SHARED_DIR/workdir_path
     workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
     run_data['workdir'] = workdir_host
@@ -575,7 +670,7 @@ def check_run(run_data: run_data_type):
     prog = mut_data['prog']
     fuzzer = run_data['fuzzer']
     run_ctr = run_data['run_ctr']
-    workdir_path = Path("mutator")/prog/printable_m_id(mut_data)/fuzzer/str(run_ctr)
+    workdir_path = Path("mutator")/prog/mut_data.printable_m_id()/fuzzer/str(run_ctr)
     workdir_host = SHARED_DIR/workdir_path
     workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
     run_data['workdir'] = workdir_host
@@ -625,13 +720,14 @@ def instrument_prog(container, prog_info: Program):
     # Compile the mutation location detector for the prog.
     bc_path = Path(prog_info.orig_bc)
     args = ["./run_mutation.py",
-            "-bc", prog_info.orig_bc,
+            "-bc", str(prog_info.orig_bc),
             *(["-cpp"] if prog_info.is_cpp else ['-cc']),  # specify compiler
             "--bc-args=" + build_compile_args(prog_info.bc_compile_args, '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info.bin_compile_args), '/home/mutator')]
     try:
         run_exec_in_container(container.name, True, args)
     except Exception as e:
+        logger.info("Printing files in all parent directories of the out dir.")
 
         parents = []
         while bc_path not in [Path('/'), Path('.')]:
@@ -639,8 +735,8 @@ def instrument_prog(container, prog_info: Program):
             bc_path = bc_path.parent
 
         for p in reversed(parents):
-            print(p)
-            print(run_exec_in_container(container.name, False, ["ls", "-la", p])['out'])
+            logger.info(p)
+            logger.info(run_exec_in_container(container.name, False, ["ls", "-la", str(p)])['out'])
 
         logger.warning(f"Exception during instrumenting (see above for files to out dir) {e}")
         raise e
@@ -1201,7 +1297,7 @@ def get_all_mutations(
         fuzzers: List[str],
         rerun_p: Optional[Path],
         rerun_mutations_p: Optional[Path]
-) -> List[Tuple[List[int], str, Program, List[MutationData]]]:
+) -> List[SuperMutantUninitialized]:
     if rerun_p:
         rerun = ReadStatsDb(rerun_p)
     else:
@@ -1213,8 +1309,8 @@ def get_all_mutations(
     else:
         rerun_mutations = None
 
-    all_mutations: List[Tuple[List[int], str, Program, List[MutationData]]] = []
-    # For all programs that can be done by our evaluation
+    all_mutations: List[SuperMutantUninitialized] = []
+    # For all programs that can to be done by the evaluation.
     for prog in progs:
         try:
             prog_info = PROGRAMS[prog]
@@ -1257,12 +1353,12 @@ def get_all_mutations(
         # If rerun_mutations is specified, collect those mutations
         if rerun_mutations is not None:
             mutations_dict = {int(mm[0]): mm for mm in mutations}
-            filtered_mutations = []
+            rerun_chosen_mutations = []
             rerun_mutations_for_prog = rerun_mutations[prog]['ids']
             for mtu in rerun_mutations_for_prog:
                 assert mtu in mutations_dict.keys(), "Can not find specified rerun mutation id in mutations for prog."
-                filtered_mutations.append(mutations_dict[mtu])
-            mutations = filtered_mutations
+                rerun_chosen_mutations.append(mutations_dict[mtu])
+            mutations = rerun_chosen_mutations
 
         logger.info(f"Found {len(mutations)} mutations for {prog}")
         for mut in mutations:
@@ -1323,14 +1419,17 @@ def get_all_mutations(
         for ii, sms in enumerate(supermutations):
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sms)
 
-        s_mutations = list((sm, prog, prog_info, mutation_data) for sm in supermutations)
+        s_mutations = list(
+            SuperMutantUninitialized(sm, prog_info, mutation_data)
+            for sm in supermutations
+        )
 
         all_mutations.extend(s_mutations)
         logger.info(f"Preparations for {prog} took: {time.time() - start:.2f} seconds")
 
     return all_mutations
 
-def sequence_mutations(all_mutations):
+def sequence_mutations(all_mutations: List[SuperMutantUninitialized]) -> List[SuperMutantUninitialized]:
     """
     Randomize order mutations in a way to get the most diverse mutations first.
     Diverse as in the mutations are from different progs and different types.
@@ -1361,7 +1460,16 @@ def sequence_mutations(all_mutations):
 
 # Generator that first collects all possible runs and adds them to stats.
 # Then yields all information needed to start a eval run
-def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_dir: Path, timeout: str, num_repeats: int, rerun: Optional[Path], rerun_mutations: Optional[Path]) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+def get_all_runs(
+    stats: Stats,
+    fuzzers: List[str],
+    progs: List[str],
+    seed_base_dir: Path,
+    timeout: str,
+    num_repeats: int,
+    rerun: Optional[Path],
+    rerun_mutations: Optional[Path]
+) -> List[MutationRun]:
     with start_mutation_container(None, 24*60*60) as mutator:
         all_mutations = get_all_mutations(stats, mutator, progs, seed_base_dir, fuzzers, rerun, rerun_mutations)
 
@@ -1380,7 +1488,11 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
         all_runs = []
 
         # Go through the mutations
-        for m_id, prog, prog_info, mutation_data in all_mutations:
+        for supermutant in all_mutations:
+            m_id = supermutant.mutation_ids
+            prog = supermutant.prog.name
+            prog_info = supermutant.prog
+            mutation_data = supermutant.mutation_data
             # Gather all data for a mutation
             # Arguments on how to execute the binary
             args = "@@"
@@ -1388,20 +1500,19 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
             # unmodified version
             orig_bin = str(Path(prog_info.orig_bin).absolute())
 
-            mut_data = {
-                'orig_bc': prog_info.orig_bc,
-                'compile_args': prog_info.bc_compile_args + prog_info.bin_compile_args,
-                'is_cpp': prog_info.is_cpp,
-                'args': args,
-                'prog': prog,
-                'dict': prog_info.dict_path,
-                'orig_bin': orig_bin,
-                'seed_base_dir': seed_base_dir,
-                'supermutant_id': stats.next_supermutant_id(),
-                'mutation_ids': [int(mm) for mm in m_id],
-                # 'mutation_ids': m_id,
-                'mutation_data': [mutation_data[int(mut_id)] for mut_id in m_id],
-            }
+            mut_data = SuperMutant(
+                supermutant_id=stats.next_supermutant_id(),
+                mutation_ids=set(int(mm) for mm in m_id),
+                mutation_data=[mutation_data[int(mut_id)] for mut_id in m_id],
+                prog=prog_info,
+                compile_args=prog_info.bc_compile_args + prog_info.bin_compile_args,
+                args=args,
+                seed_base_dir=seed_base_dir,
+                # orig_bc=prog_info.orig_bc,
+                # is_cpp=prog_info.is_cpp,
+                # dict_path=prog_info.dict_path,
+                # orig_bin=orig_bin,
+            )
 
             # For each fuzzer gather all information needed to start a eval run
             fuzzer_runs = []
@@ -1416,25 +1527,25 @@ def get_all_runs(stats: Stats, fuzzers: List[str], progs: List[str], seed_base_d
                 # fuzzer, which is a unique path for each run
                 for run_ctr in range(num_repeats):
                     # gather all info
-                    run_data = {
-                        'run_ctr': run_ctr,
-                        'fuzzer': fuzzer,
-                        'eval_func': eval_func,
-                        'timeout': int(timeout)*60,
-                        'mut_data': mut_data,
-                    }
+                    run_data = FuzzerRun(
+                        run_ctr=run_ctr,
+                        fuzzer=fuzzer,
+                        eval_func=eval_func,
+                        timeout=int(timeout)*60,
+                        mut_data=mut_data,
+                    )
                     # Add that run to the database, so that we know it is possible
                     stats.new_run(EXEC_ID, run_data)
                     fuzzer_runs.append(run_data)
             # Build our list of runs
-            all_runs.append((mut_data, fuzzer_runs))
+            all_runs.append(MutationRun(mut_data, fuzzer_runs))
 
     return all_runs
 
 
-def clean_up_mut_base_dir(mut_data: MutationData) -> None:
+def clean_up_mut_base_dir(mut_data: SuperMutant) -> None:
     # Remove mut base dir.
-    mut_base_dir = get_mut_base_dir(mut_data)
+    mut_base_dir = mut_data.get_mut_base_dir()
     try:
         shutil.rmtree(mut_base_dir)
     except OSError as err:
@@ -1532,7 +1643,9 @@ def copy_fuzzer_inputs(data) -> Path:
     return tmp_dir
 
 
-def record_supermutant_multi(stats, mut_data: MutationData, results, fuzzer, run_ctr, description) -> None:
+def record_supermutant_multi(
+    stats, mut_data: SuperMutant, results, fuzzer, run_ctr, description
+) -> None:
     multies = set()
     for rr in results:
         try:
@@ -1562,7 +1675,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
         trace = traceback.format_exc()
         mutation_ids = mut_data['mutation_ids']
         if len(mutation_ids) > 1:
-            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Run crashed, retrying with less mutations ...")
+            logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']} Run crashed, retrying with less mutations ...")
             chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
@@ -1570,7 +1683,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
             mut_id = list(mutation_ids)[0]
             stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], trace)
             stats.done_run('crashed', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
-            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}\n{trace}")
+            logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']}\n{trace}")
     else:
         result_type = run_result['result']
         if result_type == 'multiple':
@@ -1581,7 +1694,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
             multi = run_result['data']
             record_supermutant_multi(stats, mut_data, multi, data['fuzzer'], data['run_ctr'], 'multiple_result')
             multi_ids = set([tuple(sorted(mm['mutation_ids'])) for mm in multi if len(mm.get('mutation_ids', [])) > 1])
-            logger.info(f"= run (multi):  {mut_data['prog']}:{printable_m_id(mut_data)}:{multi_ids}")
+            logger.info(f"= run (multi):  {mut_data['prog']}:{mut_data.printable_m_id()}:{multi_ids}")
             all_mutations = mut_data['mutation_ids']
             new_supermutants = split_up_supermutant(multi_ids, all_mutations)
 
@@ -1590,7 +1703,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                 recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), sm)
 
         elif result_type == 'orig_timeout_by_seed':
-            logger.info(f"! orig timeout by seed! {printable_m_id(mut_data)}")
+            logger.info(f"! orig timeout by seed! {mut_data.printable_m_id()}")
             for mut_id in mut_data['mutation_ids']:
                 stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'],
                     'orig timeout by seed!!!\n' + str(run_result))
@@ -1601,7 +1714,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
             del mut_data['check_run_input_dir']
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data['mutation_ids'])
         elif result_type == 'killed_by_seed':
-            logger.info(f"= run (seed):   {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
+            logger.info(f"= run (seed):   {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']}")
 
             all_mutation_ids = set(mut_data['mutation_ids'])
             assert len(all_mutation_ids) > 0
@@ -1688,7 +1801,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                     run_ctr,
                     fuzzer)
 
-            logger.info(f"= run (killed): {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
+            logger.info(f"= run (killed): {prog}:{mut_data.printable_m_id()}:{data['fuzzer']}")
             # killed by the fuzzer (but not already by seeds)
             # but the run is not completed, filter out the killed mutations and try again with remaining
             total_time = run_result['total_time']
@@ -1829,12 +1942,12 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                                 results_str = '\n'.join(str(rr) for rr in results)
                                 msg = f'Killed run result but no killed mutations found:\n{results_str}\n{all_mutation_ids}'
                                 stats.run_crashed(EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'], msg)
-                                logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Killed run result but no killed mutations found.")
+                                logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']} Killed run result but no killed mutations found.")
                                 logger.debug(msg)
                                 stats.done_run('crashed_no_trigger', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
                         else:
                             # Multiple mutations, split up and try again
-                            logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']} Killed run result but no killed mutations found, retrying ...")
+                            logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']} Killed run result but no killed mutations found, retrying ...")
                             chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
                             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
@@ -1862,7 +1975,7 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                 mutation_ids = mut_data['mutation_ids']
                 assert len(mutation_ids) >= 1
                 if len(mutation_ids) > 1:
-                    logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
+                    logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']}")
                     logger.info(f"! rerunning in chunks (unexpected completion time: {actual_time}, expected: {expected_time})")
 
                     chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
@@ -1874,10 +1987,10 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
                     f"unexpected completion time\n\n{logs}")
 
                     stats.done_run('unexpected_completion_time', EXEC_ID, mut_data['prog'], mut_id, data['run_ctr'], data['fuzzer'])
-                    logger.info(f"= run ###:      {mut_data['prog']}:{printable_m_id(mut_data)}:{data['fuzzer']}")
+                    logger.info(f"= run ###:      {mut_data['prog']}:{mut_data.printable_m_id()}:{data['fuzzer']}")
                     logger.info(f"! unexpected completion time: {actual_time}, expected: {expected_time}")
             else:
-                logger.info(f"= run [+]:      {prog}:{printable_m_id(mut_data)}:{data['fuzzer']}")
+                logger.info(f"= run [+]:      {prog}:{mut_data.printable_m_id()}:{data['fuzzer']}")
                 total_time = run_result['total_time']
                 results = sorted(run_result['data'].values(), key=lambda x: x['time'])
                 del run_result
@@ -1957,14 +2070,6 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
             if remaining_files:
                 rem_f_str = '\n'.join(str(rr) for rr in remaining_files)
                 logger.info(f"Still contains files:\n{rem_f_str}")
-                try:
-                    dbg(run_result)
-                except:
-                    pass
-                try:
-                    dbg(trace)
-                except:
-                    pass
         except Exception as err:
             logger.info(err)
 
@@ -1981,22 +2086,22 @@ def handle_run_result(stats: Stats, prepared_runs, active_mutants, run_future, d
 def recompile_and_run(prepared_runs, data, new_supermutand_id: int, mutations: Set[int]) -> None:
     old_supermutant_id = data['mut_data'].supermutant_id
     data = copy.deepcopy(data)
-    mut_data: MutationData = data['mut_data']
+    mut_data: SuperMutant = data['mut_data']
     mut_data.mutation_ids = set(mutations)
     mut_data.supermutant_id = new_supermutand_id
     if mut_data.previous_supermutant_ids is None:
         mut_data.previous_supermutant_ids = [old_supermutant_id]
     else:
         mut_data.previous_supermutant_ids.append(old_supermutant_id)
-    workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+    workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
+    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, [data]))
 
 
 def recompile_and_run_from_mutation(
-    prepared_runs, mut_data: MutationData, fuzzer_runs, new_supermutand_id: int, mutations: Set[int]
+    prepared_runs, mut_data: SuperMutant, fuzzer_runs, new_supermutand_id: int, mutations: Set[int]
 ) -> None:
     old_supermutant_id = mut_data.supermutant_id
     mut_data = copy.deepcopy(mut_data)
@@ -2010,12 +2115,12 @@ def recompile_and_run_from_mutation(
 
     fuzzer_runs = copy.deepcopy(fuzzer_runs)
     for fr in fuzzer_runs:
-        workdir = SHARED_DIR/"mutator"/mut_data.prog/printable_m_id(mut_data)/fr['fuzzer']/str(fr['run_ctr'])
+        workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/fr['fuzzer']/str(fr['run_ctr'])
         workdir.mkdir(parents=True)
         fr['workdir'] = workdir
         fr['mut_data'] = mut_data
 
-    logger.info(f"! new supermutant (run): {printable_m_id(mut_data)} with {len(mut_data.mutation_ids)} mutations")
+    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', (mut_data, fuzzer_runs))
 
 
@@ -2026,10 +2131,10 @@ def start_check_run(prepared_runs, data, new_supermutand_id: int, mutations: Lis
     mut_data['supermutant_id'] = new_supermutand_id
     mut_data['check_run_input_dir'] = input_dir
     mut_data['check_run'] = True
-    workdir = SHARED_DIR/"mutator"/mut_data['prog']/printable_m_id(mut_data)/data['fuzzer']/str(data['run_ctr'])
+    workdir = SHARED_DIR/"mutator"/mut_data['prog']/mut_data.printable_m_id()/data['fuzzer']/str(data['run_ctr'])
     workdir.mkdir(parents=True)
     data['workdir'] = workdir
-    logger.info(f"! new supermutant (check): {printable_m_id(mut_data)} with {len(mut_data['mutation_ids'])} mutations")
+    logger.info(f"! new supermutant (check): {mut_data.printable_m_id()} with {len(mut_data['mutation_ids'])} mutations")
     prepared_runs.add('mut', (mut_data, [data]))
 
 
@@ -2049,7 +2154,7 @@ def handle_mutation_result(stats: Stats, prepared_runs, active_mutants, task_fut
             # If there was an exception for multiple mutations, retry with less.
             chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
 
-            logger.info(f"= mutation ###:      {mut_data['prog']}:{printable_m_id(mut_data)}\n"
+            logger.info(f"= mutation ###:      {mut_data['prog']}:{mut_data.printable_m_id()}\n"
                   f"rerunning in two chunks with len: {len(chunk_1)}, {len(chunk_2)}")
             logger.debug(trace)
             stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
@@ -2058,7 +2163,7 @@ def handle_mutation_result(stats: Stats, prepared_runs, active_mutants, task_fut
             recompile_and_run_from_mutation(prepared_runs, mut_data, copy.deepcopy(fuzzer_runs), stats.next_supermutant_id(), chunk_2)
         else:
             # Else record it.
-            logger.info(f"= mutation ###: crashed {prog}:{printable_m_id(mut_data)}")
+            logger.info(f"= mutation ###: crashed {prog}:{mut_data.printable_m_id()}")
             logger.debug(trace)
             stats.supermutation_preparation_crashed(EXEC_ID, prog, supermutant_id, trace)
             for mutation_id in mutation_ids:
@@ -2067,7 +2172,7 @@ def handle_mutation_result(stats: Stats, prepared_runs, active_mutants, task_fut
         # Nothing more to do.
         return
 
-    logger.info(f"= mutation [+]: {prog}:{printable_m_id(mut_data)}")
+    logger.info(f"= mutation [+]: {prog}:{mut_data.printable_m_id()}")
 
     if mut_data.get('check_run'):
         # remove flag that specifies the mutation should be used for a check run and start as check run
@@ -2110,7 +2215,14 @@ def wait_for_task(stats: Stats, tasks: tasks_type, cores: CpuCores, prepared_run
         raise ValueError("Unknown task type.")
 
 
-def check_crashing(testing_container: docker_container_type, input_dir: Path, orig_bin: Path, mut_bin: Path, args: str, result_dir: Path) -> Tuple[int, str, bool]:
+def check_crashing(
+    testing_container: docker_container_type,
+    input_dir: Path,
+    orig_bin: Path,
+    mut_bin: Path,
+    args: str,
+    result_dir: Path
+) -> Tuple[int, str, bool]:
     if not input_dir.is_dir():
         raise ValueError(f"Given seed dir path is not a directory: {input_dir}")
 
@@ -2141,12 +2253,12 @@ def check_crashing(testing_container: docker_container_type, input_dir: Path, or
     return returncode, out, timed_out #proc['returncode'], proc['out'], proc['timed_out']
 
 
-def prepare_mutation(core_to_use: int, data: mut_data_type) -> None:
+def prepare_mutation(core_to_use: int, data) -> None:
     assert len(data['mutation_ids']) > 0, "No mutations to prepare!"
 
     compile_args = data['compile_args']
     compile_args = build_compile_args(prepend_main_arg(compile_args), IN_DOCKER_WORKDIR)
-    mut_base_dir = get_mut_base_dir(data)
+    mut_base_dir = data.get_mut_base_dir()
     mut_base_dir.mkdir(parents=True, exist_ok=True)
 
     prog_bc_name = (Path(data['orig_bc']).with_suffix(f".ll.mut.bc").name)
@@ -2162,7 +2274,7 @@ def prepare_mutation(core_to_use: int, data: mut_data_type) -> None:
         compile_args = "-fsanitize=memory " + compile_args
 
     # get path for covered file and rm the file if it exists
-    covered = CoveredFile(Path("mut_base")/data['prog']/printable_m_id(data), time.time())
+    covered = CoveredFile(Path("mut_base")/data['prog']/data.printable_m_id(), time.time())
 
     with start_mutation_container(core_to_use, 60*60) as mutator, \
          start_testing_container(core_to_use, covered, 60*60) as testing:
@@ -2203,18 +2315,28 @@ def prepare_mutation(core_to_use: int, data: mut_data_type) -> None:
             raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
 
 
-def print_run_start_msg(run_data: run_data_type) -> None:
-    prog = run_data['mut_data']['prog']
-    mutation_id = printable_m_id(run_data['mut_data'])
-    fuzzer = run_data['fuzzer']
-    run_ctr = run_data['run_ctr']
-    logger.info(f"> run:          {prog}:{mutation_id}:{fuzzer}:{run_ctr}")
+def print_run_start_msg(run_data: FuzzerRun) -> None:
+    prog = run_data.mut_data.prog
+    supermutant_id = run_data.mut_data.printable_m_id()
+    fuzzer = run_data.fuzzer
+    run_ctr = run_data.run_ctr
+    logger.info(f"> run:          {prog}:{supermutant_id}:{fuzzer}:{run_ctr}")
 
 
-def print_mutation_prepare_start_msg(mut_data: MutationData, fuzzer_runs) -> bool:
-    fuzzers = " ".join(set(ff['fuzzer'] for ff in fuzzer_runs))
-    num_repeats = max(ff['run_ctr'] for ff in fuzzer_runs) + 1
-    logger.info(f"> mutation:     {mut_data.prog}:{printable_m_id(mut_data)} - {num_repeats} - {fuzzers} " +
+def print_check_start_msg(run_data: CheckRun) -> None:
+    prog = run_data.mut_data.prog
+    supermutant_id = run_data.mut_data.printable_m_id()
+    fuzzer = run_data.fuzzer
+    run_ctr = run_data.run_ctr
+    logger.info(f"> check:        {prog}:{supermutant_id}:{fuzzer}:{run_ctr}")
+
+
+def print_mutation_prepare_start_msg(super_mutant: MutationRun) -> bool:
+    mut_data = super_mutant.mut_data
+    fuzzer_runs = super_mutant.fuzzer_runs
+    fuzzers = " ".join(set(ff.fuzzer for ff in fuzzer_runs))
+    num_repeats = max(ff.run_ctr for ff in fuzzer_runs) + 1
+    logger.info(f"> mutation:     {mut_data.prog}:{mut_data.printable_m_id()} - {num_repeats} - {fuzzers} " +
                 f"(num muts: {len(mut_data.mutation_ids)})")
     return True
 
@@ -2362,48 +2484,59 @@ def print_stats(ii: int, start_time: float, num_mutations: int) -> bool:
     return True
 
 
-def start_next_task(prepared_runs: PreparedRuns, all_runs, tasks: tasks_type, executor, stats: Stats, start_time: float, num_runs: int, core: int, ii: int) -> int:
+def start_next_task(
+    prepared_runs: PreparedRuns,
+    all_runs: enumerate[MutationRun],
+    tasks: tasks_type,
+    executor,
+    stats: Stats,
+    start_time: float,
+    num_runs: int,
+    core: int,
+    ii: int
+) -> int:
     # Check if any runs are prepared
     while True:
-        run_data = prepared_runs.get_next()
-        if run_data is not None:
+        chosen_run_data = prepared_runs.get_next()
+        if chosen_run_data is not None:
             break
         else:
             # No runs are ready, prepare a mutation and all corresponding runs.
             try:
                 # Get the next mutant
-                ii, (mut_data, fuzzer_runs) = next(all_runs)
+                ii, mutant = next(all_runs)
 
-                prepared_runs.add('mut', (mut_data, fuzzer_runs))
+                prepared_runs.add('mut', mutant)
 
             except StopIteration:
                 # Done with all mutations and runs, break out of this loop and finish eval.
                 return False
 
     # A task is ready to start, get it and start the run.
-    if run_data['type'] == 'fuzz':
-        run_data = run_data['data']
-        run_data = cast(Dict[str, Any], run_data)
+    if chosen_run_data.run_type == 'fuzz':
+        fuzz_run_data = chosen_run_data.get_fuzz_run()
+        # run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
-        run_data['used_core'] = core
-        print_run_start_msg(run_data)
-        tasks[executor.submit(run_data['eval_func'], run_data, base_eval)] = ("run", core, run_data)
-    elif run_data['type'] == 'check':
-        run_data = run_data['data']
-        run_data = cast(Dict[str, Any], run_data)
+        fuzz_run_data.set_core(core)
+        print_run_start_msg(fuzz_run_data)
+        tasks[executor.submit(fuzz_run_data.eval_func, fuzz_run_data, base_eval)] = \
+            ("run", core, fuzz_run_data)
+    elif chosen_run_data.run_type == 'check':
+        check_run_data = chosen_run_data.get_check_run()
+        # run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
-        run_data['used_core'] = core
-        print_run_start_msg(run_data)
-        tasks[executor.submit(check_run, run_data)] = ("run", core, run_data)
-    elif run_data['type'] == 'mut':
-        mut_data, fuzzer_runs = run_data['data']
-        mut_data['used_core'] = core
-        stats.new_supermutant(EXEC_ID, mut_data)
-        print_mutation_prepare_start_msg(mut_data, fuzzer_runs)
-        tasks[executor.submit(prepare_mutation, core, mut_data)] = \
-            ("mutation", core, (ii, mut_data, fuzzer_runs))
+        check_run_data.set_core(core)
+        print_check_start_msg(check_run_data)
+        tasks[executor.submit(check_run, check_run_data)] = ("run", core, check_run_data)
+    elif chosen_run_data.run_type == 'mut':
+        mut_run_data = chosen_run_data.get_mut_run()
+        mut_run_data.set_core(core)
+        stats.new_supermutant(EXEC_ID, mut_run_data)
+        print_mutation_prepare_start_msg(mut_run_data)
+        tasks[executor.submit(prepare_mutation, core, mut_run_data)] = \
+            ("mutation", core, (ii, mut_run_data))
     else:
-        raise ValueError(f"Unknown run type: {run_data}")
+        raise ValueError(f"Unknown run type: {chosen_run_data}")
     print_stats(ii, start_time, num_runs)
     return ii
 
@@ -2466,9 +2599,11 @@ def run_eval(progs: List[str], fuzzers: List[str], timeout: str, num_repeats: in
         # start time
         start_time = time.time()
         # Get each run
-        all_runs_l = get_all_runs(stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rerun, rerun_mutations)
+        all_runs_l = get_all_runs(
+            stats, fuzzers, progs, seed_base_dir, timeout, num_repeats, rerun, rerun_mutations
+        )
         num_runs = len(all_runs_l)
-        all_runs = enumerate(all_runs_l)
+        all_runs: enumerate[MutationRun] = enumerate(all_runs_l)
         ii = 0
 
         while True:
@@ -3220,7 +3355,11 @@ def update_signal_list(signal_list: List[Tuple[Any, Set[int]]], to_delete: Set[i
     return result
 
 
-def measure_mutation_coverage(mutator: docker_container_type, prog_info: Program, seed_dir: Path) -> List[str]:
+def measure_mutation_coverage(
+    mutator: docker_container_type,
+    prog_info: Program,
+    seed_dir: Path
+) -> List[str]:
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals

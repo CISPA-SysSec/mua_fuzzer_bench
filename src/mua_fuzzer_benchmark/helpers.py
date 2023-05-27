@@ -42,19 +42,6 @@ class Program:
     dir_name: str
     san_is_built: bool = field(default=False, init=False)
 
-@dataclass
-class MutationData:
-    prog: str
-    supermutant_id: int
-    mutation_ids: Set[int]
-    previous_supermutant_ids: List[int]
-
-
-def dbg(*args, **kwargs):
-    caller = getframeinfo(stack()[1][0])
-    logger.debug(f"{caller.filename}:{caller.lineno}: {args} {kwargs}")
-    return args
-
 
 def fuzzer_container_tag(name: str) -> str:
     return f"mutation-testing-fuzzer-{name}"
@@ -82,19 +69,6 @@ def mutation_detector_path(prog_info: Program) -> Path:
 def mutation_prog_source_path(prog_info: Program) -> Path:
     orig_bc = Path(prog_info.orig_bc)
     return orig_bc.with_suffix('.ll.ll')
-
-
-def printable_m_id(mut_data: MutationData) -> str:
-    return f"S{mut_data.supermutant_id}"
-
-
-def get_mut_base_dir(data: MutationData) -> Path:
-    return SHARED_DIR/"mut_base"/data.prog/printable_m_id(data)
-
-
-def get_mut_base_bin(mut_data: MutationData) -> Path:
-    "Get the path to the bin that is the mutated base binary."
-    return get_mut_base_dir(mut_data)/"mut_base"
 
 
 def hash_file(file_path: Path) -> str:
