@@ -9,22 +9,22 @@ import time
 import traceback
 from typing import Any, Dict, Generator, List, Optional, Union
 
-import docker   # type: ignore
+import docker  # type: ignore
+from docker.models.containers import Container as Container # type: ignore
 
 from constants import HOST_TMP_PATH, IN_DOCKER_SHARED_DIR, IN_DOCKER_WORKDIR, MAX_RUN_EXEC_IN_CONTAINER_TIME, SHARED_DIR, SHOW_CONTAINER_LOGS
 from helpers import CoveredFile
 
 logger = logging.getLogger(__name__)
-docker_container_type = Any # docker has no typing stubs, so we just treat containers as Any
 
 
 class DockerLogStreamer(threading.Thread):
-    def __init__(self, q: Queue[Optional[str]], container: docker_container_type, *args, **kwargs):
+    def __init__(self, q: Queue[str], container: Container, *args: Any, **kwargs: Any):
         self.q = q
         self.container = container
         super().__init__(*args, **kwargs)
 
-    def run(self):
+    def run(self) -> None:
         def add_lines(lines: List[bytes]) -> None:
             for ll in lines:
                 line = ll.decode()
@@ -37,15 +37,15 @@ class DockerLogStreamer(threading.Thread):
         try:
             # keep getting logs
             add_lines(self.container.logs(stream=True))
-        except Exception as exc:
+        except Exception:
             error_message = traceback.format_exc()
             for line in error_message.splitlines():
                 self.q.put(line)
-        self.q.put(None)
+        # self.q.put(None)
 
 
 @contextlib.contextmanager
-def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout: int) -> Generator[docker_container_type, None, None]:
+def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout: int) -> Generator[Container, None, None]:
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -93,7 +93,7 @@ def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout
 
 
 @contextlib.contextmanager
-def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int], docker_run_kwargs=None) -> Generator[docker_container_type, None, None]:
+def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int], docker_run_kwargs: Optional[Dict[str, Any]]=None) -> Generator[Container, None, None]:
     # get access to the docker client to start the container
     docker_client = docker.from_env()
 
@@ -139,7 +139,7 @@ def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int],
 
 
 def run_exec_in_container(
-        container: docker_container_type,
+        container: Container,
         raise_on_error: bool,
         cmd: List[str],
         exec_args: Optional[List[str]] = None,

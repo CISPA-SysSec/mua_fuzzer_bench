@@ -7,17 +7,36 @@ import logging
 from pathlib import Path
 import shutil
 import time
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from eval import CommonRun, RunResult
 
 from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
 logger = logging.getLogger(__name__)
 
 
+DispatchFunctionArg = TypeVar('DispatchFunctionArg')
+DispatchFunctionRes = TypeVar('DispatchFunctionRes')
+
+eval_func_type = Callable[
+    [
+        DispatchFunctionArg,
+        Callable[[
+                DispatchFunctionArg,
+                str
+            ],
+            DispatchFunctionRes
+        ]
+    ],
+    DispatchFunctionRes
+]
+
 @dataclass
 class Fuzzer:
     name: str
-    eval_func: Callable
+    eval_func: eval_func_type
     queue_dir: str
     queue_ignore_files: List[str]
     crash_dir: str
@@ -124,15 +143,15 @@ def get_seed_dir(seed_base_dir: Path, prog: str, fuzzer: str) -> Path:
 
 
 class CoveredFile:
-    def __init__(self, workdir, start_time) -> None:
+    def __init__(self, workdir: Path, start_time: float) -> None:
         super().__init__()
-        self.found: dict = {}
+        self.found: Dict[int, float] = {}
         self.host_path = SHARED_DIR/"covered"/workdir
         self.host_path.mkdir(parents=True)
         self.docker_path = IN_DOCKER_SHARED_DIR/"covered"/workdir
         self.start_time = start_time
 
-    def check(self):
+    def check(self) -> Dict[int, float]:
         cur_time = time.time() - self.start_time
         cur = set(int(cf.stem) for cf in self.host_path.glob("*"))
         new_keys = cur - self.found.keys()
@@ -143,17 +162,15 @@ class CoveredFile:
     # def file_path(self):
     #     return self.path
 
-    def __del__(self):
+    def __del__(self) -> None:
         shutil.rmtree(self.host_path)
 
 
 def eval_dispatch_func(
-    run_data: Any,  # should be RunData but that causes a circular import
-    run_func: Callable,
-    crash_dir: str,
+    run_data: DispatchFunctionArg,
+    run_func: Callable[[DispatchFunctionArg, str], RunResult],
     container_tag: str
-):
-    run_data['crash_dir'] = crash_dir
+) -> RunResult:
     result = run_func(run_data, fuzzer_container_tag(container_tag))
     return result
 
@@ -178,7 +195,7 @@ def load_fuzzers() -> Dict[str, Fuzzer]:
         fuzzer_crash_dir = fuzzer_config["crash_dir"]
         partial_eval_func = partial(
             eval_dispatch_func,
-            crash_dir=fuzzer_crash_dir, container_tag=fuzzer_name
+            container_tag=fuzzer_name
         )
 
         fuzzers[fuzzer_name] = Fuzzer(
