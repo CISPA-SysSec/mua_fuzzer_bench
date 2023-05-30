@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Fuzzer:
+    name: str
     eval_func: Callable
     queue_dir: str
     queue_ignore_files: List[str]
@@ -146,7 +147,12 @@ class CoveredFile:
         shutil.rmtree(self.host_path)
 
 
-def eval_dispatch_func(run_data, run_func, crash_dir, container_tag):
+def eval_dispatch_func(
+    run_data: Any,  # should be RunData but that causes a circular import
+    run_func: Callable,
+    crash_dir: str,
+    container_tag: str
+):
     run_data['crash_dir'] = crash_dir
     result = run_func(run_data, fuzzer_container_tag(container_tag))
     return result
@@ -176,6 +182,7 @@ def load_fuzzers() -> Dict[str, Fuzzer]:
         )
 
         fuzzers[fuzzer_name] = Fuzzer(
+            name=fuzzer_name,
             eval_func=partial_eval_func,
             queue_dir=fuzzer_config["queue_dir"],
             queue_ignore_files=fuzzer_config["queue_ignore_files"],

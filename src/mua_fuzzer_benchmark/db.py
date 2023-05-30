@@ -301,7 +301,7 @@ class Stats():
         self.conn.commit()
 
     @connection
-    def new_mutation_type(self, c, mutation_type):
+    def new_mutation_type(self, c, mutation_type: Dict[str, Any]):
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO mutation_types VALUES (?, ?, ?, ?, ?, ?)',
             (
