@@ -114,7 +114,7 @@ class CpuCores():
 class Mutation:
     mutation_id: int
     prog: Program
-    data: Any
+    data: Dict[str, Any]
 
 
 @dataclass
@@ -203,11 +203,11 @@ class RunResult:
 
 @dataclass
 class CoveredResult:
-    supermutants: List[Set[int]]
+    supermutants: List[List[int]]
     covered_mutations: List[int]
-    covered_supermutants: List[Set[int]]
+    covered_supermutants: List[List[int]]
     not_covered: List[int]
-    not_covered_supermutants: List[Set[int]]
+    not_covered_supermutants: List[List[int]]
 
 
 @dataclass
@@ -215,7 +215,7 @@ class FuzzerRun:
     mut_data: SuperMutant
     fuzzer: Fuzzer
     run_ctr: int
-    eval_func: Callable[['FuzzerRun', Callable[['FuzzerRun', str], RunResult]], None]
+    eval_func: Callable[['FuzzerRun', Callable[['FuzzerRun', str], RunResult]], RunResult]
     timeout: int
     core: Optional[int] = field(default=None)
     workdir: Optional[Path] = field(default=None)
@@ -1374,7 +1374,7 @@ def get_supermutations_seed_reachable(
     covered_mutations = set(filter(lambda x: x in mut_data, covered_mutations))
             
     mutations_todo = sorted(list(covered_mutations), key=lambda mm: len(input_coverages[mm]), reverse=True)
-    supermutants = []
+    supermutants: list[list[int]] = []
 
     while mutations_todo:
         used_funcs = set()
@@ -1410,14 +1410,14 @@ def get_supermutations_seed_reachable(
         # nc_mut_per_instr[(funname, bb_name)].append(nc_mut) # 58
         nc_mut_per_instr[funname].append(nc_mut) # 479
 
-    not_covered_supermutants: List[Set[int]] = []
+    not_covered_supermutants: List[List[int]] = []
     while len(nc_mut_per_instr) > 0:
-        nc_supermutant: set[int] = set()
+        nc_supermutant: list[int] = []
         done_locs = []
         for loc in nc_mut_per_instr:
             nc_muts = nc_mut_per_instr[loc]
             try:
-                nc_supermutant.add(nc_muts.pop())
+                nc_supermutant.append(nc_muts.pop())
             except IndexError:
                 done_locs.append(loc)
             if len(nc_muts) == 0:
@@ -1429,9 +1429,9 @@ def get_supermutations_seed_reachable(
         for dl in done_locs:
             nc_mut_per_instr.pop(dl)
 
-        supermutant = list(sorted(nc_supermutant, reverse=True))
+        nc_supermutant_sorted = list(sorted(nc_supermutant, reverse=True))
 
-        not_covered_supermutants.append(supermutant)
+        not_covered_supermutants.append(nc_supermutant_sorted)
 
     logger.info(
         f"Generated {len(supermutants)} supermutants out of {len(covered_mutations)} " +
@@ -1457,9 +1457,9 @@ def get_supermutations_seed_reachable(
 
 def get_all_mutations(
         stats: Stats,
-        mutator,
+        mutator: Container,
         progs: List[str],
-        seed_base_dir,
+        seed_base_dir: Path,
         fuzzers: List[str],
         rerun_p: Optional[Path],
         rerun_mutations_p: Optional[Path]
@@ -1514,17 +1514,17 @@ def get_all_mutations(
             Mutation(
                 int(p['UID']),
                 prog=prog_info,
-                data=mutation_data
+                data=mutation_data[int(p['UID'])]
             )
             for p in mutation_data)
 
         # Remove mutations for functions that should not be mutated
         omit_functions = prog_info.omit_functions
-        mutations = [mm for mm in mutations if mm[3][int(mm[0])]['funname'] not in omit_functions]
+        mutations = [mm for mm in mutations if mm.data['funname'] not in omit_functions]
 
         # If rerun_mutations is specified, collect those mutations
         if rerun_mutations is not None:
-            mutations_dict = {int(mm[0]): mm for mm in mutations}
+            mutations_dict = {int(mm.mutation_id): mm for mm in mutations}
             rerun_chosen_mutations = []
             rerun_mutations_for_prog = rerun_mutations[prog]['ids']
             for mtu in rerun_mutations_for_prog:
@@ -1535,9 +1535,9 @@ def get_all_mutations(
         logger.info(f"Found {len(mutations)} mutations for {prog}")
         for mut in mutations:
             stats.new_mutation(EXEC_ID, {
-                'prog': mut[1],
-                'mutation_id': mut[0],
-                'mutation_data': mut[3][int(mut[0])],
+                'prog': mut.prog,
+                'mutation_id': mut.mutation_id,
+                'mutation_data': mut.data,
             })
 
         if FILTER_MUTATIONS:
@@ -1545,14 +1545,19 @@ def get_all_mutations(
             all_mutation_ids = set((p['UID'] for p in mutation_data))
             filtered_mutation_ids = set((int(m) for m in filtered_mutations))
             assert len(filtered_mutation_ids - all_mutation_ids) == 0, 'Filtered mutation ids contain ids not in all ids.'
-            mutations = list((int(mut_id), prog, prog_info, mutation_data) for mut_id in filtered_mutations)
+            mutations = list(
+                Mutation(
+                    mutation_id=int(mut_id),
+                    prog=prog_info,
+                    data=mutation_data)
+                for mut_id in filtered_mutations)
             logger.info(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         if rerun:
             supermutations_raw = rerun.get_supermutations(prog)
             expected_exec_id = supermutations_raw[0]['exec_id']
             len_sm = max(sm['super_mutant_id'] for sm in supermutations_raw) + 1
-            mutations_set = set(int(mm[0]) for mm in mutations)
+            mutations_set = set(int(mm.mutation_id) for mm in mutations)
             supermutations: List[List[int]] = [[] for _ in range(len_sm)]
             for sm in supermutations_raw:
                 assert sm['exec_id'] == expected_exec_id
@@ -1585,7 +1590,7 @@ def get_all_mutations(
         else:
             # supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
             covered = get_supermutations_seed_reachable(prog, prog_info, mutations, mutator, seed_base_dir, fuzzers)
-            stats.new_supermutant_graph_info(EXEC_ID, prog, CoveredResult)
+            stats.new_supermutant_graph_info(EXEC_ID, prog, covered)
 
 
         for ii, sms in enumerate(covered.supermutants):
@@ -1710,7 +1715,7 @@ def get_all_runs(
                     stats.new_run(EXEC_ID, run_data)
                     fuzzer_runs.append(run_data)
             # Build our list of runs
-            all_runs.append(MutationRun(mut_data, fuzzer_runs))
+            all_runs.append(MutationRun(mut_data=mut_data, check_run=False, fuzzer_runs=fuzzer_runs))
 
     return all_runs
 
@@ -1724,7 +1729,7 @@ def clean_up_mut_base_dir(mut_data: SuperMutant) -> None:
         logger.info(f"Could not clean up {mut_base_dir}: {err}")
 
 
-def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int]):
+def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int]) -> List[Set[int]]:
     """
     Split up the mutants listed in all_muts, into as many chunks as there are mutants in multi, making sure that the
     mutants listed in multi end up in different chunks. This can be used to split up a supermutant where
@@ -1742,12 +1747,14 @@ def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: List[int
 
     mut_chunks = []
 
-    ii: Union[int, list]
-    cc: Union[List[int], list]
+    ii: Union[int, Any]
+    cc: Union[List[int], Any]
     for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
         ii = cast(int, ii)
         chosen = [multi[ii]] + cc
-        mut_chunks.append(chosen)
+        chosen = cast(List[int], chosen)
+        chosen_set = set(chosen)
+        mut_chunks.append(chosen_set)
 
     logger.debug(f"{multi}\n{mut_chunks}\n{all_muts}")
     assert len(list(chain(*mut_chunks))) == len(all_muts), f"mut_chunks: {len(list(chain(*mut_chunks)))}, all_muts: {len(all_muts)}"
@@ -1810,6 +1817,7 @@ def collect_input_paths(workdir: Path, fuzzer_name: str) -> List[Path]:
 
 def copy_fuzzer_inputs(data: FuzzerRun) -> Path:
     tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
+    assert data.workdir is not None
     found_inputs = collect_input_paths(data.workdir, data.fuzzer.name)
     logger.warning(f"collect_input_paths: {found_inputs}")
     for fi in found_inputs:
@@ -1822,7 +1830,7 @@ def copy_fuzzer_inputs(data: FuzzerRun) -> Path:
 def record_supermutant_multi(
     stats: Stats,
     mut_data: SuperMutant,
-    results,
+    results: List[RunResultData],
     fuzzer: str,
     run_ctr: int,
     description: str
@@ -1830,10 +1838,10 @@ def record_supermutant_multi(
     multies = set()
     for rr in results:
         try:
-            mut_ids = tuple(sorted(rr['mutation_ids']))
+            mut_ids = sorted(rr.mutation_ids)
         except KeyError:
             continue
-        result = rr['result']
+        result = rr.result
         entry = (result, mut_ids)
         if len(mut_ids) > 1 and entry not in multies:
             multies.add(entry)
@@ -1852,7 +1860,7 @@ def handle_run_result(
     data: FuzzerRun
 ) -> None:
     mut_data = data.mut_data
-    prog_bc = mut_data.prog_bc
+    prog_bc = data.prog_bc
     prog = mut_data.prog
     try:
         # if there was no exception get the data
@@ -1868,8 +1876,8 @@ def handle_run_result(
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
         else:
             mut_id = list(mutation_ids)[0]
-            stats.run_crashed(EXEC_ID, mut_data.prog, mut_id, data.run_ctr, data.fuzzer, trace)
-            stats.done_run('crashed', EXEC_ID, mut_data.prog, mut_id, data.run_ctr, data.fuzzer)
+            stats.run_crashed(EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name, trace)
+            stats.done_run('crashed', EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name)
             logger.info(f"= run ###:      {mut_data.prog}:{mut_data.printable_m_id()}:{data.fuzzer}\n{trace}")
     else:
         result_type = run_result.result
@@ -1878,7 +1886,7 @@ def handle_run_result(
             if STOP_ON_MULTI:
                 raise ValueError("Got multiple.")
 
-            multi = run_result['data']
+            multi = run_result.data
             record_supermutant_multi(stats, mut_data, multi, data.fuzzer, data.run_ctr, 'multiple_result')
             multi_ids = set([tuple(sorted(mm['mutation_ids'])) for mm in multi if len(mm.get('mutation_ids', [])) > 1])
             logger.info(f"= run (multi):  {mut_data.prog}:{mut_data.printable_m_id()}:{multi_ids}")
@@ -3609,7 +3617,7 @@ def measure_mutation_coverage(
     mutator: Container,
     prog_info: Program,
     seed_dir: Path
-) -> List[str]:
+) -> List[int]:
     detector_path = mutation_detector_path(prog_info)
     args = "@@"
     # create tmp folder to where to put trigger signals
@@ -3630,7 +3638,7 @@ def measure_mutation_coverage(
             logger.info(f"Got returncode != 0: {run['returncode']}")
             raise CoverageException(run)
         # get a list of all mutation ids from triggered folder
-        mutation_ids = list(pp.stem for pp in Path(trigger_folder).glob("**/*"))
+        mutation_ids = list(int(pp.stem) for pp in Path(trigger_folder).glob("**/*"))
         return mutation_ids
 
 
@@ -3855,7 +3863,7 @@ def seed_coverage_run(run_data: KCovRun, docker_image: str) -> List[str]:
         detach=True
     )
 
-    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
+    logs_queue: queue.Queue[str] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:

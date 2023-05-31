@@ -3,10 +3,10 @@ import sqlite3
 import time
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
+from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from eval import MutationRun, SuperMutant
+    from eval import MutationRun, SuperMutant, FuzzerRun
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import Program, mutation_locations_path, mutation_prog_source_path
@@ -324,17 +324,17 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_run(self, c: sqlite3.Cursor, exec_id: str, data: Dict[str, Any]) -> None:
+    def new_run(self, c: sqlite3.Cursor, exec_id: str, data: FuzzerRun) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
-        mut_data = data['mut_data']
-        for m_id in mut_data['mutation_ids']:
+        mut_data = data.mut_data
+        for m_id in mut_data.mutation_ids:
             c.execute('INSERT INTO all_runs VALUES (?, ?, ?, ?, ?)',
                 (
                     exec_id,
-                    mut_data['prog'],
+                    mut_data.prog.name,
                     m_id,
-                    data['run_ctr'],
-                    data['fuzzer'],
+                    data.run_ctr,
+                    data.fuzzer.name,
                 )
             )
         self.conn.commit()
@@ -391,7 +391,7 @@ class Stats:
         c: sqlite3.Cursor,
         exec_id: str,
         mut_data: SuperMutant,
-        multi_groups: List[Tuple[Any, Any]],
+        multi_groups: Set[Tuple[str, List[int]]],
         fuzzer: str,
         run_ctr: int,
         description: str
