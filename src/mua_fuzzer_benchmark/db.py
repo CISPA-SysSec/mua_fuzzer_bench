@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from eval import MutationRun, SuperMutant, FuzzerRun
+    from eval import MutationRun, SuperMutant, FuzzerRun, RunResultData
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import Program, mutation_locations_path, mutation_prog_source_path
@@ -502,7 +502,7 @@ class Stats:
         prog: str,
         mutation_id: int,
         fuzzer: str,
-        cf_seen: Optional[int],
+        cf_seen: Optional[float],
         total_time: float
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
@@ -528,7 +528,7 @@ class Stats:
         mutation_id: int,
         run_ctr: int,
         fuzzer: str,
-        cf_seen: Optional[int],
+        cf_seen: Optional[float],
         timed_out: Optional[int],
         total_time: Optional[float]
     ) -> None:
@@ -548,7 +548,10 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_crashing_inputs(self, c: sqlite3.Cursor, crashing_inputs: List[Dict[str, Any]], exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str) -> None:
+    def new_crashing_inputs(
+        self, c: sqlite3.Cursor, crashing_inputs: List[RunResultData],
+        exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str
+    ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
@@ -577,7 +580,10 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_seed_crashing_inputs(self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int, fuzzer: str, crashing_inputs: List[Dict[str, Any]]) -> None:
+    def new_seed_crashing_inputs(
+        self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int,
+        fuzzer: str, crashing_inputs: List[RunResultData]
+    ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
             if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
