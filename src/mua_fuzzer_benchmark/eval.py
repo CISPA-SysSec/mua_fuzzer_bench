@@ -889,282 +889,282 @@ def instrument_prog(container: Container, prog_info: Program) -> None:
         raise e
 
 
-# Find functions that are reachable from fnA
-def find_reachable(call_g: callgraph_type_todo, fnA: str, reachable_keys: Optional[Dict[str, Set[str]]] = None, found_so_far: Optional[Set[str]] = None) -> Set[str]:
-    if reachable_keys is None: reachable_keys = {}
-    if found_so_far is None: found_so_far = set()
-
-    for fnB in call_g[fnA]:
-        if fnB in found_so_far: continue
-        found_so_far.add(fnB)
-        if fnB not in call_g: continue
-        if fnB in reachable_keys:
-            for k in reachable_keys[fnB]:
-                found_so_far.add(k)
-        else:
-            keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
-    return found_so_far
-
-
-# Produce reachability dictionary given the call graph.
-# For each function, we have functions that are reachable from it.
-def reachable_dict(call_g: callgraph_type_todo) -> Dict[str, Set[str]]:
-    reachable: Dict[str, Set[str]] = {}
-    for fnA in call_g:
-        keys = find_reachable(call_g, fnA, reachable)
-        reachable[fnA] = keys
-    return reachable
-
-
-# Given the call graph, produce the reachability matrix with 1 for reachability
-# and 0 for non reachability. The rows and columns are locations
-def reachability_matrix(call_g: callgraph_type_todo) -> Tuple[List[List[int]], List[str]]:
-    reachability = reachable_dict(call_g)
-    rows = list(reachability.keys())
-    columns = list(reachability.keys())
-    matrix = []
-    for i in rows:
-        matrix_row = []
-        for j in columns:
-            matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
-            #matrix_row.append(1 if i in reachability[j] or i == j else 0)
-        matrix.append(matrix_row)
-    return matrix, columns
-
-
-MAX_MUTATIONS_PER_FUNCTION = 10_000
-
-
-def location_mutation_mapping(mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Dict[str, List[int]]:
-    loc_mut_map = defaultdict(list)
-    for mut in mutations:
-        mut_id = mut[0]
-        fn = mut[3][int(mut_id)]['funname']
-        loc_mut_map[fn].append(mut_id)
-
-    # If a function has more than 10000 mutations, ignore that function.
-    for fn, muts in loc_mut_map.items():
-        if len(muts) > MAX_MUTATIONS_PER_FUNCTION:
-            logger.warning(f"WARN: got a function: ({fn}) with more than {MAX_MUTATIONS_PER_FUNCTION} mutations, skipping it.")
-            del loc_mut_map[fn]
-
-    return {**loc_mut_map}
-
-
-def load_call_graph(callgraph: List[Tuple[str, str]], mutants: Dict[str, Any]) -> callgraph_type_todo:
-    my_g: callgraph_type_todo = {}
-    called = {}
-
-    for fn_a, fn_b in callgraph:
-        if fn_a not in my_g: my_g[fn_a] = []
-        my_g[fn_a].append(fn_b)
-        called[fn_b] = True
-
-    # now, populate leaf functions
-    for b in called:
-        if b not in my_g: my_g[b] = []
-
-    unknown_funcs = [uf for uf in mutants.keys() if uf not in my_g]
-    # add unknown functions to callgraph
-    for uf in unknown_funcs:
-        my_g[uf] = []
-
-    # mark all unknown functions as reachable by all
-    for reachable in my_g.values():
-        reachable.extend(unknown_funcs)
-    return my_g
-
-
-def pop_mutant(mutants: Dict[str, List[int]], eligible: npt.NDArray[np.bool_], has_mutants: npt.NDArray[np.bool_],
-               indices: npt.NDArray[np.int_], matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any]) -> int:
-    """
-    Get a single mutant id, choice is made from the eligible locations and the corresponding
-    index of has_mutants is set to false if no mutants are remaining for that location.
-    """
-    chosen_idx = np.random.choice(indices[eligible])
-    chosen = keys[chosen_idx]
-    possible_mutants = mutants[str(chosen)]
-    mut = int(possible_mutants.pop())
-    if len(possible_mutants) == 0:
-        has_mutants[chosen_idx] = False
-    # Remove locations reachable by the chosen location from the eligible list
-    eligible &= np.invert(matrix[chosen_idx])
-    # Remove location that can reach the chosen location from the eligible list
-    eligible &= np.invert(matrix[:, chosen_idx])
-    return mut
-
-def find_supermutants(matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any], mutants: Dict[str, List[int]]) -> List[List[int]]:
-    indices = np.arange(len(matrix))
-    # for each index a boolean value if there are any mutants remaining
-    has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
-
-    # the selected supermutants, each entry contains a list of mutants that are a supermutant
-    supermutants = []
-
-    while True:
-        # continue while there are more mutants remaining
-        available = np.array(has_mutants, copy=True)
-        if not np.any(available):
-            break
-
-        # mutants selected for the current supermutant
-        selected_mutants = []
-
-        # while more mutants can be added to the supermutants
-        while np.any(available):
-            mutant = pop_mutant(
-                # these arguments are changed in the called function
-                mutants, available, has_mutants,
-                # these are not
-                indices, matrix, keys)
-            selected_mutants.append(mutant)
-            if len(selected_mutants) >= MAX_SUPERMUTANT_SIZE:
-                break
-
-        supermutants.append(selected_mutants)
-    return supermutants
-
-
-UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
-SPLITTER = " | "
-ENTRY = "LLVMFuzzerTestOneInput"
-
-def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    """
-    Takes the graph and augments it by replacing unknown function calls with all possible calls.
-    :param orig_graph:
-    :return:
-    """
-    result: Dict[str, List[str]] = dict()
-    mapping: Dict[Tuple[str, ...], List[str]] = dict()
-    # first get an initial mapping of the result set and collect all known functions
-    for key in orig_graph.keys():
-        key_splitted = key.split(SPLITTER)[:-1]
-        funname = key_splitted[0]
-        result[funname] = list()
-        mapped_head = mapping.setdefault(tuple(key_splitted[1:]), list())
-        mapped_head.append(funname)
-
-    #then go over all call locations and look for replacements for unknown calls and just add known calls
-    for function, call_locations in orig_graph.items():
-        new_locations = set()
-        for call_location in call_locations:
-            call_splitted = call_location.split(SPLITTER)[:-1]
-            called_funname = call_splitted[0]
-            if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
-                call_types = tuple(call_splitted[1:])
-                if call_types in mapping:
-                    for fun in mapping[call_types]:
-                        new_locations.add(fun)
-            else:
-                if called_funname in result:
-                    new_locations.add(called_funname)
-
-        result[function.split(SPLITTER)[0]] = list(new_locations)
-
-    return result
-
-
-def flatten_callgraph(call_graph: callgraph_type_todo) -> List[Tuple[str, str]]:
-    caller_callee = []
-    for caller, callees in call_graph.items():
-        for callee in callees:
-            caller_callee.append((caller, callee))
-    return caller_callee
-
-
-def get_callgraph(prog_info: Program, graph_info: Dict[str, callgraph_type_todo]) -> List[Tuple[str, str]]:
-    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
-        call_graph = json.load(f)
-    graph_info['call_graph_raw'] = call_graph
-    call_graph = augment_graph(call_graph)
-    graph_info['call_graph_augmented'] = call_graph
-    return flatten_callgraph(call_graph)
-
-
-def get_supermutations_callgraph(prog_info: Program, mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Tuple[List[List[int]], Dict[str, callgraph_type_todo]]:
-    graph_info: Dict[str, callgraph_type_todo] = {}
-    callgraph_flat = get_callgraph(prog_info, graph_info)
-
-    loc_mut_map = location_mutation_mapping(mutations)
-    callgraph = load_call_graph(callgraph_flat, loc_mut_map)
-
-    total_mutants =  sum([len(loc_mut_map[loc]) for loc in loc_mut_map])
-
-    matrix_ll, keys_l = reachability_matrix(callgraph)
-    entry_idx = keys_l.index(ENTRY)
-    assert entry_idx is not None
-    matrix = np.array(matrix_ll, dtype=bool)
-    reachable_mask = matrix[entry_idx]
-
-    # only get reachable functions
-    matrix = matrix[reachable_mask][:,reachable_mask]
-    keys = np.array(keys_l)
-    unreachable_functions = list(keys[~reachable_mask])
-    keys = keys[reachable_mask]
-
-
-    # assert that everything has the right dimensions
-    assert len(matrix) == len(matrix[0]) == len(keys)
-    logger.info(f'Computed reachability, there are {len(callgraph)} functions, {len(keys)} reachable.')
-
-    supermutants = find_supermutants(matrix, keys, loc_mut_map)
-
-    sum_reachable = sum((len(sm) for sm in supermutants))
-    min_reachable = min((len(sm) for sm in supermutants))
-    max_reachable = max((len(sm) for sm in supermutants))
-    avg_reachable = sum_reachable / len(supermutants)
-    logger.info(f"Supermutants for reachable {len(supermutants)} (reduction: {sum_reachable / len(supermutants):.2f}) containing mutations:\n"
-          f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
-
-    supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
-
-    # split up unreachable mutations making sure that no
-    # mutations in the same function are in the same supermutant
-    func_to_mutants = defaultdict(list)
-    for ff, mm in supermutants_unreachable:
-        func_to_mutants[ff].append(mm)
-
-    highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
-    new_supermutants: List[List[int]] = []
-    for ii in range(highest_mut_func_count):
-        new_supermutants.append([])
-
-    ii = 0
-    for ii in range(highest_mut_func_count):
-        for ff, mm_in_ff in func_to_mutants.items():
-            try:
-                mm = mm_in_ff.pop(0)
-            except IndexError:
-                continue
-            assert ff in unreachable_functions
-            new_supermutants[ii].append(mm)
-
-    # if the number of mutants per supermutant is too large, split them up
-    MAX_ACCEPTABLE_SUPERMUTANT_SIZE = 200
-    found_too_large = True
-    while found_too_large:
-        found_too_large = False
-        for ii in range(len(new_supermutants)):
-            ns = new_supermutants[ii]
-            if len(ns) > MAX_ACCEPTABLE_SUPERMUTANT_SIZE:
-                found_too_large = True
-                chunk_0 = ns[:len(ns)//2]
-                chunk_1 = ns[len(ns)//2:]
-                new_supermutants[ii] = chunk_0
-                new_supermutants.append(chunk_1)
-    
-    for ns in new_supermutants:
-        assert len(ns) <= MAX_ACCEPTABLE_SUPERMUTANT_SIZE
-
-    logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
-    supermutants.extend(new_supermutants)
-
-    # assert that all mutants have been assigned
-    assert total_mutants == sum((len(sm) for sm in supermutants)), f"{total_mutants} == {sum((len(sm) for sm in supermutants))}"
-    logger.info(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
-          f"a reduction by {total_mutants / len(supermutants):.2f} times.")
-    return supermutants, graph_info
+# # Find functions that are reachable from fnA
+# def find_reachable(call_g: callgraph_type_todo, fnA: str, reachable_keys: Optional[Dict[str, Set[str]]] = None, found_so_far: Optional[Set[str]] = None) -> Set[str]:
+#     if reachable_keys is None: reachable_keys = {}
+#     if found_so_far is None: found_so_far = set()
+#
+#     for fnB in call_g[fnA]:
+#         if fnB in found_so_far: continue
+#         found_so_far.add(fnB)
+#         if fnB not in call_g: continue
+#         if fnB in reachable_keys:
+#             for k in reachable_keys[fnB]:
+#                 found_so_far.add(k)
+#         else:
+#             keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
+#     return found_so_far
+#
+#
+# # Produce reachability dictionary given the call graph.
+# # For each function, we have functions that are reachable from it.
+# def reachable_dict(call_g: callgraph_type_todo) -> Dict[str, Set[str]]:
+#     reachable: Dict[str, Set[str]] = {}
+#     for fnA in call_g:
+#         keys = find_reachable(call_g, fnA, reachable)
+#         reachable[fnA] = keys
+#     return reachable
+#
+#
+# # Given the call graph, produce the reachability matrix with 1 for reachability
+# # and 0 for non reachability. The rows and columns are locations
+# def reachability_matrix(call_g: callgraph_type_todo) -> Tuple[List[List[int]], List[str]]:
+#     reachability = reachable_dict(call_g)
+#     rows = list(reachability.keys())
+#     columns = list(reachability.keys())
+#     matrix = []
+#     for i in rows:
+#         matrix_row = []
+#         for j in columns:
+#             matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
+#             #matrix_row.append(1 if i in reachability[j] or i == j else 0)
+#         matrix.append(matrix_row)
+#     return matrix, columns
+#
+#
+# MAX_MUTATIONS_PER_FUNCTION = 10_000
+#
+#
+# def location_mutation_mapping(mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Dict[str, List[int]]:
+#     loc_mut_map = defaultdict(list)
+#     for mut in mutations:
+#         mut_id = mut[0]
+#         fn = mut[3][int(mut_id)]['funname']
+#         loc_mut_map[fn].append(mut_id)
+#
+#     # If a function has more than 10000 mutations, ignore that function.
+#     for fn, muts in loc_mut_map.items():
+#         if len(muts) > MAX_MUTATIONS_PER_FUNCTION:
+#             logger.warning(f"WARN: got a function: ({fn}) with more than {MAX_MUTATIONS_PER_FUNCTION} mutations, skipping it.")
+#             del loc_mut_map[fn]
+#
+#     return {**loc_mut_map}
+#
+#
+# def load_call_graph(callgraph: List[Tuple[str, str]], mutants: Dict[str, Any]) -> callgraph_type_todo:
+#     my_g: callgraph_type_todo = {}
+#     called = {}
+#
+#     for fn_a, fn_b in callgraph:
+#         if fn_a not in my_g: my_g[fn_a] = []
+#         my_g[fn_a].append(fn_b)
+#         called[fn_b] = True
+#
+#     # now, populate leaf functions
+#     for b in called:
+#         if b not in my_g: my_g[b] = []
+#
+#     unknown_funcs = [uf for uf in mutants.keys() if uf not in my_g]
+#     # add unknown functions to callgraph
+#     for uf in unknown_funcs:
+#         my_g[uf] = []
+#
+#     # mark all unknown functions as reachable by all
+#     for reachable in my_g.values():
+#         reachable.extend(unknown_funcs)
+#     return my_g
+#
+#
+# def pop_mutant(mutants: Dict[str, List[int]], eligible: npt.NDArray[np.bool_], has_mutants: npt.NDArray[np.bool_],
+#                indices: npt.NDArray[np.int_], matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any]) -> int:
+#     """
+#     Get a single mutant id, choice is made from the eligible locations and the corresponding
+#     index of has_mutants is set to false if no mutants are remaining for that location.
+#     """
+#     chosen_idx = np.random.choice(indices[eligible])
+#     chosen = keys[chosen_idx]
+#     possible_mutants = mutants[str(chosen)]
+#     mut = int(possible_mutants.pop())
+#     if len(possible_mutants) == 0:
+#         has_mutants[chosen_idx] = False
+#     # Remove locations reachable by the chosen location from the eligible list
+#     eligible &= np.invert(matrix[chosen_idx])
+#     # Remove location that can reach the chosen location from the eligible list
+#     eligible &= np.invert(matrix[:, chosen_idx])
+#     return mut
+#
+# def find_supermutants(matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any], mutants: Dict[str, List[int]]) -> List[List[int]]:
+#     indices = np.arange(len(matrix))
+#     # for each index a boolean value if there are any mutants remaining
+#     has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
+#
+#     # the selected supermutants, each entry contains a list of mutants that are a supermutant
+#     supermutants = []
+#
+#     while True:
+#         # continue while there are more mutants remaining
+#         available = np.array(has_mutants, copy=True)
+#         if not np.any(available):
+#             break
+#
+#         # mutants selected for the current supermutant
+#         selected_mutants = []
+#
+#         # while more mutants can be added to the supermutants
+#         while np.any(available):
+#             mutant = pop_mutant(
+#                 # these arguments are changed in the called function
+#                 mutants, available, has_mutants,
+#                 # these are not
+#                 indices, matrix, keys)
+#             selected_mutants.append(mutant)
+#             if len(selected_mutants) >= MAX_SUPERMUTANT_SIZE:
+#                 break
+#
+#         supermutants.append(selected_mutants)
+#     return supermutants
+#
+#
+# UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
+# SPLITTER = " | "
+# ENTRY = "LLVMFuzzerTestOneInput"
+#
+# def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
+#     """
+#     Takes the graph and augments it by replacing unknown function calls with all possible calls.
+#     :param orig_graph:
+#     :return:
+#     """
+#     result: Dict[str, List[str]] = dict()
+#     mapping: Dict[Tuple[str, ...], List[str]] = dict()
+#     # first get an initial mapping of the result set and collect all known functions
+#     for key in orig_graph.keys():
+#         key_splitted = key.split(SPLITTER)[:-1]
+#         funname = key_splitted[0]
+#         result[funname] = list()
+#         mapped_head = mapping.setdefault(tuple(key_splitted[1:]), list())
+#         mapped_head.append(funname)
+#
+#     #then go over all call locations and look for replacements for unknown calls and just add known calls
+#     for function, call_locations in orig_graph.items():
+#         new_locations = set()
+#         for call_location in call_locations:
+#             call_splitted = call_location.split(SPLITTER)[:-1]
+#             called_funname = call_splitted[0]
+#             if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
+#                 call_types = tuple(call_splitted[1:])
+#                 if call_types in mapping:
+#                     for fun in mapping[call_types]:
+#                         new_locations.add(fun)
+#             else:
+#                 if called_funname in result:
+#                     new_locations.add(called_funname)
+#
+#         result[function.split(SPLITTER)[0]] = list(new_locations)
+#
+#     return result
+#
+#
+# def flatten_callgraph(call_graph: callgraph_type_todo) -> List[Tuple[str, str]]:
+#     caller_callee = []
+#     for caller, callees in call_graph.items():
+#         for callee in callees:
+#             caller_callee.append((caller, callee))
+#     return caller_callee
+#
+#
+# def get_callgraph(prog_info: Program, graph_info: Dict[str, callgraph_type_todo]) -> List[Tuple[str, str]]:
+#     with open(mutation_locations_graph_path(prog_info), 'rt') as f:
+#         call_graph = json.load(f)
+#     graph_info['call_graph_raw'] = call_graph
+#     call_graph = augment_graph(call_graph)
+#     graph_info['call_graph_augmented'] = call_graph
+#     return flatten_callgraph(call_graph)
+#
+#
+# def get_supermutations_callgraph(prog_info: Program, mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Tuple[List[List[int]], Dict[str, callgraph_type_todo]]:
+#     graph_info: Dict[str, callgraph_type_todo] = {}
+#     callgraph_flat = get_callgraph(prog_info, graph_info)
+#
+#     loc_mut_map = location_mutation_mapping(mutations)
+#     callgraph = load_call_graph(callgraph_flat, loc_mut_map)
+#
+#     total_mutants =  sum([len(loc_mut_map[loc]) for loc in loc_mut_map])
+#
+#     matrix_ll, keys_l = reachability_matrix(callgraph)
+#     entry_idx = keys_l.index(ENTRY)
+#     assert entry_idx is not None
+#     matrix = np.array(matrix_ll, dtype=bool)
+#     reachable_mask = matrix[entry_idx]
+#
+#     # only get reachable functions
+#     matrix = matrix[reachable_mask][:,reachable_mask]
+#     keys = np.array(keys_l)
+#     unreachable_functions = list(keys[~reachable_mask])
+#     keys = keys[reachable_mask]
+#
+#
+#     # assert that everything has the right dimensions
+#     assert len(matrix) == len(matrix[0]) == len(keys)
+#     logger.info(f'Computed reachability, there are {len(callgraph)} functions, {len(keys)} reachable.')
+#
+#     supermutants = find_supermutants(matrix, keys, loc_mut_map)
+#
+#     sum_reachable = sum((len(sm) for sm in supermutants))
+#     min_reachable = min((len(sm) for sm in supermutants))
+#     max_reachable = max((len(sm) for sm in supermutants))
+#     avg_reachable = sum_reachable / len(supermutants)
+#     logger.info(f"Supermutants for reachable {len(supermutants)} (reduction: {sum_reachable / len(supermutants):.2f}) containing mutations:\n"
+#           f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
+#
+#     supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
+#
+#     # split up unreachable mutations making sure that no
+#     # mutations in the same function are in the same supermutant
+#     func_to_mutants = defaultdict(list)
+#     for ff, mm in supermutants_unreachable:
+#         func_to_mutants[ff].append(mm)
+#
+#     highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
+#     new_supermutants: List[List[int]] = []
+#     for ii in range(highest_mut_func_count):
+#         new_supermutants.append([])
+#
+#     ii = 0
+#     for ii in range(highest_mut_func_count):
+#         for ff, mm_in_ff in func_to_mutants.items():
+#             try:
+#                 mm = mm_in_ff.pop(0)
+#             except IndexError:
+#                 continue
+#             assert ff in unreachable_functions
+#             new_supermutants[ii].append(mm)
+#
+#     # if the number of mutants per supermutant is too large, split them up
+#     MAX_ACCEPTABLE_SUPERMUTANT_SIZE = 200
+#     found_too_large = True
+#     while found_too_large:
+#         found_too_large = False
+#         for ii in range(len(new_supermutants)):
+#             ns = new_supermutants[ii]
+#             if len(ns) > MAX_ACCEPTABLE_SUPERMUTANT_SIZE:
+#                 found_too_large = True
+#                 chunk_0 = ns[:len(ns)//2]
+#                 chunk_1 = ns[len(ns)//2:]
+#                 new_supermutants[ii] = chunk_0
+#                 new_supermutants.append(chunk_1)
+#
+#     for ns in new_supermutants:
+#         assert len(ns) <= MAX_ACCEPTABLE_SUPERMUTANT_SIZE
+#
+#     logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
+#     supermutants.extend(new_supermutants)
+#
+#     # assert that all mutants have been assigned
+#     assert total_mutants == sum((len(sm) for sm in supermutants)), f"{total_mutants} == {sum((len(sm) for sm in supermutants))}"
+#     logger.info(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
+#           f"a reduction by {total_mutants / len(supermutants):.2f} times.")
+#     return supermutants, graph_info
 
 
 def indirect_call_info(graph: callgraph_type_todo) -> Dict[Tuple[str, ...], List[str]]:
@@ -1543,7 +1543,7 @@ def get_all_mutations(
                 Mutation(
                     mutation_id=int(mut_id),
                     prog=prog_info,
-                    data=mutation_data)
+                    data=mutation_data[int(mut_id)])
                 for mut_id in filtered_mutations)
             logger.info(f"After filtering: found {len(mutations)} mutations for {prog}")
 
@@ -1585,7 +1585,6 @@ def get_all_mutations(
             # supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
             covered = get_supermutations_seed_reachable(prog, prog_info, mutations, mutator, seed_base_dir, fuzzers)
             stats.new_supermutant_graph_info(EXEC_ID, prog, covered)
-
 
         for ii, sms in enumerate(covered.supermutants):
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sms)
@@ -3043,7 +3042,7 @@ def seed_gathering_run(run_data: SeedRun, docker_image: str) -> SeedRunResult:
         detach=True
     )
 
-    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
+    logs_queue: queue.Queue[str] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     fuzz_time = time.time()
@@ -3075,12 +3074,7 @@ def seed_gathering_run(run_data: SeedRun, docker_image: str) -> SeedRunResult:
         # container is dead just continue maybe it worked
         pass
 
-    all_logs: List[str] = []
-    while True:
-        line = logs_queue.get()
-        if line is None:
-            break
-        all_logs.append(line)
+    all_logs = get_logs(logs_queue)
 
     if should_run and time.time() - timeout < start_time:
         # The runtime is less than the timeout, something went wrong.
@@ -3689,7 +3683,7 @@ def seed_minimization_run(run_data: MinimizeSeedRun, docker_image: str) -> Dict[
     del seeds_out
     del workdir
 
-    logs_queue: queue.Queue[Optional[str]] = queue.Queue()
+    logs_queue: queue.Queue[str] = queue.Queue()
     DockerLogStreamer(logs_queue, container).start()
 
     while should_run:
@@ -3720,12 +3714,7 @@ def seed_minimization_run(run_data: MinimizeSeedRun, docker_image: str) -> Dict[
         # container is dead just continue maybe it worked
         pass
 
-    all_logs = []
-    while True:
-        line = logs_queue.get()
-        if line is None:
-            break
-        all_logs.append(line)
+    all_logs = get_logs(logs_queue)
 
     return {
         'all_logs': all_logs,
@@ -3896,12 +3885,7 @@ def seed_coverage_run(run_data: KCovRun, docker_image: str) -> List[str]:
         # container is dead just continue maybe it worked
         pass
 
-    all_logs = []
-    while True:
-        line = logs_queue.get()
-        if line is None:
-            break
-        all_logs.append(line)
+    all_logs = get_logs(logs_queue)
 
     return all_logs
 
