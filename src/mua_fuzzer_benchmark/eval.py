@@ -1356,18 +1356,18 @@ def get_supermutations_seed_reachable(
 ) -> CoveredResult:
     MAX_SM_SIZE = 200
 
-    mut_data = {mm[0]: mm[3][mm[0]] for mm in mutations}
+    mut_data = {mm.mutation_id: mm.data for mm in mutations}
 
-    covered_mutations = set()
+    covered_mutations: set[int] = set()
     input_coverages: Dict[int, Set[int]] = defaultdict(set)
     for fuzzer in fuzzers:
         seeds = get_seed_dir(seed_base_dir, prog, fuzzer)
         seed_covered_mutations = measure_mutation_coverage_per_file(mutator_container, prog_info, seeds)
-        for scv in seed_covered_mutations.values():
-            scv = set(scv)
-            covered_mutations |= scv
-            for mm in scv:
-                input_coverages[mm] |= scv
+        for sc in seed_covered_mutations.values():
+            set_sc = set(sc)
+            covered_mutations |= set_sc
+            for mm in set_sc:
+                input_coverages[mm] |= set_sc
 
     # some mutations are in omitted functions, however, this is not respected in the coverage measurement
     # do this filtering now
@@ -1398,7 +1398,7 @@ def get_supermutations_seed_reachable(
         
         supermutants.append(supermutant)
 
-    all_mutations = set(mm[0] for mm in mutations)
+    all_mutations = set(mm.mutation_id for mm in mutations)
     not_covered_mutations = all_mutations - covered_mutations
 
     nc_mut_per_instr = defaultdict(list)
@@ -1410,27 +1410,26 @@ def get_supermutations_seed_reachable(
         # nc_mut_per_instr[(funname, bb_name)].append(nc_mut) # 58
         nc_mut_per_instr[funname].append(nc_mut) # 479
 
-    not_covered_supermutants = []
+    not_covered_supermutants: List[Set[int]] = []
     while len(nc_mut_per_instr) > 0:
-        supermutant = []
+        nc_supermutant: set[int] = set()
         done_locs = []
         for loc in nc_mut_per_instr:
             nc_muts = nc_mut_per_instr[loc]
             try:
-                supermutant.append(nc_muts.pop())
+                nc_supermutant.add(nc_muts.pop())
             except IndexError:
                 done_locs.append(loc)
             if len(nc_muts) == 0:
                 done_locs.append(loc)
 
-            if len(supermutant) >= MAX_SM_SIZE:
+            if len(nc_supermutant) >= MAX_SM_SIZE:
                 break
 
         for dl in done_locs:
             nc_mut_per_instr.pop(dl)
 
-        # Order in reversed
-        supermutant = list(sorted(supermutant, reverse=True))
+        supermutant = list(sorted(nc_supermutant, reverse=True))
 
         not_covered_supermutants.append(supermutant)
 
