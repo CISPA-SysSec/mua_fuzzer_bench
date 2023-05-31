@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from eval import MutationRun
+    from eval import MutationRun, SuperMutant
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import Program, mutation_locations_path, mutation_prog_source_path
@@ -386,17 +386,26 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_supermutant_multi(self, c: sqlite3.Cursor, exec_id: str, mut_data: MutationRun, multi_groups: List[Tuple[Any, Any]], fuzzer: str, run_ctr: int, description: str) -> None:
+    def new_supermutant_multi(
+        self,
+        c: sqlite3.Cursor,
+        exec_id: str,
+        mut_data: SuperMutant,
+        multi_groups: List[Tuple[Any, Any]],
+        fuzzer: str,
+        run_ctr: int,
+        description: str
+    ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for group_id, (result, multi) in enumerate(multi_groups):
             for m_id in multi:
                 c.execute('INSERT INTO super_mutants_multi VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
-                        mut_data.mut_data.prog.name,
+                        mut_data.prog.name,
                         run_ctr,
                         fuzzer,
-                        mut_data.mut_data.supermutant_id,
+                        mut_data.supermutant_id,
                         result,
                         group_id,
                         m_id,
@@ -485,7 +494,17 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_run_executed(self, c: sqlite3.Cursor, exec_id: str, run_ctr: int, prog: str, mutation_id: int, fuzzer: str, cf_seen: int, total_time: float) -> None:
+    def new_run_executed(
+        self,
+        c: sqlite3.Cursor,
+        exec_id: str,
+        run_ctr: int,
+        prog: str,
+        mutation_id: int,
+        fuzzer: str,
+        cf_seen: Optional[int],
+        total_time: float
+    ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO executed_runs VALUES (?, ?, ?, ?, ?, ?, ?)',
             (
@@ -501,7 +520,18 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_seeds_executed(self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str, cf_seen: int, timed_out: int, total_time: float) -> None:
+    def new_seeds_executed(
+        self,
+        c: sqlite3.Cursor,
+        exec_id: str,
+        prog: str,
+        mutation_id: int,
+        run_ctr: int,
+        fuzzer: str,
+        cf_seen: Optional[int],
+        timed_out: Optional[int],
+        total_time: Optional[float]
+    ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO executed_seeds VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             (
@@ -573,7 +603,7 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def run_crashed(self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: str, run_ctr: int, fuzzer: str, trace: str) -> None:
+    def run_crashed(self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str, trace: str) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO run_crashed VALUES (?, ?, ?, ?, ?, ?)',
             (

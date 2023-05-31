@@ -10,7 +10,7 @@ import time
 from typing import Callable, Dict, List, Optional, TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from eval import CommonRun, RunResult
+    from eval import FuzzerRun, RunResult
 
 from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
 
@@ -36,7 +36,7 @@ eval_func_type = Callable[
 @dataclass
 class Fuzzer:
     name: str
-    eval_func: eval_func_type
+    eval_func: eval_func_type[FuzzerRun, RunResult]
     queue_dir: str
     queue_ignore_files: List[str]
     crash_dir: str
