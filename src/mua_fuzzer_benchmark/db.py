@@ -4,7 +4,7 @@ import time
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
-from data_types import Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CrashingInput, CoveredResult
+from data_types import InitialSuperMutant, Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CrashingInput, CoveredResult
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import mutation_locations_path, mutation_prog_source_path
@@ -414,7 +414,7 @@ class Stats:
     def new_mutation(self, c: sqlite3.Cursor, exec_id: str, data: Mutation) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
 
-        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
                 data.prog.name,
@@ -651,39 +651,39 @@ class Stats:
 class ReadStatsDb():
     def __init__(self, db_path: Path):
         super().__init__()
-        self.db = sqlite3.connect(str(db_path))
+        self.db = sqlite3.connect(db_path)
 
-    def get_bc_file_content(self, prog: str) -> str:
+    def get_bc_file_content(self, prog: str) -> bytes:
         c = self.db.cursor()
         res_cur = c.execute('select orig_bc_file_data from progs where prog = ?', (prog,))
-        res = [r for r in res_cur]
+        res: List[List[bytes]] = [r for r in res_cur] # type: ignore
         assert len(res) == 1
-        return cast(str, res[0][0])
+        return res[0][0]
 
     def get_mutation_locations_content(self, prog: str) -> str:
         c = self.db.cursor()
         res_cur = c.execute('select mutation_locations_data from progs where prog = ?', (prog,))
-        res = [r for r in res_cur]
+        res: List[List[str]] = [r for r in res_cur] # type: ignore
         assert len(res) == 1
-        return cast(str, res[0][0])
+        return res[0][0]
 
     def get_prog_source_content(self, prog: str) -> str:
         c = self.db.cursor()
         res_cur = c.execute('select prog_source_file_data from progs where prog = ?', (prog,))
-        res = [r for r in res_cur]
+        res: List[List[str]] = [r for r in res_cur] # type: ignore
         assert len(res) == 1
-        return cast(str, res[0][0])
+        return res[0][0]
 
-    def get_supermutations(self, prog: str) -> List[Dict[str, Any]]:
+    def get_supermutations(self, prog: str) -> List[InitialSuperMutant]:
         c = self.db.cursor()
         res_cur = c.execute('select * from initial_super_mutants where prog = ?', (prog,))
-        res = [
-            {
-                'exec_id': r[0],
-                'prog': r[1],
-                'super_mutant_id': r[2],
-                'mutation_id': r[3],
-            }
-            for r in res_cur
+        res: List[List[str]] = [r for r in res_cur] # type: ignore
+        return [
+            InitialSuperMutant(
+                exec_id=int(r[0]),
+                prog=str(r[1]),
+                super_mutant_id=int(r[2]),
+                mutation_id=int(r[3]),
+            )
+            for r in res
         ]
-        return res

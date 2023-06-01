@@ -7,10 +7,9 @@ import subprocess
 import threading
 import time
 import traceback
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, ParamSpec, Union, no_type_check, cast
 
-import docker  # type: ignore
-from docker.models.containers import Container as Container # type: ignore
+import docker
 
 from constants import HOST_TMP_PATH, IN_DOCKER_SHARED_DIR, IN_DOCKER_WORKDIR, MAX_RUN_EXEC_IN_CONTAINER_TIME, SHARED_DIR, SHOW_CONTAINER_LOGS
 from helpers import CoveredFile
@@ -18,11 +17,61 @@ from helpers import CoveredFile
 logger = logging.getLogger(__name__)
 
 
+class Container:
+    inner: docker.models.containers.Container # type: ignore
+    
+    def __init__(self,
+        image: str,
+        args: List[str],
+        /,
+        log_config: Dict[str, str],
+        **kwargs: object
+    ) -> None:
+        
+        docker_client = docker.from_env() # type: ignore
+
+        docker_log_config = docker.types.LogConfig( # type: ignore
+            type=docker.types.LogConfig.types.JSON, # type: ignore
+            config=log_config
+        )
+
+        self.inner = docker_client.containers.run(  # type: ignore
+            image=image,
+            args=args,
+            log_config=docker_log_config, # type: ignore
+            **kwargs
+        )
+
+    @property
+    def name(self) -> str:
+        return self.inner.name # type: ignore
+
+    @property
+    def status(self) -> str:
+        return self.inner.status # type: ignore
+
+    def kill(self, signal: int = 9) -> None:
+        # default signal: SIGKILL
+        self.inner.kill(signal) # type: ignore
+
+    def stop(self, timeout: int = 10) -> None:
+        self.inner.stop(timeout) # type: ignore
+
+    def reload(self) -> None:
+        self.inner.reload() # type: ignore
+
+    def stream_logs(self) -> List[bytes]:
+        return self.inner.logs(stream=True) # type: ignore
+
+class DockerClient:
+    pass
+
+
 class DockerLogStreamer(threading.Thread):
-    def __init__(self, q: Queue[str], container: Container, *args: Any, **kwargs: Any):
+    def __init__(self, q: Queue[str], container: Container):
         self.q = q
         self.container = container
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
     def run(self) -> None:
         def add_lines(lines: List[bytes]) -> None:
@@ -36,7 +85,7 @@ class DockerLogStreamer(threading.Thread):
 
         try:
             # keep getting logs
-            add_lines(self.container.logs(stream=True))
+            add_lines(self.container.stream_logs())
         except Exception:
             error_message = traceback.format_exc()
             for line in error_message.splitlines():
@@ -46,11 +95,8 @@ class DockerLogStreamer(threading.Thread):
 
 @contextlib.contextmanager
 def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout: int) -> Generator[Container, None, None]:
-    # get access to the docker client to start the container
-    docker_client = docker.from_env()
-
     # Start and run the container
-    container = docker_client.containers.run(
+    container = Container(
         "mutator_testing", # the image
         ["sleep", str(timeout)], # the arguments, give a max uptime for containers
         init=True,
@@ -69,8 +115,7 @@ def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout
         cpuset_cpus=str(core_to_use),
         mem_limit="1g",
         mem_swappiness=0,
-        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-            config={'max-size': '10m'}),
+        log_config={'max-size': '10m'},
         detach=True
     )
     try:
@@ -87,18 +132,18 @@ def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout
                 container.stop()
                 logger.info(f"! Testing container still alive {container.name}, keep killing it.")
                 time.sleep(1)
-        except docker.errors.NotFound:
+        except docker.errors.NotFound: # type: ignore
             # container is dead
             pass
 
 
 @contextlib.contextmanager
-def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int], docker_run_kwargs: Optional[Dict[str, Any]]=None) -> Generator[Container, None, None]:
-    # get access to the docker client to start the container
-    docker_client = docker.from_env()
-
+def start_mutation_container(
+    core_to_use: Optional[int],
+    timeout: Optional[int],
+) -> Generator[Container, None, None]:
     # Start and run the container
-    container = docker_client.containers.run(
+    container = Container(
         "mutator_mutator", # the image
         ["sleep", str(timeout) if timeout is not None else 'infinity'], # the arguments, give a max uptime for containers
         init=True,
@@ -112,10 +157,8 @@ def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int],
         mem_limit="10g",
         mem_swappiness=0,
         cpuset_cpus=str(core_to_use) if core_to_use is not None else None,
-        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-            config={'max-size': '10m'}),
+        log_config={'max-size': '10m'},
         detach=True,
-        **(docker_run_kwargs if docker_run_kwargs is not None else {})
     )
     try:
         yield container
@@ -133,7 +176,7 @@ def start_mutation_container(core_to_use: Optional[int], timeout: Optional[int],
                 container.stop()
                 logger.info(f"! Mutation container still alive {container.name}, keep killing it.")
                 time.sleep(10)
-        except docker.errors.NotFound:
+        except docker.errors.NotFound: # type: ignore
             # container is dead
             pass
 
@@ -150,10 +193,7 @@ def run_exec_in_container(
     sigint is ignored for this command.
     If return_code is not 0, raise a ValueError containing the run result.
     """
-    if isinstance(container, str):
-        container_name = container
-    else:
-        container_name = container.name
+    container_name = container.name
 
     timed_out = False
     sub_cmd: List[str] = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
@@ -169,6 +209,7 @@ def run_exec_in_container(
         stdout, _ = proc.communicate()
         timed_out = True
 
+    assert isinstance(proc.returncode, int) # type: ignore
     if raise_on_error and proc.returncode != 0:
         logger.debug(f"process error (timed out): {str(proc.args)}\n{stdout}")
         raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {proc.returncode}\n{stdout}")

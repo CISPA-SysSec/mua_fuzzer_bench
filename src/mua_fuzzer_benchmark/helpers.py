@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 import shutil
 import time
-from typing import Dict
+from typing import Dict, List, Optional, TypedDict
 
 from data_types import CompileArg, Fuzzer, Program
 
@@ -117,6 +117,13 @@ class CoveredFile:
 
 
 def load_fuzzers() -> Dict[str, Fuzzer]:
+
+    class FuzzerConfig(TypedDict):
+        queue_dir: str
+        queue_ignore_files: list[str]
+        crash_dir: str
+        crash_ignore_files: list[str]
+
     fuzzers = {}
     for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
         if fuzzer_dir.name.startswith("."):
@@ -130,23 +137,40 @@ def load_fuzzers() -> Dict[str, Fuzzer]:
         
         fuzzer_config_path = fuzzer_dir/"config.json"
         with open(fuzzer_config_path, "r") as f:
-            fuzzer_config = json.load(f)
+            fuzzer_config: FuzzerConfig = json.load(f)
 
         fuzzer_name = fuzzer_dir.name
-        fuzzer_crash_dir = fuzzer_config["crash_dir"]
 
         fuzzers[fuzzer_name] = Fuzzer(
             name=fuzzer_name,
-            queue_dir=fuzzer_config["queue_dir"],
-            queue_ignore_files=fuzzer_config["queue_ignore_files"],
-            crash_dir=fuzzer_crash_dir,
-            crash_ignore_files=fuzzer_config["crash_ignore_files"],
+            queue_dir=fuzzer_config['queue_dir'],
+            queue_ignore_files=fuzzer_config['queue_ignore_files'],
+            crash_dir=fuzzer_config['crash_dir'],
+            crash_ignore_files=fuzzer_config['crash_ignore_files'],
         )
 
     return fuzzers
 
 
 def load_programs() -> Dict[str, Program]:
+
+    class ProgramConfigArg(TypedDict):
+        val: str
+        action: Optional[str]
+
+    class ProgramConfig(TypedDict):
+        bc_compile_args: List[ProgramConfigArg]
+        bin_compile_args: List[ProgramConfigArg]
+        dict: str
+        is_cpp: bool
+        orig_bin: str
+        orig_bc: str
+        omit_functions: List[str]
+
+    class ProgramConfigRoot(TypedDict):
+        data: Dict[str, ProgramConfig]
+
+
     programs = {}
     for prog_dir in Path("dockerfiles/programs").iterdir():
         prog_dir_name = prog_dir.name
@@ -161,9 +185,9 @@ def load_programs() -> Dict[str, Program]:
         
         prog_config_path = prog_dir/"config.json"
         with open(prog_config_path, "r") as f:
-            prog_config = json.load(f)
+            prog_config: ProgramConfigRoot = json.load(f)
 
-        for prog_config_name, prog_config_data in prog_config.items():
+        for prog_config_name, prog_config_data in prog_config['data'].items():
 
             prog_name = f"{prog_dir_name}_{prog_config_name}"
 
@@ -180,9 +204,11 @@ def load_programs() -> Dict[str, Program]:
                     for arg in prog_config_data["bin_compile_args"]
                 ]
 
-                dict_path = prog_config_data["dict"]
-                if dict_path is not None:
-                    dict_path = Path("tmp/programs")/prog_dir_name/dict_path
+                dict_path_str = prog_config_data["dict"]
+                if dict_path_str is not None:
+                    dict_path = Path("tmp/programs")/prog_dir_name/dict_path_str
+                else:
+                    dict_path = None
 
                 programs[prog_name] = Program(
                     name=prog_name,

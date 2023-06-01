@@ -36,6 +36,14 @@ class Program:
 
 
 @dataclass
+class InitialSuperMutant:
+    exec_id: int
+    prog: str
+    super_mutant_id: int
+    mutation_id: int
+
+
+@dataclass
 class MutationType:
     pattern_name: str
     type_id: int
@@ -99,7 +107,7 @@ class SuperMutant:
 @dataclass(frozen=True, eq=True)
 class RunResultKey:
     name: str
-    mutation_ids: List[int]
+    mutation_ids: Tuple[int, ...]
 
 
 @dataclass
@@ -117,34 +125,109 @@ class CrashingInput:
     num_triggered: Optional[int]
 
 
+# @dataclass
+# class RunResultData:
+#     result: str
+#     mutation_ids: Set[int]
+#     time: float
+#     path: Optional[Path] = field(default=None)
+#     # killed, ..
+#     crash_input: Optional[CrashingInput] = field(default=None)
+#     # timeout
+#     args: Optional[List[str]] = field(default=None)
+
+
+def gen_key(result_type: str, mutation_ids: Set[int]) -> RunResultKey:
+    return RunResultKey(
+        name=result_type,
+        mutation_ids=tuple(sorted(mutation_ids))
+    )
+
+
 @dataclass
-class RunResultData:
-    result: str
+class CheckResultCovered:
+    path: Path
     mutation_ids: Set[int]
-    time: float
-    path: Optional[Path] = field(default=None)
-    # killed, ..
-    crash_input: Optional[CrashingInput] = field(default=None)
-    # timeout
-    args: Optional[List[str]] = field(default=None)
+    cur_time: float
 
     def generate_key(self) -> RunResultKey:
-        if self.result in ['orig_crash', 'orig_timeout', 'orig_timeout_by_seed']:
-            key = RunResultKey(name=self.result, mutation_ids=list())
-        else:
-            try:
-                m_ids = sorted(self.mutation_ids)
-            except KeyError as e:
-                raise ValueError(f"{e} {self}")
-            key = RunResultKey(name=self.result, mutation_ids=m_ids)
+        return gen_key("covered", self.mutation_ids)
 
-        return key
+    def get_mutation_ids(self) -> Set[int]:
+        return self.mutation_ids
+
+
+@dataclass
+class CheckResultOrigTimeout:
+    path: Path
+    orig_cmd: List[str]
+    cur_time: float
+
+    def generate_key(self) -> RunResultKey:
+        return gen_key("orig_timeout", self.mutation_ids)
+
+    def get_mutation_ids(self) -> Set[int]:
+        return set()
+
+
+@dataclass
+class CheckResultOrigCrash:
+    path: Path
+    args: List[str]
+    returncode: int
+    orig_res: str
+    cur_time: float
+
+    def generate_key(self) -> RunResultKey:
+        return gen_key("orig_crash", self.mutation_ids)
+
+    def get_mutation_ids(self) -> Set[int]:
+        return set()
+
+
+@dataclass
+class CheckResultTimeout:
+    path: Path
+    args: List[str]
+    mutation_ids: Set[int]
+    cur_time: float
+
+    def generate_key(self) -> RunResultKey:
+        return gen_key("timeout", self.mutation_ids)
+
+    def get_mutation_ids(self) -> Set[int]:
+        return self.mutation_ids
+
+
+@dataclass
+class CheckResultKilled:
+    mutation_ids: Set[int]
+    path: Path
+    args: List[str]
+    orig_cmd: List[str]
+    mut_cmd: List[str]
+    orig_returncode: int
+    mut_returncode: int
+    orig_res: str
+    mut_res: str
+    num_triggered: int
+    cur_time: float
+
+    def generate_key(self) -> RunResultKey:
+        return gen_key("killed", self.mutation_ids)
+
+    def get_mutation_ids(self) -> Set[int]:
+        return self.mutation_ids
+
+
+check_results_union = CheckResultCovered | CheckResultTimeout | \
+                      CheckResultKilled | CheckResultOrigTimeout | CheckResultOrigCrash
 
 
 @dataclass
 class CrashCheckResult:
     result: str
-    results: List[RunResultData] = field(default_factory=list)
+    results: List[check_results_union] = field(default_factory=list)
     total_time: Optional[float] = field(default=None)
     returncode: Optional[int] = field(default=None)
     covered_file_seen: Optional[float] = field(default=None)
@@ -158,7 +241,7 @@ class RunResult:
     result: str
     total_time: float
     all_logs: List[str]
-    data: Dict[RunResultKey, RunResultData]
+    data: Dict[RunResultKey, check_results_union]
     unexpected_completion_time: Optional[Tuple[float, float]] = field(default=None)
 
 
@@ -237,6 +320,38 @@ class SeedRun:
     timeout: int
     prog: Program
     core: Optional[int] = field(default=None)
+
+
+@dataclass
+class KCovResult:
+    covered_lines: List[Tuple[str, str]]
+    all_lines: List[Tuple[str, str]]
+
+
+@dataclass
+class GatherSeedRun:
+    prog: str
+    fuzzer: str
+    instance: str
+    seed_dir: Path
+    num_seeds: int
+    minimized_dir: Path
+    num_seeds_minimized: Optional[int] = field(default=None)
+    covered_mutations: Optional[Set[int]] = field(default=None)
+    kcov_res: Optional[KCovResult] = field(default=None)
+
+
+@dataclass
+class GatheredSeedsRun:
+    prog: str
+    fuzzer: str
+    instance: str
+    seed_dir: Path
+    num_seeds: int
+    minimized_dir: Path
+    num_seeds_minimized: int
+    covered_mutations: Set[int]
+    kcov_res: KCovResult
 
 
 @dataclass
