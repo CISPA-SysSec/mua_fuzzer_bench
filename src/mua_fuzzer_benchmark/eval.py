@@ -215,7 +215,7 @@ class FuzzerRun:
     mut_data: SuperMutant
     fuzzer: Fuzzer
     run_ctr: int
-    eval_func: Callable[['FuzzerRun', Callable[['FuzzerRun', str], RunResult]], RunResult]
+    eval_func: eval_func_type['FuzzerRun', 'RunResult'] #Callable[['FuzzerRun', Callable[['FuzzerRun', str], RunResult]], RunResult]
     timeout: int
     core: Optional[int] = field(default=None)
     workdir: Optional[Path] = field(default=None)
@@ -278,7 +278,7 @@ class SeedRun:
     fuzzer: str
     timeout: int
     prog: Program
-    eval_func: Optional[Callable[['SeedRun', Callable[['SeedRun', str], SeedRunResult]], None]] = field(default=None)
+    eval_func: Optional[eval_func_type['SeedRun', SeedRunResult]] = field(default=None) #Optional[Callable[['SeedRun', Callable[['SeedRun', str], SeedRunResult]], None]]
     core: Optional[int] = field(default=None)
 
 
