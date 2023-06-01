@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from eval import MutationRun, SuperMutant, FuzzerRun, RunResultData
+    from eval import MutationRun, SuperMutant, FuzzerRun, RunResultData, CrashingInput
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import Program, mutation_locations_path, mutation_prog_source_path
@@ -549,12 +549,12 @@ class Stats:
 
     @connection
     def new_crashing_inputs(
-        self, c: sqlite3.Cursor, crashing_inputs: List[RunResultData],
+        self, c: sqlite3.Cursor, crashing_inputs: List[CrashingInput],
         exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
-            if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
+            if data.orig_returncode != 0 or data.orig_returncode != data.mut_returncode:
                 c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
@@ -562,18 +562,18 @@ class Stats:
                         mutation_id,
                         run_ctr,
                         fuzzer,
-                        data['time'],
+                        data.time,
                         "run",
-                        str(data['path']),
+                        str(data.path),
                         None,
-                        data['orig_returncode'],
-                        data['mut_returncode'],
-                        ' '.join((str(v) for v in data['orig_cmd'])),
-                        ' '.join((str(v) for v in data['mut_cmd'])),
-                        str(data['orig_res']),
-                        str(data['mut_res']),
-                        data['orig_timeout'],
-                        data['timeout'],
+                        data.orig_returncode,
+                        data.mut_returncode,
+                        ' '.join((str(v) for v in data.orig_cmd)),
+                        ' '.join((str(v) for v in data.mut_cmd)),
+                        str(data.orig_res),
+                        str(data.mut_res),
+                        data.orig_timeout,
+                        data.timeout,
                         None
                     )
                 )
@@ -582,28 +582,28 @@ class Stats:
     @connection
     def new_seed_crashing_inputs(
         self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int,
-        fuzzer: str, crashing_inputs: List[RunResultData]
+        fuzzer: str, crashing_inputs: List[CrashingInput]
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
-            if data['orig_returncode'] != 0 or data['orig_returncode'] != data['mut_returncode']:
+            if data.orig_returncode != 0 or data.orig_returncode != data.mut_returncode:
                 c.execute('INSERT INTO seed_crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
                         prog,
                         mutation_id,
                         fuzzer,
-                        data['time'],
+                        data.time,
                         "seeds",
-                        str(data['path']),
+                        str(data.path),
                         None,
-                        data['orig_returncode'],
-                        data['mut_returncode'],
-                        ' '.join((str(v) for v in data['orig_cmd'])),
-                        ' '.join((str(v) for v in data['mut_cmd'])),
-                        data['orig_res'],
-                        data['mut_res'],
-                        data['num_triggered']
+                        data.orig_returncode,
+                        data.mut_returncode,
+                        ' '.join((str(v) for v in data.orig_cmd)),
+                        ' '.join((str(v) for v in data.mut_cmd)),
+                        data.orig_res,
+                        data.mut_res,
+                        data.num_triggered
                     )
                 )
         self.conn.commit()
