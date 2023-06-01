@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
-from functools import partial
+from dataclasses import dataclass
 import sys
 import os
 import time
@@ -14,7 +13,7 @@ import json
 import shutil
 import random
 from types import FrameType
-from typing import Any, Callable, Dict, Generator, List, Sequence, Set, Optional, Tuple, Union, cast
+from typing import Any, Dict, Generator, List, Set, Optional, Tuple, TypeVar, Union, cast
 import concurrent.futures
 import shlex
 import platform
@@ -23,19 +22,17 @@ import copy
 from itertools import product, chain, zip_longest
 from pathlib import Path
 
-import numpy as np
-import numpy.typing as npt
 
 import docker   # type: ignore
 
 import logging
+from data_types import ActiveMutants, CheckRun, CommonRun, CompileArg, CoveredResult, CrashCheckResult, CrashingInput, FuzzerRun, KCovRun, MinimizeSeedRun, Mutation, MutationRun, Program, ResultingRun, RunResult, RunResultData, RunResultKey, SeedRun, SeedRunResult, SuperMutant, SuperMutantUninitialized
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container, Container
 
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
-    JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, MAX_SUPERMUTANT_SIZE, CHECK_INTERVAL, \
+    JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
-from helpers import CompileArg, Fuzzer, Program, CoveredFile, fuzzer_container_tag, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_graph_path, \
-    mutation_locations_path, mutation_prog_source_path, shared_dir_to_docker, subject_container_tag, eval_func_type
+from helpers import CoveredFile, fuzzer_container_tag, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_path, mutation_prog_source_path, shared_dir_to_docker, subject_container_tag
 from db import ReadStatsDb, Stats
 
 # set up logging to file
@@ -110,245 +107,6 @@ class CpuCores():
         return len([cc for cc in self.cores if cc]) / len(self.cores)
 
 
-@dataclass
-class Mutation:
-    mutation_id: int
-    prog: Program
-    data: Dict[str, Any]
-
-
-@dataclass
-class MutationDataTodo:
-    pass
-
-
-@dataclass
-class SuperMutantUninitialized:
-    mutation_ids: List[int]
-    prog: Program
-    mutation_data: List[MutationDataTodo]
-
-
-@dataclass
-class SuperMutant:
-    supermutant_id: int
-    mutation_ids: set[int]
-    mutation_data: List[MutationDataTodo]
-    prog: Program
-    compile_args: List[CompileArg]
-    args: str
-    seed_base_dir: Path
-    previous_supermutant_ids: List[int] = field(default_factory=list)
-
-
-    def printable_m_id(self) -> str:
-        return f"S{self.supermutant_id}"
-
-
-    def get_mut_base_dir(self) -> Path:
-        return SHARED_DIR/"mut_base"/self.prog.name/self.printable_m_id()
-
-
-    def get_mut_base_bin(self) -> Path:
-        "Get the path to the bin that is the mutated base binary."
-        return self.get_mut_base_dir()/"mut_base"
-
-
-@dataclass(frozen=True, eq=True)
-class RunResultKey:
-    name: str
-    mutation_ids: List[int]
-
-
-@dataclass
-class CrashingInput:
-    time: float
-    path: Path
-    orig_returncode: Optional[int]
-    mut_returncode: Optional[int]
-    orig_cmd: List[str]
-    mut_cmd: List[str]
-    orig_res: Optional[object]
-    mut_res: Optional[object]
-    orig_timeout: Optional[bool]
-    timeout: Optional[int]
-    num_triggered: Optional[int]
-
-
-@dataclass
-class RunResultData:
-    result: str
-    mutation_ids: Set[int]
-    time: float
-    path: Optional[Path] = field(default=None)
-    # killed, ..
-    crash_input: Optional[CrashingInput] = field(default=None)
-    # timeout
-    args: Optional[List[str]] = field(default=None)
-
-    def generate_key(self) -> RunResultKey:
-        if self.result in ['orig_crash', 'orig_timeout', 'orig_timeout_by_seed']:
-            key = RunResultKey(name=self.result, mutation_ids=list())
-        else:
-            try:
-                m_ids = sorted(self.mutation_ids)
-            except KeyError as e:
-                raise ValueError(f"{e} {self}")
-            key = RunResultKey(name=self.result, mutation_ids=m_ids)
-
-        return key
-
-
-@dataclass
-class CrashCheckResult:
-    result: str
-    results: List[RunResultData] = field(default_factory=list)
-    total_time: Optional[float] = field(default=None)
-    returncode: Optional[int] = field(default=None)
-    covered_file_seen: Optional[float] = field(default=None)
-    timed_out: bool = field(default=False)
-    all_logs: str = field(default_factory=str)
-    out: str = field(default_factory=str)
-
-
-@dataclass
-class RunResult:
-    result: str
-    total_time: float
-    all_logs: List[str]
-    data: Dict[RunResultKey, RunResultData]
-    unexpected_completion_time: Optional[Tuple[float, float]] = field(default=None)
-
-
-@dataclass
-class CoveredResult:
-    supermutants: List[List[int]]
-    covered_mutations: List[int]
-    covered_supermutants: List[List[int]]
-    not_covered: List[int]
-    not_covered_supermutants: List[List[int]]
-
-
-@dataclass
-class FuzzerRun:
-    mut_data: SuperMutant
-    fuzzer: Fuzzer
-    run_ctr: int
-    eval_func: eval_func_type['FuzzerRun', 'RunResult']
-    timeout: int
-    core: Optional[int] = field(default=None)
-    workdir: Optional[Path] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
-
-    def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
-
-
-@dataclass
-class CheckRun:
-    check_run_input_dir: Path
-    timeout: int
-    mut_data: SuperMutant
-    run_ctr: int
-    fuzzer: Fuzzer
-    core: Optional[int] = field(default=None)
-    workdir: Optional[Path] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
-
-    def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
-
-
-@dataclass
-class ResultingRun:
-    run: FuzzerRun | CheckRun
-
-
-@dataclass
-class MutationRun:
-    mut_data: SuperMutant
-    resulting_runs: List[ResultingRun]
-    check_run: bool
-    core: Optional[int] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
-
-    def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
-
-
-@dataclass
-class SeedRunResult:
-    all_logs: List[str]
-    restart: Optional[bool] = field(default=None)
-    file_error: Optional[Path] = field(default=None)
-
-
-@dataclass
-class SeedRun:
-    workdir: Path
-    seed_base_dir: Path
-    orig_bc: Path
-    compile_args: List[CompileArg]
-    fuzzer: str
-    timeout: int
-    prog: Program
-    eval_func: Optional[eval_func_type['SeedRun', SeedRunResult]] = field(default=None) #Optional[Callable[['SeedRun', Callable[['SeedRun', str], SeedRunResult]], None]]
-    core: Optional[int] = field(default=None)
-
-
-@dataclass
-class KCovRun:
-    workdir: Path
-    orig_bin: Path
-    seed_path: Path
-    orig_bc: Path
-    compile_args: str
-    args: str
-    prog: Program
-
-
-@dataclass
-class MinimizeSeedRun:
-    fuzzer: str
-    eval_func: eval_func_type[SeedRun, SeedRunResult]
-    workdir: Path
-    seed_in_dir: Path
-    seed_out_dir: Path
-    orig_bc: Path
-    compile_args: str
-    args: str
-    prog: Program
-
-
-@dataclass
-class CommonRun:
-    run_type: str
-    data: FuzzerRun | MutationRun | CheckRun | SeedRun
-
-    def get_fuzz_run(self) -> FuzzerRun:
-        assert self.run_type == 'fuzz'
-        assert isinstance(self.data, FuzzerRun)
-        return self.data
-
-    def get_mut_run(self) -> MutationRun:
-        assert self.run_type == 'mut'
-        assert isinstance(self.data, MutationRun)
-        return self.data
-
-    def get_check_run(self) -> CheckRun:
-        assert self.run_type == 'check'
-        assert isinstance(self.data, CheckRun)
-        return self.data
-
-    def get_seed_run(self) -> SeedRun:
-        assert self.run_type == 'seed'
-        assert isinstance(self.data, SeedRun)
-        return self.data
-
-
 class PreparedRuns():
     def __init__(self) -> None:
         self.runs: queue.Queue[CommonRun] = queue.Queue()
@@ -377,29 +135,7 @@ class Task:
 
 
 tasks_type = Dict[Future[Optional[RunResult]], Task]
-
-
-@dataclass
-class ActiveMutants:
-    mutants: Dict[Path, Dict[str, Union[int, bool]]] = \
-        field(default_factory=lambda: defaultdict(lambda: {'ref_cnt': 0, 'killed': False}))
-
-    def increase_ref_cnt(self, path: Path, amount: int) -> None:
-        self.mutants[path]['ref_cnt'] += amount
-
-    def decrement_ref_cnt(self, path: Path) -> bool:
-        self.mutants[path]['ref_cnt'] -= 1
-
-        if self.mutants[path]['ref_cnt'] < 0:
-            raise ValueError(f"ref_cnt for {path} is negative")
-
-        return self.mutants[path]['ref_cnt'] == 0
-
-    def set_killed(self, path: Path) -> None:
-        self.mutants[path]['killed'] = True
-
-    def is_killed(self, path: Path) -> bool:
-        return cast(bool, self.mutants[path]['killed'])
+seed_tasks_type = Dict[Future[SeedRunResult], Task]
 
 
 callgraph_type_todo = Dict[str, List[str]]
@@ -624,11 +360,14 @@ def stop_container(container: Container) -> None:
 
 # Does all the eval steps, each fuzzer eval function is based on this one.
 # Compiles the mutated program and fuzzes it. Finally the eval data is returned.
-def base_eval(run_data: FuzzerRun, docker_image: str) -> RunResult:
+def base_eval(run_data: FuzzerRun) -> RunResult:
+    global should_run
+
     # get start time for the eval
     start_time = time.time()
 
-    global should_run
+    docker_image = fuzzer_container_tag(run_data.fuzzer.name)
+
     # extract used values
     mut_data = run_data.mut_data
     timeout: int = run_data.timeout
@@ -906,419 +645,6 @@ def instrument_prog(container: Container, prog_info: Program) -> None:
         raise e
 
 
-# # Find functions that are reachable from fnA
-# def find_reachable(call_g: callgraph_type_todo, fnA: str, reachable_keys: Optional[Dict[str, Set[str]]] = None, found_so_far: Optional[Set[str]] = None) -> Set[str]:
-#     if reachable_keys is None: reachable_keys = {}
-#     if found_so_far is None: found_so_far = set()
-#
-#     for fnB in call_g[fnA]:
-#         if fnB in found_so_far: continue
-#         found_so_far.add(fnB)
-#         if fnB not in call_g: continue
-#         if fnB in reachable_keys:
-#             for k in reachable_keys[fnB]:
-#                 found_so_far.add(k)
-#         else:
-#             keys = find_reachable(call_g, fnB, reachable_keys, found_so_far)
-#     return found_so_far
-#
-#
-# # Produce reachability dictionary given the call graph.
-# # For each function, we have functions that are reachable from it.
-# def reachable_dict(call_g: callgraph_type_todo) -> Dict[str, Set[str]]:
-#     reachable: Dict[str, Set[str]] = {}
-#     for fnA in call_g:
-#         keys = find_reachable(call_g, fnA, reachable)
-#         reachable[fnA] = keys
-#     return reachable
-#
-#
-# # Given the call graph, produce the reachability matrix with 1 for reachability
-# # and 0 for non reachability. The rows and columns are locations
-# def reachability_matrix(call_g: callgraph_type_todo) -> Tuple[List[List[int]], List[str]]:
-#     reachability = reachable_dict(call_g)
-#     rows = list(reachability.keys())
-#     columns = list(reachability.keys())
-#     matrix = []
-#     for i in rows:
-#         matrix_row = []
-#         for j in columns:
-#             matrix_row.append(1 if i in reachability[j] or j in reachability[i] or i == j else 0)
-#             #matrix_row.append(1 if i in reachability[j] or i == j else 0)
-#         matrix.append(matrix_row)
-#     return matrix, columns
-#
-#
-# MAX_MUTATIONS_PER_FUNCTION = 10_000
-#
-#
-# def location_mutation_mapping(mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Dict[str, List[int]]:
-#     loc_mut_map = defaultdict(list)
-#     for mut in mutations:
-#         mut_id = mut[0]
-#         fn = mut[3][int(mut_id)]['funname']
-#         loc_mut_map[fn].append(mut_id)
-#
-#     # If a function has more than 10000 mutations, ignore that function.
-#     for fn, muts in loc_mut_map.items():
-#         if len(muts) > MAX_MUTATIONS_PER_FUNCTION:
-#             logger.warning(f"WARN: got a function: ({fn}) with more than {MAX_MUTATIONS_PER_FUNCTION} mutations, skipping it.")
-#             del loc_mut_map[fn]
-#
-#     return {**loc_mut_map}
-#
-#
-# def load_call_graph(callgraph: List[Tuple[str, str]], mutants: Dict[str, Any]) -> callgraph_type_todo:
-#     my_g: callgraph_type_todo = {}
-#     called = {}
-#
-#     for fn_a, fn_b in callgraph:
-#         if fn_a not in my_g: my_g[fn_a] = []
-#         my_g[fn_a].append(fn_b)
-#         called[fn_b] = True
-#
-#     # now, populate leaf functions
-#     for b in called:
-#         if b not in my_g: my_g[b] = []
-#
-#     unknown_funcs = [uf for uf in mutants.keys() if uf not in my_g]
-#     # add unknown functions to callgraph
-#     for uf in unknown_funcs:
-#         my_g[uf] = []
-#
-#     # mark all unknown functions as reachable by all
-#     for reachable in my_g.values():
-#         reachable.extend(unknown_funcs)
-#     return my_g
-#
-#
-# def pop_mutant(mutants: Dict[str, List[int]], eligible: npt.NDArray[np.bool_], has_mutants: npt.NDArray[np.bool_],
-#                indices: npt.NDArray[np.int_], matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any]) -> int:
-#     """
-#     Get a single mutant id, choice is made from the eligible locations and the corresponding
-#     index of has_mutants is set to false if no mutants are remaining for that location.
-#     """
-#     chosen_idx = np.random.choice(indices[eligible])
-#     chosen = keys[chosen_idx]
-#     possible_mutants = mutants[str(chosen)]
-#     mut = int(possible_mutants.pop())
-#     if len(possible_mutants) == 0:
-#         has_mutants[chosen_idx] = False
-#     # Remove locations reachable by the chosen location from the eligible list
-#     eligible &= np.invert(matrix[chosen_idx])
-#     # Remove location that can reach the chosen location from the eligible list
-#     eligible &= np.invert(matrix[:, chosen_idx])
-#     return mut
-#
-# def find_supermutants(matrix: npt.NDArray[np.bool_], keys: npt.NDArray[Any], mutants: Dict[str, List[int]]) -> List[List[int]]:
-#     indices = np.arange(len(matrix))
-#     # for each index a boolean value if there are any mutants remaining
-#     has_mutants = np.array([bool(mutants.get(keys[ii])) for ii in range(len(matrix))])
-#
-#     # the selected supermutants, each entry contains a list of mutants that are a supermutant
-#     supermutants = []
-#
-#     while True:
-#         # continue while there are more mutants remaining
-#         available = np.array(has_mutants, copy=True)
-#         if not np.any(available):
-#             break
-#
-#         # mutants selected for the current supermutant
-#         selected_mutants = []
-#
-#         # while more mutants can be added to the supermutants
-#         while np.any(available):
-#             mutant = pop_mutant(
-#                 # these arguments are changed in the called function
-#                 mutants, available, has_mutants,
-#                 # these are not
-#                 indices, matrix, keys)
-#             selected_mutants.append(mutant)
-#             if len(selected_mutants) >= MAX_SUPERMUTANT_SIZE:
-#                 break
-#
-#         supermutants.append(selected_mutants)
-#     return supermutants
-#
-#
-# UNKNOWN_FUNCTION_IDENTIFIER = ":unnamed:"
-# SPLITTER = " | "
-# ENTRY = "LLVMFuzzerTestOneInput"
-#
-# def augment_graph(orig_graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
-#     """
-#     Takes the graph and augments it by replacing unknown function calls with all possible calls.
-#     :param orig_graph:
-#     :return:
-#     """
-#     result: Dict[str, List[str]] = dict()
-#     mapping: Dict[Tuple[str, ...], List[str]] = dict()
-#     # first get an initial mapping of the result set and collect all known functions
-#     for key in orig_graph.keys():
-#         key_splitted = key.split(SPLITTER)[:-1]
-#         funname = key_splitted[0]
-#         result[funname] = list()
-#         mapped_head = mapping.setdefault(tuple(key_splitted[1:]), list())
-#         mapped_head.append(funname)
-#
-#     #then go over all call locations and look for replacements for unknown calls and just add known calls
-#     for function, call_locations in orig_graph.items():
-#         new_locations = set()
-#         for call_location in call_locations:
-#             call_splitted = call_location.split(SPLITTER)[:-1]
-#             called_funname = call_splitted[0]
-#             if called_funname == UNKNOWN_FUNCTION_IDENTIFIER:
-#                 call_types = tuple(call_splitted[1:])
-#                 if call_types in mapping:
-#                     for fun in mapping[call_types]:
-#                         new_locations.add(fun)
-#             else:
-#                 if called_funname in result:
-#                     new_locations.add(called_funname)
-#
-#         result[function.split(SPLITTER)[0]] = list(new_locations)
-#
-#     return result
-#
-#
-# def flatten_callgraph(call_graph: callgraph_type_todo) -> List[Tuple[str, str]]:
-#     caller_callee = []
-#     for caller, callees in call_graph.items():
-#         for callee in callees:
-#             caller_callee.append((caller, callee))
-#     return caller_callee
-#
-#
-# def get_callgraph(prog_info: Program, graph_info: Dict[str, callgraph_type_todo]) -> List[Tuple[str, str]]:
-#     with open(mutation_locations_graph_path(prog_info), 'rt') as f:
-#         call_graph = json.load(f)
-#     graph_info['call_graph_raw'] = call_graph
-#     call_graph = augment_graph(call_graph)
-#     graph_info['call_graph_augmented'] = call_graph
-#     return flatten_callgraph(call_graph)
-#
-#
-# def get_supermutations_callgraph(prog_info: Program, mutations: List[Tuple[int, Any, Any, Dict[Any, Any]]]) -> Tuple[List[List[int]], Dict[str, callgraph_type_todo]]:
-#     graph_info: Dict[str, callgraph_type_todo] = {}
-#     callgraph_flat = get_callgraph(prog_info, graph_info)
-#
-#     loc_mut_map = location_mutation_mapping(mutations)
-#     callgraph = load_call_graph(callgraph_flat, loc_mut_map)
-#
-#     total_mutants =  sum([len(loc_mut_map[loc]) for loc in loc_mut_map])
-#
-#     matrix_ll, keys_l = reachability_matrix(callgraph)
-#     entry_idx = keys_l.index(ENTRY)
-#     assert entry_idx is not None
-#     matrix = np.array(matrix_ll, dtype=bool)
-#     reachable_mask = matrix[entry_idx]
-#
-#     # only get reachable functions
-#     matrix = matrix[reachable_mask][:,reachable_mask]
-#     keys = np.array(keys_l)
-#     unreachable_functions = list(keys[~reachable_mask])
-#     keys = keys[reachable_mask]
-#
-#
-#     # assert that everything has the right dimensions
-#     assert len(matrix) == len(matrix[0]) == len(keys)
-#     logger.info(f'Computed reachability, there are {len(callgraph)} functions, {len(keys)} reachable.')
-#
-#     supermutants = find_supermutants(matrix, keys, loc_mut_map)
-#
-#     sum_reachable = sum((len(sm) for sm in supermutants))
-#     min_reachable = min((len(sm) for sm in supermutants))
-#     max_reachable = max((len(sm) for sm in supermutants))
-#     avg_reachable = sum_reachable / len(supermutants)
-#     logger.info(f"Supermutants for reachable {len(supermutants)} (reduction: {sum_reachable / len(supermutants):.2f}) containing mutations:\n"
-#           f"total: {sum_reachable}, avg: {avg_reachable:.2f}, min: {min_reachable}, max: {max_reachable}")
-#
-#     supermutants_unreachable = [(ff, mm) for ff, muts in loc_mut_map.items() for mm in muts]
-#
-#     # split up unreachable mutations making sure that no
-#     # mutations in the same function are in the same supermutant
-#     func_to_mutants = defaultdict(list)
-#     for ff, mm in supermutants_unreachable:
-#         func_to_mutants[ff].append(mm)
-#
-#     highest_mut_func_count = max(len(mm) for mm in func_to_mutants.values())
-#     new_supermutants: List[List[int]] = []
-#     for ii in range(highest_mut_func_count):
-#         new_supermutants.append([])
-#
-#     ii = 0
-#     for ii in range(highest_mut_func_count):
-#         for ff, mm_in_ff in func_to_mutants.items():
-#             try:
-#                 mm = mm_in_ff.pop(0)
-#             except IndexError:
-#                 continue
-#             assert ff in unreachable_functions
-#             new_supermutants[ii].append(mm)
-#
-#     # if the number of mutants per supermutant is too large, split them up
-#     MAX_ACCEPTABLE_SUPERMUTANT_SIZE = 200
-#     found_too_large = True
-#     while found_too_large:
-#         found_too_large = False
-#         for ii in range(len(new_supermutants)):
-#             ns = new_supermutants[ii]
-#             if len(ns) > MAX_ACCEPTABLE_SUPERMUTANT_SIZE:
-#                 found_too_large = True
-#                 chunk_0 = ns[:len(ns)//2]
-#                 chunk_1 = ns[len(ns)//2:]
-#                 new_supermutants[ii] = chunk_0
-#                 new_supermutants.append(chunk_1)
-#
-#     for ns in new_supermutants:
-#         assert len(ns) <= MAX_ACCEPTABLE_SUPERMUTANT_SIZE
-#
-#     logger.info(f'There are {len(supermutants_unreachable)} mutants in unreachable functions.')
-#     supermutants.extend(new_supermutants)
-#
-#     # assert that all mutants have been assigned
-#     assert total_mutants == sum((len(sm) for sm in supermutants)), f"{total_mutants} == {sum((len(sm) for sm in supermutants))}"
-#     logger.info(f"Made {len(supermutants)} supermutants out of {total_mutants} mutations "
-#           f"a reduction by {total_mutants / len(supermutants):.2f} times.")
-#     return supermutants, graph_info
-
-
-# def indirect_call_info(graph: callgraph_type_todo) -> Dict[Tuple[str, ...], List[str]]:
-#     """
-#     Takes the graph and collects a dictionary of calls by their types.
-#     """
-#     mapping = defaultdict(list)
-#     # first get an initial mapping of the result set and collect all known functions
-#     for key in graph.keys():
-#         key_splitted = key.split(SPLITTER)[:-1]
-#         funname = key_splitted[0]
-#         type_key = tuple(key_splitted[1:])
-#         mapping[type_key].append(funname)
-
-#     return mapping
-
-"""
-def get_supermutations_cfg(prog_info, mutations):
-    import cfg_supermutants
-    entry_node = 'LLVMFuzzerTestOneInput'
-    cfg_base_dir = Path('tmp/cfgs')
-
-    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
-        call_graph = json.load(f)
-
-    call_info = indirect_call_info(call_graph)
-
-    muts = [
-        (mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
-        for mm in mutations
-    ]
-
-    try:
-        shutil.rmtree(cfg_base_dir)
-    except OSError as err:
-        logger.info(f"Could not clean up {cfg_base_dir}: {err}")
-
-    cfg_base_dir.mkdir(parents=True, exist_ok=True)
-    with start_mutation_container(None, None) as container:
-        tmp_dir = cfg_base_dir/"dots"
-        tmp_dir.mkdir()
-        bc_path_in_container = Path("/home/mutator", prog_info['orig_bc'])
-        tmp_dir_in_container = Path("/home/mutator/tmp/cfgs", Path(tmp_dir).name)
-        run_exec_in_container(
-            container, raise_on_error=True,
-            cmd=["opt", "-passes=dot-cfg", "-debug-pass-manager", str(bc_path_in_container), "-S", "-o", "bitcode.ll"],
-            exec_args=['--workdir', str(tmp_dir_in_container)],
-        )
-        cfg_graph, bitcode = cfg_supermutants.create_initial_graph(tmp_dir)
-
-    call_graph = cfg_supermutants.add_function_call_edges(cfg_graph, call_info)
-    print("CFG:", cfg_graph, "call graph:", call_graph)
-    # print(call_graph.out_edges("LLVMFuzzerTestOneInput"))
-
-    cfg_supermutants.load_mutations(cfg_graph, muts)
-
-    tc_cfg_graph = cfg_supermutants.transitive_closure(cfg_graph)
-    tc_call_graph = cfg_supermutants.transitive_closure(call_graph)
-
-    reachable_muts = cfg_supermutants.get_reachable_mutants(cfg_graph, call_graph, entry_node)
-    print(f"Found {len(reachable_muts)} reachable mutations (from {entry_node}) based on cfg and call graph.")
-
-    # mut_info = mutations[0][3]
-    # for rm in reachable_muts:
-    #     funname = mut_info[rm]['funname']
-    #     line = mut_info[rm]['line']
-    #     col = mut_info[rm]['column']
-    #     file_path = mut_info[rm]['filePath']
-    #     directory = mut_info[rm]['directory']
-    #     mut_type = mut_info[rm]['type']
-    #     print(rm, mut_type, funname, f"{directory}/{file_path}:{line}:{col}")
-    #     # print(mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
-
-    supermutants = cfg_supermutants.get_supermutants(tc_cfg_graph, tc_call_graph, reachable_muts)
-
-    print(f"Generated {len(supermutants)} supermutants out of {len(reachable_muts)} reachable mutants ", end='')
-    print(f"a reduction of {(len(reachable_muts) + len(tc_cfg_graph.graph['mut_failed'])) / len(supermutants)}. Failed muts: {len(tc_cfg_graph.graph['mut_failed'])}.")
-
-    # For testing if there are supermutants where multiple mutants are seen in one execution.
-    # supermutants = [sm for sm in supermutants if len(sm) > 1]
-
-    return supermutants, None
-
-
-def get_supermutations_simple_reachable(prog_info, mutations):
-    import cfg_supermutants
-    entry_node = 'LLVMFuzzerTestOneInput'
-    cfg_base_dir = Path('tmp/cfgs')
-
-    with open(mutation_locations_graph_path(prog_info), 'rt') as f:
-        call_graph = json.load(f)
-
-    call_info = indirect_call_info(call_graph)
-
-    muts = [
-        (mm[0], mm[3][mm[0]]['funname'], mm[3][mm[0]]['instr'])
-        for mm in mutations
-    ]
-
-    try:
-        shutil.rmtree(cfg_base_dir)
-    except OSError as err:
-        logger.info(f"Could not clean up {cfg_base_dir}: {err}")
-
-    cfg_base_dir.mkdir(parents=True, exist_ok=True)
-    with start_mutation_container(None, None) as container:
-        tmp_dir = cfg_base_dir/"dots"
-        tmp_dir.mkdir()
-        bc_path_in_container = Path("/home/mutator", prog_info['orig_bc'])
-        tmp_dir_in_container = Path("/home/mutator/tmp/cfgs", Path(tmp_dir).name)
-        run_exec_in_container(
-            container, raise_on_error=True,
-            cmd=["opt", "-passes=dot-cfg", "-debug-pass-manager", str(bc_path_in_container), "-S", "-o", "bitcode.ll"],
-            exec_args=['--workdir', str(tmp_dir_in_container)],
-        )
-        cfg_graph, bitcode = cfg_supermutants.create_initial_graph(tmp_dir)
-
-    call_graph = cfg_supermutants.add_function_call_edges(cfg_graph, call_info)
-    print("CFG:", cfg_graph, "call graph:", call_graph)
-    # print(call_graph.out_edges("LLVMFuzzerTestOneInput"))
-
-    cfg_supermutants.load_mutations(cfg_graph, muts)
-
-    reachable_muts = cfg_supermutants.get_reachable_mutants(cfg_graph, call_graph, entry_node)
-    print(f"Found {len(reachable_muts)} reachable mutations (from {entry_node}) based on cfg and call graph.")
-
-    supermutants = [[mm] for mm in reachable_muts]
-
-    print(f"Generated {len(supermutants)} supermutants out of {len(reachable_muts)} reachable mutants ", end='')
-    print(f"a reduction of {(len(reachable_muts)) / len(supermutants)}")
-
-    # For testing if there are supermutants where multiple mutants are seen in one execution.
-    # supermutants = [sm for sm in supermutants if len(sm) > 1]
-
-    return supermutants, None
-"""
-
 def measure_mutation_coverage_per_file(
     mutator: Container, prog_info: Program, seed_dir: Path
 ) -> Dict[Path, List[int]]:
@@ -1367,7 +693,7 @@ def get_supermutations_seed_reachable(
 ) -> CoveredResult:
     MAX_SM_SIZE = 200
 
-    mut_data = {mm.mutation_id: mm.data for mm in mutations}
+    mut_data = {mm.mutation_id: mm for mm in mutations}
 
     covered_mutations: set[int] = set()
     input_coverages: Dict[int, Set[int]] = defaultdict(set)
@@ -1395,7 +721,7 @@ def get_supermutations_seed_reachable(
 
         while candidates:
             mt = candidates.pop()
-            candidate_fun = mut_data[mt]['funname']
+            candidate_fun = mut_data[mt].funname
             if candidate_fun not in used_funcs:
                 used_funcs.add(candidate_fun)
                 supermutant.append(mt)
@@ -1414,12 +740,8 @@ def get_supermutations_seed_reachable(
 
     nc_mut_per_instr = defaultdict(list)
     for nc_mut in not_covered_mutations:
-        funname = mut_data[nc_mut]['funname']
-        bb_name = mut_data[nc_mut]['bb_name']
-        instr = mut_data[nc_mut]['instr']
-        # nc_mut_per_instr[(funname, instr)].append(nc_mut) # 53
-        # nc_mut_per_instr[(funname, bb_name)].append(nc_mut) # 58
-        nc_mut_per_instr[funname].append(nc_mut) # 479
+        funname = mut_data[nc_mut].funname
+        nc_mut_per_instr[funname].append(nc_mut)
 
     not_covered_supermutants: List[List[int]] = []
     while len(nc_mut_per_instr) > 0:
@@ -1463,6 +785,22 @@ def get_supermutations_seed_reachable(
         list(supermutants),
         list(not_covered_mutations),
         list(not_covered_supermutants),
+    )
+
+
+def new_mutation(mutation_id: int, mutation_data: Dict[str, Any], prog: Program) -> Mutation:
+    mutation_data = copy.deepcopy(mutation_data)
+    return Mutation(
+        mutation_id=mutation_id,
+        prog=prog,
+        type_id=mutation_data.pop('typeID'),
+        directory=mutation_data.pop('directory'),
+        filePath=mutation_data.pop('filePath'),
+        line=mutation_data.pop('line'),
+        column=mutation_data.pop('column'),
+        instr=mutation_data.pop('instr'),
+        funname=mutation_data.pop('funname'),
+        additional_info=json.dumps(mutation_data)
     )
 
 
@@ -1521,17 +859,11 @@ def get_all_mutations(
             logger.info("Filtering mutations, running all seed files.")
             filtered_mutations = measure_mutation_coverage(mutator, prog_info, seeds)
 
-        mutations = list(
-            Mutation(
-                int(p['UID']),
-                prog=prog_info,
-                data=mutation_data[int(p['UID'])]
-            )
-            for p in mutation_data)
+        mutations = list(new_mutation(int(p['UID']), p[int(p['UID'])], prog_info) for p in mutation_data)
 
         # Remove mutations for functions that should not be mutated
         omit_functions = prog_info.omit_functions
-        mutations = [mm for mm in mutations if mm.data['funname'] not in omit_functions]
+        mutations = [mm for mm in mutations if mm.funname not in omit_functions]
 
         # If rerun_mutations is specified, collect those mutations
         if rerun_mutations is not None:
@@ -1545,11 +877,7 @@ def get_all_mutations(
 
         logger.info(f"Found {len(mutations)} mutations for {prog}")
         for mut in mutations:
-            stats.new_mutation(EXEC_ID, {
-                'prog': mut.prog,
-                'mutation_id': mut.mutation_id,
-                'mutation_data': mut.data,
-            })
+            stats.new_mutation(EXEC_ID, mut)
 
         if FILTER_MUTATIONS:
             logger.info("Updating for filtered mutations, checking the found mutations.")
@@ -1557,11 +885,9 @@ def get_all_mutations(
             filtered_mutation_ids = set((int(m) for m in filtered_mutations))
             assert len(filtered_mutation_ids - all_mutation_ids) == 0, 'Filtered mutation ids contain ids not in all ids.'
             mutations = list(
-                Mutation(
-                    mutation_id=int(mut_id),
-                    prog=prog_info,
-                    data=mutation_data[int(mut_id)])
-                for mut_id in filtered_mutations)
+                new_mutation(int(mut_id), mutation_data[int(mut_id)], prog_info)
+                for mut_id in filtered_mutations
+            )
             logger.info(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         if rerun:
@@ -1717,7 +1043,6 @@ def get_all_runs(
                     run_data = FuzzerRun(
                         run_ctr=run_ctr,
                         fuzzer=fuzzer,
-                        eval_func=fuzzer.eval_func,
                         timeout=int(timeout)*60,
                         mut_data=mut_data,
                     )
@@ -1757,12 +1082,12 @@ def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: Set[int]
 
     mut_chunks = []
 
-    ii: Union[int, Any]
+    ii: Union[int, object]
     cc: Union[List[int], Any]
     for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
-        ii = cast(int, ii)
+        assert isinstance(ii, int)
+        assert isinstance(cc, list)
         chosen = [multi[ii]] + cc
-        chosen = cast(List[int], chosen)
         chosen_set = set(chosen)
         mut_chunks.append(chosen_set)
 
@@ -2807,15 +2132,13 @@ def start_next_task(
     # A task is ready to start, get it and start the run.
     if chosen_run_data.run_type == 'fuzz':
         fuzz_run_data = chosen_run_data.get_fuzz_run()
-        # run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         fuzz_run_data.set_core(core)
         print_run_start_msg(fuzz_run_data)
-        tasks[executor.submit(fuzz_run_data.eval_func, fuzz_run_data, base_eval)] = \
+        tasks[executor.submit(base_eval, fuzz_run_data)] = \
             Task(CommonRun("run", fuzz_run_data), core)
     elif chosen_run_data.run_type == 'check':
         check_run_data = chosen_run_data.get_check_run()
-        # run_data = cast(Dict[str, Any], run_data)
         # update core, print message and submit task
         check_run_data.set_core(core)
         print_check_start_msg(check_run_data)
@@ -2948,10 +2271,7 @@ def get_seed_gathering_runs(
             sys.exit(1)
 
         for fuzzer in fuzzers:
-            try:
-                eval_func = FUZZERS[fuzzer].eval_func
-            except Exception as err:
-                logger.info(err)
+            if fuzzer not in FUZZERS:
                 logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
                 sys.exit(1)
 
@@ -2970,7 +2290,6 @@ def get_seed_gathering_runs(
                     fuzzer=fuzzer,
                     seed_base_dir=seed_base_dir,
                     timeout=int(timeout) * 60,
-                    eval_func=eval_func,
                     workdir=workdir,
                     orig_bc=Path(IN_DOCKER_WORKDIR)/prog.orig_bc,
                     compile_args=compile_args,
@@ -2983,7 +2302,7 @@ def get_seed_gathering_runs(
     return all_runs
 
 
-def wait_for_seed_run(tasks: tasks_type, cores: CpuCores, all_runs: List[SeedRun]) -> None:
+def wait_for_seed_run(tasks: seed_tasks_type, cores: CpuCores, all_runs: List[SeedRun]) -> None:
     "Wait for a task to complete and process the result."
     assert len(tasks) > 0, "Trying to wait for a task but there are none."
 
@@ -3048,9 +2367,10 @@ def handle_seed_run_result(run_future: Future[SeedRunResult], run_data: SeedRun,
         logger.info(f"= run    : {workdir}")
 
 
-def seed_gathering_run(run_data: SeedRun, docker_image: str) -> SeedRunResult:
+def seed_gathering_run(run_data: SeedRun) -> SeedRunResult:
     global should_run
     start_time = time.time()
+    docker_image = fuzzer_container_tag(run_data.fuzzer)
     # extract used values
     timeout = run_data.timeout
     seed_base_dir = run_data.seed_base_dir
@@ -3135,7 +2455,8 @@ def seed_gathering_run(run_data: SeedRun, docker_image: str) -> SeedRunResult:
     return SeedRunResult(all_logs=all_logs)
 
 
-def chunks(lst: List[Any], n: int) -> Generator[List[Any], None, None]:
+C = TypeVar('C')
+def chunks(lst: List[C], n: int) -> Generator[List[C], None, None]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
@@ -3387,7 +2708,10 @@ def check_seeds(progs, fuzzers, seed_base_dir):
     logger.info("seed checking done :)")
 """
 
-def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int, per_fuzzer: bool, source_dir: Path, destination_dir: Path) -> None:
+def gather_seeds(
+    progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int,
+    per_fuzzer: bool, source_dir: Path, destination_dir: Path
+) -> None:
     global should_run
 
     # source_dir = Path(source_dir_s)
@@ -3407,7 +2731,7 @@ def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats
     # for each mutation and for each fuzzer do a run
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CPUS) as executor:
         # keep a list of all tasks
-        tasks: tasks_type = {}
+        tasks: seed_tasks_type = {}
         # Get each seed gathering runs
         all_runs = get_seed_gathering_runs(fuzzers, progs, timeout, source_dir, num_repeats)
 
@@ -3425,9 +2749,7 @@ def gather_seeds(progs: List[str], fuzzers: List[str], timeout: str, num_repeats
 
                 print_seed_run_start_msg(run_data)
 
-                assert run_data.eval_func is not None
-
-                tasks[executor.submit(run_data.eval_func, run_data, seed_gathering_run)] = \
+                tasks[executor.submit(seed_gathering_run, run_data)] = \
                     Task(CommonRun("seed", run_data), core)
 
             else:
@@ -3643,23 +2965,6 @@ detach to_merge;"'''
             sys.exit(1)
 
 
-def update_signal_list(signal_list: List[Tuple[Any, Set[int]]], to_delete: Set[int]) -> List[Tuple[Any, Set[int]]]:
-    """
-    Takes a list of signal tuples and updates the set s.t. all
-    :param signal_list:
-    :param to_delete:
-    :return:
-    """
-    result = list()
-    for val in signal_list:
-        new_set = val[1] - to_delete
-        # do a diff on the value and then check if there are still unseen signals, if so put the value
-        # with the updated set back into the return list
-        if new_set:
-            result.append((val[0], new_set))
-    return result
-
-
 def measure_mutation_coverage(
     mutator: Container,
     prog_info: Program,
@@ -3689,9 +2994,10 @@ def measure_mutation_coverage(
         return mutation_ids
 
 
-def seed_minimization_run(run_data: MinimizeSeedRun, docker_image: str) -> Dict[str, List[str]]:
+def seed_minimization_run(run_data: MinimizeSeedRun) -> Dict[str, List[str]]:
     global should_run
     start_time = time.time()
+    docker_image = fuzzer_container_tag(run_data.fuzzer)
     # extract used values
     workdir = run_data.workdir
     orig_bc = run_data.orig_bc
@@ -3779,10 +3085,8 @@ def minimize_seeds_one(base_shm_dir: Path, prog_name: str, fuzzer: str, in_path:
         logger.info(err)
         logger.info(f"Prog: {prog_name} is not known, known progs are: {PROGRAMS.keys()}")
         sys.exit(1)
-    try:
-        eval_func = FUZZERS[fuzzer].eval_func
-    except Exception as err:
-        logger.info(err)
+
+    if fuzzer not in FUZZERS:
         logger.info(f"Fuzzer: {fuzzer} is not known, known fuzzers are: {FUZZERS.keys()}")
         sys.exit(1)
 
@@ -3813,7 +3117,6 @@ def minimize_seeds_one(base_shm_dir: Path, prog_name: str, fuzzer: str, in_path:
             compile_args=compile_args,
             args=args,
             fuzzer=fuzzer,
-            eval_func=eval_func,
             workdir=workdir,
             seed_in_dir=seed_in_tmp_dir,
             seed_out_dir=seed_out_tmp_dir,
@@ -3821,7 +3124,7 @@ def minimize_seeds_one(base_shm_dir: Path, prog_name: str, fuzzer: str, in_path:
         )
 
         # start the fuzzer in seed minimization mode on the prog
-        eval_func(run_data, seed_minimization_run)
+        seed_minimization_run(run_data)
 
         # move minimized seeds to result path
         for ff in seed_out_tmp_dir.glob("*"):

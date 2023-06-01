@@ -4,13 +4,10 @@ import time
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from eval import MutationRun, SuperMutant, FuzzerRun, RunResultData, CrashingInput
+from data_types import Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CrashingInput, CoveredResult
 
 from constants import WITH_ASAN, WITH_MSAN
-from helpers import Program, mutation_locations_path, mutation_prog_source_path
-from eval import CoveredResult
+from helpers import mutation_locations_path, mutation_prog_source_path
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
@@ -151,8 +148,7 @@ class Stats:
             column,
             instr,
             funname,
-            additional_info,
-            rest
+            additional_info
         )''')
 
         c.execute('''
@@ -309,16 +305,16 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_mutation_type(self, c: sqlite3.Cursor, mutation_type: Dict[str, Any]) -> None:
+    def new_mutation_type(self, c: sqlite3.Cursor, mutation_type: MutationType) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         c.execute('INSERT INTO mutation_types VALUES (?, ?, ?, ?, ?, ?)',
             (
-                mutation_type['pattern_name'],
-                mutation_type['typeID'],
-                mutation_type['pattern_location'],
-                mutation_type['pattern_class'],
-                mutation_type['description'],
-                mutation_type['procedure'],
+                mutation_type.pattern_name,
+                mutation_type.type_id,
+                mutation_type.pattern_location,
+                mutation_type.pattern_class,
+                mutation_type.description,
+                mutation_type.procedure,
             )
         )
         self.conn.commit()
@@ -415,35 +411,22 @@ class Stats:
         self.conn.commit()
 
     @connection
-    def new_mutation(self, c: sqlite3.Cursor, exec_id: str, data: Dict[str, Any]) -> None:
+    def new_mutation(self, c: sqlite3.Cursor, exec_id: str, data: Mutation) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
-        import copy
-        mut_data = copy.deepcopy(data['mutation_data'])
-        mut_id = mut_data.pop('UID')
-        assert int(data['mutation_id']) == int(mut_id), f"{data['mutation_id']} != {mut_id}"
-
-        mut_additional = mut_data.pop('additionalInfo', None)
-        if mut_additional is not None:
-            # Remove redundant fields
-            mut_additional.pop('funname', None)
-            mut_additional.pop('instr', None)
-            # None if no data is left else json of the data
-            mut_additional = None if len(mut_additional) == 0 else json.dumps(mut_additional) 
 
         c.execute('INSERT INTO mutations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
-                data['prog'],
-                data['mutation_id'],
-                mut_data.pop('type', None),
-                mut_data.pop('directory', None),
-                mut_data.pop('filePath', None),
-                mut_data.pop('line', None),
-                mut_data.pop('column', None),
-                mut_data.pop('instr', None),
-                mut_data.pop('funname', None),
-                mut_additional,
-                json.dumps(mut_data) if len(mut_data) > 0 else None,
+                data.prog.name,
+                data.mutation_id,
+                data.type_id,
+                data.directory,
+                data.filePath,
+                data.line,
+                data.column,
+                data.instr,
+                data.funname,
+                data.additional_info,
             )
         )
         self.conn.commit()

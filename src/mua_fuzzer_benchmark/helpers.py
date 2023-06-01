@@ -1,66 +1,16 @@
-from dataclasses import dataclass, field
-from functools import partial
 import hashlib
-from inspect import getframeinfo, stack
 import json
 import logging
 from pathlib import Path
 import shutil
 import time
-from typing import Callable, Dict, List, Optional, TYPE_CHECKING, TypeVar
+from typing import Dict
 
-if TYPE_CHECKING:
-    from eval import FuzzerRun, RunResult
+from data_types import CompileArg, Fuzzer, Program
 
-from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR, TMP_PROG_DIR
+from constants import BLOCK_SIZE, IN_DOCKER_SHARED_DIR, SHARED_DIR
 
 logger = logging.getLogger(__name__)
-
-
-DispatchFunctionArg = TypeVar('DispatchFunctionArg')
-DispatchFunctionRes = TypeVar('DispatchFunctionRes')
-
-eval_func_type = Callable[
-    [
-        DispatchFunctionArg,
-        Callable[[
-                DispatchFunctionArg,
-                str
-            ],
-            DispatchFunctionRes
-        ]
-    ],
-    DispatchFunctionRes
-]
-
-@dataclass
-class Fuzzer:
-    name: str
-    eval_func: eval_func_type[FuzzerRun, RunResult]
-    queue_dir: str
-    queue_ignore_files: List[str]
-    crash_dir: str
-    crash_ignore_files: List[str]
-
-
-@dataclass
-class CompileArg:
-    val: str
-    action: Optional[str]
-
-
-@dataclass
-class Program:
-    name: str
-    bc_compile_args: List[CompileArg]
-    bin_compile_args: List[CompileArg]
-    is_cpp: bool
-    dict_path: Path
-    orig_bin: Path
-    orig_bc: Path
-    omit_functions: List[str]
-    dir_name: str
-    san_is_built: bool = field(default=False, init=False)
 
 
 def fuzzer_container_tag(name: str) -> str:
@@ -166,15 +116,6 @@ class CoveredFile:
         shutil.rmtree(self.host_path)
 
 
-def eval_dispatch_func(
-    run_data: DispatchFunctionArg,
-    run_func: Callable[[DispatchFunctionArg, str], RunResult],
-    container_tag: str
-) -> RunResult:
-    result = run_func(run_data, fuzzer_container_tag(container_tag))
-    return result
-
-
 def load_fuzzers() -> Dict[str, Fuzzer]:
     fuzzers = {}
     for fuzzer_dir in Path("dockerfiles/fuzzers").iterdir():
@@ -193,14 +134,9 @@ def load_fuzzers() -> Dict[str, Fuzzer]:
 
         fuzzer_name = fuzzer_dir.name
         fuzzer_crash_dir = fuzzer_config["crash_dir"]
-        partial_eval_func = partial(
-            eval_dispatch_func,
-            container_tag=fuzzer_name
-        )
 
         fuzzers[fuzzer_name] = Fuzzer(
             name=fuzzer_name,
-            eval_func=partial_eval_func,
             queue_dir=fuzzer_config["queue_dir"],
             queue_ignore_files=fuzzer_config["queue_ignore_files"],
             crash_dir=fuzzer_crash_dir,
