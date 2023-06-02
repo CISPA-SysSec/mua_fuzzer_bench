@@ -13,7 +13,7 @@ import json
 import shutil
 import random
 from types import FrameType
-from typing import Any, Dict, Generator, List, Set, Optional, TextIO, Tuple, TypeVar, Union, cast, no_type_check, Callable
+from typing import Any, Dict, Generator, List, Set, Optional, TextIO, Tuple, TypeVar, TypedDict, Union, cast, no_type_check, Callable
 import concurrent.futures
 import shlex
 import platform
@@ -25,7 +25,7 @@ from pathlib import Path
 import docker
 
 import logging
-from data_types import ActiveMutants, CheckResultCovered, CheckResultKilled, CheckResultOrigCrash, CheckResultOrigTimeout, CheckResultTimeout, CheckRun, CommonRun, CompileArg, CoveredResult, CrashCheckResult, CrashingInput, FuzzerRun, GatherSeedRun, GatheredSeedsRun, KCovRun, MinimizeSeedRun, Mutation, MutationRun, MutationType, Program, ResultingRun, RunResult, RunResultKey, SeedRun, SeedRunResult, SuperMutant, SuperMutantUninitialized, check_results_union
+from data_types import ActiveMutants, CheckResultCovered, CheckResultKilled, CheckResultOrigCrash, CheckResultOrigTimeout, CheckResultTimeout, CheckRun, CommonRun, CompileArg, CoveredResult, CrashCheckResult,  FuzzerRun, GatherSeedRun, GatheredSeedsRun, KCovResult, KCovRun, MinimizeSeedRun, Mutation, MutationRun, MutationType, Program, RerunMutations, ResultingRun, RunResult, RunResultKey, SeedRun, SeedRunResult, SuperMutant, SuperMutantUninitialized, check_results_union
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container, Container
 
 from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
@@ -165,12 +165,7 @@ def check_crashing_inputs(run_data: FuzzerRun, testing_container: Container, cra
                 path_full = str(path.resolve())
                 assert str(sym_path.resolve()) == path_full
 
-            res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container)
-            
-            # update from the symlink paths to the actual file paths
-            for sub_res in res.results:
-                if sub_res.path is not None:
-                    sub_res.path = Path(sub_res.path).resolve()
+            res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container, False)
 
     total_check_time = time.time() - check_start_time
     if total_check_time > 1:
@@ -180,49 +175,55 @@ def check_crashing_inputs(run_data: FuzzerRun, testing_container: Container, cra
     return res
     
 
-def get_check_result(f: TextIO, cur_time: float) -> check_results_union:
-    res = json.load(f) # type: ignore
-    result: str = res['result'] # type: ignore
+def get_check_result(f: TextIO, cur_time: float, by_seed: bool) -> check_results_union:
+    res = json.load(f) # type: ignore[misc]
+    result: str = res['result'] # type: ignore[misc]
 
     if result == "covered":
         return CheckResultCovered(
-            path=res['path'], # type: ignore
-            mutation_ids=res['mutation_ids'], # type: ignore
-            cur_time=cur_time,
+            path=Path(res['path']).resolve(), # type: ignore[misc]
+            mutation_ids=set(res['mutation_ids']), # type: ignore[misc]
+            time=cur_time,
+            by_seed=by_seed,
         )
     elif result == "orig_timeout":
         return CheckResultOrigTimeout(
-            path=res['path'], # type: ignore
-            cur_time=cur_time,
+            path=Path(res['path']).resolve(), # type: ignore[misc]
+            orig_cmd=res['orig_cmd'], # type: ignore[misc]
+            time=cur_time,
+            by_seed=by_seed,
         )
     elif result == "orig_crash":
         return CheckResultOrigCrash(
-            path=res['path'], # type: ignore
-            args=res['args'], # type: ignore
-            returncode=res['returncode'], # type: ignore
-            orig_res=res['orig_res'], # type: ignore
-            cur_time=cur_time,
+            path=Path(res['path']).resolve(), # type: ignore[misc]
+            args=res['args'], # type: ignore[misc]
+            returncode=int(res['returncode']), # type: ignore[misc]
+            orig_res=res['orig_res'], # type: ignore[misc]
+            time=cur_time,
+            by_seed=by_seed,
         )
     elif result == "timeout":
         return CheckResultTimeout(
-            path=res['path'], # type: ignore
-            args=res['args'], # type: ignore
-            mutation_ids=res['mutation_ids'], # type: ignore
-            cur_time=cur_time,
+            path=Path(res['path']).resolve(), # type: ignore[misc]
+            args=res['args'], # type: ignore[misc]
+            mutation_ids=set(res['mutation_ids']), # type: ignore[misc]
+            time=cur_time,
+            by_seed=by_seed,
         )
     elif result == "killed":
         return CheckResultKilled(
-            path=res['path'], # type: ignore
-            args=res['args'], # type: ignore
-            mutation_ids=res['mutation_ids'], # type: ignore
-            num_triggered=res['num_triggered'], # type: ignore
-            orig_cmd=res['orig_cmd'], # type: ignore
-            mut_cmd=res['mut_cmd'], # type: ignore
-            orig_returncode=res['orig_returncode'], # type: ignore
-            mut_returncode=res['mut_returncode'], # type: ignore
-            orig_res=res['orig_res'], # type: ignore
-            mut_res=res['mut_res'], # type: ignore
-            cur_time=cur_time,
+            path=Path(res['path']).resolve(), # type: ignore[misc]
+            args=res['args'], # type: ignore[misc]
+            mutation_ids=set(res['mutation_ids']), # type: ignore[misc]
+            num_triggered=res['num_triggered'], # type: ignore[misc]
+            orig_cmd=res['orig_cmd'], # type: ignore[misc]
+            mut_cmd=res['mut_cmd'], # type: ignore[misc]
+            orig_returncode=int(res['orig_returncode']), # type: ignore[misc]
+            mut_returncode=int(res['mut_returncode']), # type: ignore[misc]
+            orig_res=res['orig_res'], # type: ignore[misc]
+            mut_res=res['mut_res'], # type: ignore[misc]
+            time=cur_time,
+            by_seed=by_seed,
         )
     else:
         raise ValueError(f"Unknown result: {result}")
@@ -232,7 +233,8 @@ def base_eval_crash_check(
     input_dir: Path,
     run_data: FuzzerRun | CheckRun,
     cur_time: float,
-    testing: Container
+    testing: Container,
+    by_seed: bool,
 ) -> CrashCheckResult:
     mut_data = run_data.mut_data
     orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data.prog.orig_bin)
@@ -266,7 +268,7 @@ def base_eval_crash_check(
     results = []
     for rf in result_dir.glob("*"):
         with open(rf, "rt") as f:
-            res = get_check_result(f, cur_time)
+            res = get_check_result(f, cur_time, by_seed)
         # update result with time
         results.append(res)
 
@@ -303,26 +305,26 @@ def update_results(
             results[key] = nr
 
         known_result_type = False
-        if res == "killed_by_seed":
+        if nr.id() == "killed_by_seed":
             has_killed_by_seed = True
             known_result_type = True
-        if res == "timeout_by_seed":
+        if nr.id() == "timeout_by_seed":
             has_timeout_by_seed = True
             known_result_type = True
-        if res == "orig_timeout_by_seed":
+        if nr.id() == "orig_timeout_by_seed":
             has_orig_timeout_by_seed = True
             known_result_type = True
-        if res == "killed":
+        if nr.id() == "killed":
             has_killed = True
             known_result_type = True
-        if res == "timeout":
+        if nr.id() == "timeout":
             has_timeout = True
             known_result_type = True
-        if res in HANDLED_RESULT_TYPES:
+        if nr.id() in HANDLED_RESULT_TYPES:
             known_result_type = True
 
         if not known_result_type:
-            raise ValueError(f"Unhandled result: {res} {new_results_list}")
+            raise ValueError(f"Unhandled result: {nr} {new_results_list}")
 
     if has_multiple:
         multiple_results_list = {elem.generate_key(): elem for elem in new_results_list}
@@ -397,7 +399,7 @@ def stop_container(container: Container) -> None:
             container.stop()
             logger.info(f"! Container still alive {container.name}, keep killing it.")
             time.sleep(1)
-    except (docker.errors.NotFound, docker.errors.APIError): # type: ignore
+    except (docker.errors.NotFound, docker.errors.APIError): # type: ignore[misc]
         # container is dead
         pass
 
@@ -444,17 +446,17 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: Dict[RunResultKey, RunResultData] = {}
+    results: Dict[RunResultKey, check_results_union] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
 
         seeds = get_seed_dir(seed_base_dir, mut_data.prog.name, run_data.fuzzer.name)
 
-        new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container)
+        new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container, True)
         # add suffix to identify seed results
         for res in new_results.results:
-            res.result += '_by_seed'
+            new_results.results
 
         update_res = update_results(results, new_results, start_time)
         if update_res is not None:
@@ -510,7 +512,7 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
             # error case
             try:
                 container.reload()
-            except docker.errors.NotFound: # type: ignore
+            except docker.errors.NotFound: # type: ignore[misc]
                 # container is dead stop waiting
                 break
             if container.status not in ["running", "created"]:
@@ -518,17 +520,7 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
 
             # Check if covered file is seen
             for new_covered, at_time in covered.check().items():
-                update_results(
-                    results,
-                    CrashCheckResult(
-                        result='covered',
-                        results=[
-                            RunResultData(
-                                   result='covered',
-                                   mutation_ids=set([new_covered]),
-                                   time=at_time,
-                                )]),
-                    start_time)
+                add_covered_mut_id(start_time, results, new_covered, at_time)
 
             # Check if a crashing input has already been found
             new_results = check_crashing_inputs(run_data, testing_container, crashing_inputs,
@@ -561,12 +553,7 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
 
         # Check if covered file is seen, one final time
         for new_covered, at_time in covered.check().items():
-            update_results(results, CrashCheckResult(result='covered', results=[
-                RunResultData(
-                    result='covered',
-                    mutation_ids=set([new_covered]),
-                    time=at_time)
-            ]), start_time)
+            add_covered_mut_id(start_time, results, new_covered, at_time)
 
         all_logs = get_logs(logs_queue)
 
@@ -577,6 +564,24 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
             data=results,
             all_logs=all_logs,
         )
+
+def add_covered_mut_id(
+    start_time: float,
+    results: Dict[RunResultKey, check_results_union],
+    new_covered: int,
+    at_time: float
+) -> None:
+    update_results(results,
+                   CrashCheckResult(
+                        result='covered',
+                        results=[
+                            CheckResultCovered(
+                                path=None,
+                                mutation_ids=set([new_covered]),
+                                time=at_time,
+                                by_seed=False,
+                            )]),
+                   start_time)
 
 
 def resolve_compile_args(args: List[CompileArg], workdir: str) -> List[str]:
@@ -631,12 +636,13 @@ def check_run(run_data: CheckRun) -> RunResult:
     # get path for covered files
     covered = CoveredFile(workdir_path, start_time)
 
-    results: Dict[RunResultKey, RunResultData] = {}
+    results: Dict[RunResultKey, check_results_union] = {}
 
     # start testing container
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
 
-        new_results = base_eval_crash_check(inputs_to_check, run_data, time.time() - start_time, testing_container)
+        new_results = base_eval_crash_check(
+            inputs_to_check, run_data, time.time() - start_time, testing_container, False)
 
         res = update_results(results, new_results, start_time)
 
@@ -716,11 +722,12 @@ def measure_mutation_coverage_per_file(
             print(run['out'])
             raise CoverageException(run)
 
+        # Key is path to file, value is list of mutation ids that were triggered.
         with open(result_file, 'rt') as f:
-            data = json.load(f)
-        return {
-            Path(kk): [int(mid) for mid in mm]
-            for kk, mm in data.items()
+            data = json.load(f) # type: ignore[misc]
+        return { # type: ignore[misc]
+            Path(kk): [int(mid) for mid in mm] # type: ignore[misc]
+            for kk, mm in data.items() # type: ignore[misc]
         }
 
 
@@ -868,8 +875,20 @@ def get_all_mutations(
         rerun = None
 
     if rerun_mutations_p is not None:
+        class RerunMutationsDict(TypedDict):
+            prog: str
+            ids: List[int]
+            mode: str
+
         with open(rerun_mutations_p, 'rt') as f:
-            rerun_mutations = json.load(f)
+            rerun_mutations_data: List[RerunMutationsDict] = json.load(f)
+            rerun_mutations = {
+                rm['prog']: RerunMutations(
+                    prog=rm['prog'],
+                    mutation_ids=rm['ids'],
+                    mode=rm['mode'])
+                for rm in rerun_mutations_data
+            }
     else:
         rerun_mutations = None
 
@@ -895,7 +914,7 @@ def get_all_mutations(
 
         # get info on mutations
         with open(mutation_locations_path(prog_info), 'rt') as f:
-            mutation_data = json.load(f)
+            mutation_data: List[Dict[str, str]] = json.load(f)
 
         if FILTER_MUTATIONS:
             if rerun is not None:
@@ -918,7 +937,7 @@ def get_all_mutations(
         if rerun_mutations is not None:
             mutations_dict = {int(mm.mutation_id): mm for mm in mutations}
             rerun_chosen_mutations = []
-            rerun_mutations_for_prog = rerun_mutations[prog]['ids']
+            rerun_mutations_for_prog = rerun_mutations[prog].mutation_ids
             for mtu in rerun_mutations_for_prog:
                 assert mtu in mutations_dict.keys(), "Can not find specified rerun mutation id in mutations for prog."
                 rerun_chosen_mutations.append(mutations_dict[mtu])
@@ -930,7 +949,7 @@ def get_all_mutations(
 
         if FILTER_MUTATIONS:
             logger.info("Updating for filtered mutations, checking the found mutations.")
-            all_mutation_ids = set((p['UID'] for p in mutation_data))
+            all_mutation_ids = set((int(p['UID']) for p in mutation_data))
             filtered_mutation_ids = set((int(m) for m in filtered_mutations))
             assert len(filtered_mutation_ids - all_mutation_ids) == 0, 'Filtered mutation ids contain ids not in all ids.'
             mutations = list(
@@ -963,7 +982,7 @@ def get_all_mutations(
 
             # Not all supermutants are required if a specific set of mutations is specified.
             if rerun_mutations is not None:
-                mode = rerun_mutations[prog]['mode']
+                mode = rerun_mutations[prog].mode
                 if mode == 'single':
                     logger.info("Rerun with single mode!")
                     supermutations = [[mm] for mm in chain(*supermutations)]
@@ -982,7 +1001,7 @@ def get_all_mutations(
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sms)
 
         s_mutations = list(
-            SuperMutantUninitialized(sm, prog_info, mutation_data)
+            SuperMutantUninitialized(sm, prog_info) # , mutation_data)
             for sm in covered.supermutants
         )
 
@@ -1054,7 +1073,6 @@ def get_all_runs(
             m_id = supermutant.mutation_ids
             prog = supermutant.prog.name
             prog_info = supermutant.prog
-            mutation_data = supermutant.mutation_data
             # Gather all data for a mutation
             # Arguments on how to execute the binary
             args = "@@"
@@ -1065,7 +1083,6 @@ def get_all_runs(
             mut_data = SuperMutant(
                 supermutant_id=stats.next_supermutant_id(),
                 mutation_ids=set(int(mm) for mm in m_id),
-                mutation_data=[mutation_data[int(mut_id)] for mut_id in m_id],
                 prog=prog_info,
                 compile_args=prog_info.bc_compile_args + prog_info.bin_compile_args,
                 args=args,
@@ -1132,7 +1149,7 @@ def split_up_supermutant(multi_tp: Set[Tuple[int, ...]], all_muts_list: Set[int]
     mut_chunks = []
 
     ii: Union[int, object]
-    cc: Union[List[int], Any] # type: ignore
+    cc: Union[List[int], Any] # type: ignore[misc]
     for ii, cc in zip_longest(range(len(multi)), list(chunks(others, chunk_size)), fillvalue=[]):
         assert isinstance(ii, int)
         assert isinstance(cc, list)
@@ -1168,16 +1185,16 @@ HANDLED_RESULT_TYPES = set([
 
 def has_result(
     mut_id: int,
-    results: List[RunResultData],
+    results: List[check_results_union],
     to_search: List[str]
-) -> Optional[RunResultData]:
+) -> Optional[check_results_union]:
     unhandled_search_types = set(to_search) - HANDLED_RESULT_TYPES
     assert unhandled_search_types == set(), f'Unhandled search types: {unhandled_search_types}'
-    unhandled_result_types = set(rr.result for rr in results) - HANDLED_RESULT_TYPES
+    unhandled_result_types = set(rr.id() for rr in results) - HANDLED_RESULT_TYPES
     assert unhandled_result_types == set(), f'Unhandled result types: {unhandled_result_types}'
 
-    for res in [rr for rr in results if rr.result in [*to_search]]:
-        if mut_id in res.mutation_ids:
+    for res in [rr for rr in results if rr.id() in [*to_search]]:
+        if mut_id in res.get_mutation_ids():
             return res
     return None
 
@@ -1214,21 +1231,21 @@ def copy_fuzzer_inputs(data: FuzzerRun) -> Path:
 def record_supermutant_multi(
     stats: Stats,
     mut_data: SuperMutant,
-    results: List[RunResultData],
+    results: List[check_results_union],
     fuzzer: str,
     run_ctr: int,
     description: str
 ) -> None:
     multies = set()
     for rr in results:
-        try:
-            mut_ids = sorted(rr.mutation_ids)
-        except KeyError:
+
+        mut_ids = sorted(rr.get_mutation_ids())
+
+        if len(mut_ids) == 0:
             continue
-        result = rr.result
-        entry = (result, mut_ids)
-        if len(mut_ids) > 1 and entry not in multies:
-            multies.add(entry)
+
+        if len(mut_ids) > 1 and mut_ids not in multies:
+            multies.add(mut_ids)
 
     stats.new_supermutant_multi(EXEC_ID, mut_data, multies, fuzzer, run_ctr, description)
 
@@ -1275,7 +1292,11 @@ def handle_run_result(
             multi = run_result.data
             multi_data = list(multi.values())
             record_supermutant_multi(stats, mut_data, multi_data, data.fuzzer.name, data.run_ctr, 'multiple_result')
-            multi_ids = set([tuple(sorted(mm.mutation_ids)) for mm in multi_data if len(mm.mutation_ids) > 1])
+            multi_ids = set([
+                tuple(sorted(mm.get_mutation_ids()))
+                for mm in multi_data
+                if len(mm.get_mutation_ids()) > 1
+            ])
             logger.info(f"= run (multi):  {mut_data.prog.name}:{mut_data.printable_m_id()}:{multi_ids}")
             all_mutations = mut_data.mutation_ids
             new_supermutants = split_up_supermutant(multi_ids, all_mutations)
@@ -1303,7 +1324,7 @@ def handle_run_result(
             assert len(all_mutation_ids) > 0
 
             total_time = run_result.total_time
-            time_t: Callable[[RunResultData], float] = lambda x: x.time
+            time_t: Callable[[check_results_union], float] = lambda x: x.time
             results = sorted(run_result.data.values(), key=time_t)
             del run_result
 
@@ -1321,10 +1342,9 @@ def handle_run_result(
                         num_seed_covered, num_timeout, total_time)
 
                     if killed is not None:
-                        crash_input = killed.crash_input
-                        assert crash_input is not None
+                        assert isinstance(killed, CheckResultKilled)
                         stats.new_seed_crashing_inputs(
-                            EXEC_ID, prog.name, mut_id, data.fuzzer.name, [crash_input])
+                            EXEC_ID, prog.name, mut_id, data.fuzzer.name, [killed])
 
                     killed_mutants |= set([mut_id])
                     stats.done_run('killed_by_seed', EXEC_ID, mut_data.prog.name, mut_id,
@@ -1332,7 +1352,7 @@ def handle_run_result(
 
             if len(killed_mutants) == 0:
                 for rr in results:
-                    if rr.result == "timout_by_seed" and len(rr.mutation_ids) == 0:
+                    if rr.id() == "timout_by_seed" and len(rr.get_mutation_ids()) == 0:
                         chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
@@ -1360,25 +1380,11 @@ def handle_run_result(
                 stats.new_run_executed(EXEC_ID, run_ctr, prog, mut_id, fuzzer, covered_time, total_time)
 
             def record_run_timeout(
-                time: float, path: Path, orig_cmd: List[str], mut_cmd: List[str],
-                prog: str, fuzzer: str, run_ctr: int, mut_id: int
+                timeout: CheckResultTimeout, prog: str, fuzzer: str, run_ctr: int, mut_id: int
             ) -> None:
-                data = CrashingInput(
-                    time=time,
-                    path=path,
-                    orig_returncode=None,
-                    mut_returncode=None,
-                    orig_cmd=orig_cmd,
-                    mut_cmd=mut_cmd,
-                    orig_res=None,
-                    mut_res=None,
-                    orig_timeout=None,
-                    timeout=1,
-                    num_triggered=None,
-                )
 
-                stats.new_crashing_inputs(
-                    [data],
+                stats.new_crashing_timout_inputs(
+                    [timeout],
                     EXEC_ID,
                     prog,
                     mut_id,
@@ -1396,18 +1402,18 @@ def handle_run_result(
 
             all_mutation_ids = set(int(mm) for mm in mut_data.mutation_ids)
             assert len(all_mutation_ids) > 0
-            result_ids = set(int(mm) for rr in results for mm in rr.mutation_ids)
+            result_ids = set(int(mm) for rr in results for mm in rr.get_mutation_ids())
             assert len(result_ids - set(all_mutation_ids)) == 0, f"{sorted(result_ids)}\n{sorted(all_mutation_ids)}"
 
-            if any([rr for rr in results if rr.result in ['orig_crash', 'orig_timeout']]):
+            if any([rr for rr in results if rr.id() in ['orig_crash', 'orig_timeout']]):
                 logger.warning(
                     'Original binary crashed or timed out, retrying. If this problem persists, check the setup.')
                 recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), all_mutation_ids)
             else:
                 # check if there are multi covered kills
                 multi_kills = []
-                for res in [rr for rr in results if rr.result in ['killed']]:
-                    mut_ids = res.mutation_ids
+                for res in [rr for rr in results if rr.id() in ['killed']]:
+                    mut_ids = res.get_mutation_ids()
                     if len(mut_ids) > 1:
                         multi_kills.append(res)
 
@@ -1418,9 +1424,9 @@ def handle_run_result(
 
                     # there can also be mutants that are killed but not part of a multi kill
                     # so just get every mutation that was killed and recheck all of them
-                    killed_mutants = set(chain(*[rr.mutation_ids
+                    killed_mutants = set(chain(*[rr.get_mutation_ids()
                                     for rr in results
-                                    if rr.result in ['killed']]))
+                                    if rr.id() in ['killed']]))
                     
                     # get the remaining mutations
                     cur_mutations: set[int] = set((int(m_id) for m_id in mut_data.mutation_ids))
@@ -1475,25 +1481,18 @@ def handle_run_result(
                         # record killed or timeout
                         if killed:
                             killed = copy.deepcopy(killed)
-                            crash_input = killed.crash_input
-                            assert crash_input is not None
-                            crash_input.orig_timeout = None
-                            crash_input.timeout = None
-                            stats.new_crashing_inputs([crash_input], EXEC_ID, prog.name, mut_id,
+                            assert isinstance(killed, CheckResultKilled)
+                            stats.new_crashing_inputs([killed], EXEC_ID, prog.name, mut_id,
                                                       data.run_ctr, data.fuzzer.name)
                             stats.done_run('killed', EXEC_ID, mut_data.prog.name, mut_id,
                                            data.run_ctr, data.fuzzer.name)
                         elif timeout:
-                            timeout_path = timeout.path
-                            assert timeout_path is not None
-                            timeout_args = timeout.args
-                            assert timeout_args is not None
-                            record_run_timeout(timeout.time, timeout_path, [], timeout_args,
-                                               prog.name, data.fuzzer.name, data.run_ctr, mut_id)
+                            assert isinstance(timeout, CheckResultTimeout)
+                            record_run_timeout(timeout, prog.name, data.fuzzer.name, data.run_ctr, mut_id)
                             stats.done_run('timeout', EXEC_ID, mut_data.prog.name, mut_id,
                                            data.run_ctr, data.fuzzer.name)
                             
-                        result_types = set(rr.result for rr in results)
+                        result_types = set(rr.id() for rr in results)
                         unknown_result_types = result_types - HANDLED_RESULT_TYPES
                         assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
 
@@ -1503,10 +1502,11 @@ def handle_run_result(
                             # If there is a timeout result mark that mutation as killed, we just didn't get the triggered file.
                             timeout = None
                             for rr in results:
-                                if rr.result == 'timeout':
+                                if rr.id() == 'timeout':
                                     timeout = rr
                                     break
                             if timeout:
+                                assert isinstance(timeout, CheckResultTimeout)
                                 mut_id = list(all_mutation_ids)[0]
                                 
                                 seed_covered = has_result(mut_id, results, ['covered_by_seed'])
@@ -1525,8 +1525,8 @@ def handle_run_result(
                                 timeout_args = timeout.args
                                 assert timeout_args is not None
 
-                                record_run_timeout(timeout.time, timeout_path, [], timeout_args,
-                                    prog.name, data.fuzzer.name, data.run_ctr, mut_id)
+                                record_run_timeout(timeout, prog.name, data.fuzzer.name, data.run_ctr, mut_id)
+
                                 stats.done_run('timeout_no_trigger', EXEC_ID, mut_data.prog.name,
                                                mut_id, data.run_ctr, data.fuzzer.name)
                             else:
@@ -1589,7 +1589,7 @@ def handle_run_result(
 
                 record_supermutant_multi(stats, mut_data, results, data.fuzzer.name, data.run_ctr, 'completed')
 
-                orig_timeout = any(rr.result == 'orig_timeout' for rr in results)
+                orig_timeout = any(rr.id() == 'orig_timeout' for rr in results)
                 if orig_timeout:
                     logger.warning(f"Original binary timed out, retrying... Consider fixing the subject.")
                     recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data.mutation_ids)
@@ -1627,7 +1627,7 @@ def handle_run_result(
                             covered_time_val,
                             total_time)
 
-                        result_types = set(rr.result for rr in results)
+                        result_types = set(rr.id() for rr in results)
                         unknown_result_types = result_types - HANDLED_RESULT_TYPES
                         assert unknown_result_types == set(), f"Unknown result types: {unknown_result_types}\n{results}"
                         stats.done_run('complete', EXEC_ID, mut_data.prog.name, mut_id,
@@ -2113,9 +2113,9 @@ def build_docker_images(fuzzers: List[str], progs: List[str]) -> None:
         #     stdout = proc.stdout.decode()
         # except:
         #     stdout = str(proc.stdout)
-        args: List[str] = proc.args
+        args_testing: List[str] = proc.args
         logger.info(f"Could not build testing image.\n"
-                f"{args} -> {proc.returncode}\n"
+                f"{args_testing} -> {proc.returncode}\n"
                 f"{proc.stdout}")
         sys.exit(1)
 
@@ -2139,9 +2139,9 @@ def build_docker_images(fuzzers: List[str], progs: List[str]) -> None:
             #     stdout = proc.stdout.decode()
             # except:
             #     stdout = str(proc.stdout)
-            args: List[str] = proc.args
+            args_general: List[str] = proc.args
             logger.info(f"Could not build {tag} image.\n"
-                  f"{args} -> {proc.returncode}\n"
+                  f"{args_general} -> {proc.returncode}\n"
                   f"{proc.stdout}")
             sys.exit(1)
 
@@ -2252,16 +2252,24 @@ def run_eval(
     git_status = get_git_status()
     stats.new_execution(
         EXEC_ID, platform.uname()[1], git_status, rerun, execution_start_time,
-        json.dumps({
+        json.dumps({ # type: ignore[misc]
             'progs': progs, 'fuzzers': fuzzers, 'timeout': timeout, 'num_repeats': num_repeats,
             'seed_base_dir': str(seed_base_dir), 'rerun': rerun, 'rerun_mutations': rerun_mutations
         }),
-        json.dumps({k: v for k, v in os.environ.items()})
+        json.dumps({k: v for k, v in os.environ.items()}) # type: ignore[misc]
     )
+
+    class MutationDocEntry(TypedDict):
+        pattern_name: str
+        typeID: int
+        pattern_location: str
+        pattern_class: str
+        description: str
+        procedure: str
 
     # Get a record of all mutation types.
     with open("mutation_doc.json", "rt") as f:
-        mutation_types = json.load(f)
+        mutation_types: List[MutationDocEntry] = json.load(f)
         for mt in mutation_types:
             mutation_type = MutationType(
                 pattern_name=mt['pattern_name'],
@@ -2452,10 +2460,8 @@ def seed_gathering_run(run_data: SeedRun) -> SeedRunResult:
 
     workdir.mkdir(parents=True, exist_ok=True)
 
-    # get access to the docker client to start the container
-    docker_client = docker.from_env()
     # Start and run the container
-    container = docker_client.containers.run(
+    container = Container(
         docker_image, # the image
         [
             "/home/user/eval.sh",
@@ -2476,8 +2482,7 @@ def seed_gathering_run(run_data: SeedRun) -> SeedRunResult:
         working_dir=str(shared_dir_to_docker(workdir)),
         mem_limit="10g",
         mem_swappiness=0,
-        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-            config={'max-size': '10m'}),
+        log_config={'max-size': '10m'},
         detach=True
     )
 
@@ -2490,7 +2495,7 @@ def seed_gathering_run(run_data: SeedRun) -> SeedRunResult:
         # error case
         try:
             container.reload()
-        except docker.errors.NotFound: # type: ignore
+        except docker.errors.NotFound: # type: ignore[misc]
             # container is dead stop waiting
             break
         if container.status not in ["running", "created"]:
@@ -2509,7 +2514,7 @@ def seed_gathering_run(run_data: SeedRun) -> SeedRunResult:
 
             # Wait up to 10 seconds then send sigkill
             container.stop()
-    except docker.errors.NotFound: # type: ignore
+    except docker.errors.NotFound: # type: ignore[misc]
         # container is dead just continue maybe it worked
         pass
 
@@ -2621,7 +2626,7 @@ def gather_seeds(
 
     # for each seed_run, minimize the run in new folder minimize_dir
     minimize_shm_dir = SHARED_DIR/"minimize_coverage_seeds"
-    shutil.rmtree(minimize_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x))
+    shutil.rmtree(minimize_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x)) # type: ignore[misc]
     minimize_shm_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Minimizing seeds ...")
@@ -2668,8 +2673,17 @@ def gather_seeds(
 
             kcov_res_path = kcov_res_dir/f"{sr.prog}_{sr.fuzzer}_{sr.instance}.json"
             get_kcov(prog, sr_seed_dir, str(kcov_res_path))
+
+            class KcovResDict(TypedDict):
+                covered: List[Tuple[str, str]]
+                all_lines: List[Tuple[str, str]]
+
             with open(kcov_res_path) as f:
-                kcov_res = json.load(f)
+                kcov_res_data: KcovResDict = json.load(f)
+                kcov_res = KCovResult(
+                    covered_lines=kcov_res_data['covered'],
+                    all_lines=kcov_res_data['all_lines'],
+                )
             sr.kcov_res = kcov_res
 
             logger.info(f"{sr.prog} {sr.fuzzer} {sr.instance}: "
@@ -2698,7 +2712,8 @@ def gather_seeds(
 
     logger.info(f"Copying median runs to: {str(median_runs_base_dir)}")
     for rr in runs_by_prog_fuzzer.values():
-        sorted_runs = sorted(rr, key=lambda x: len(x.covered_mutations))
+        key_fn: Callable[[GatheredSeedsRun], int] = lambda x: len(x.covered_mutations)
+        sorted_runs = sorted(rr, key=key_fn)
         mr = sorted_runs[int(len(sorted_runs) / 2)]
         median_run_dir = median_runs_base_dir/mr.prog/mr.fuzzer
         median_run_dir.mkdir(parents=True)
@@ -2840,10 +2855,8 @@ def seed_minimization_run(run_data: MinimizeSeedRun) -> Dict[str, List[str]]:
 
     workdir.mkdir(parents=True, exist_ok=True)
 
-    # get access to the docker client to start the container
-    docker_client = docker.from_env()
     # Start and run the container
-    container = docker_client.containers.run(
+    container = Container(
         docker_image, # the image
         [
             "/home/user/minimize.sh",
@@ -2863,8 +2876,7 @@ def seed_minimization_run(run_data: MinimizeSeedRun) -> Dict[str, List[str]]:
         },
         working_dir=str(shared_dir_to_docker(workdir)),
         mem_swappiness=0,
-        log_config=docker.types.LogConfig(type=docker.types.LogConfig.types.JSON,
-            config={'max-size': '10m'}),
+        log_config={'max-size': '10m'},
         detach=True
     )
 
@@ -2880,7 +2892,7 @@ def seed_minimization_run(run_data: MinimizeSeedRun) -> Dict[str, List[str]]:
         # error case
         try:
             container.reload()
-        except docker.errors.NotFound: # type: ignore
+        except docker.errors.NotFound: # type: ignore[misc]
             # container is dead stop waiting
             break
         if container.status not in ["running", "created"]:
@@ -2899,7 +2911,7 @@ def seed_minimization_run(run_data: MinimizeSeedRun) -> Dict[str, List[str]]:
 
             # Wait up to 10 seconds then send sigkill
             container.stop()
-    except docker.errors.NotFound: # type: ignore
+    except docker.errors.NotFound: # type: ignore[misc]
         # container is dead just continue maybe it worked
         pass
 
@@ -2976,7 +2988,7 @@ def minimize_seeds(seed_path_base_s: str, res_path_base_s: str, fuzzers: List[st
 
     # prepare environment
     base_shm_dir = SHARED_DIR/"minimize_seeds"
-    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x))
+    shutil.rmtree(base_shm_dir, ignore_errors=True, onerror=lambda *x: logger.warning(x)) # type: ignore[misc]
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     build_docker_images(fuzzers, progs)
@@ -3047,7 +3059,7 @@ def seed_coverage_run(run_data: KCovRun, docker_image: str) -> List[str]:
         # error case
         try:
             container.reload()
-        except docker.errors.NotFound: # type: ignore
+        except docker.errors.NotFound: # type: ignore[misc]
             # container is dead stop waiting
             break
         if container.status not in ["running", "created"]:
@@ -3066,7 +3078,7 @@ def seed_coverage_run(run_data: KCovRun, docker_image: str) -> List[str]:
 
             # Wait up to 10 seconds then send sigkill
             container.stop()
-    except docker.errors.NotFound: # type: ignore
+    except docker.errors.NotFound: # type: ignore[misc]
         # container is dead just continue maybe it worked
         pass
 
@@ -3168,7 +3180,7 @@ def prepare_mutator_docker_image(fresh_images: bool) -> None:
                 stdout = str(proc.stdout)
 
             logger.error(f"Could not run command.\n"
-                # type: ignore
+                # type: ignore[misc]
                 f"{proc.args} -> {proc.returncode}\n"
                 f"{stdout}")
             raise ValueError("Could not run command.")
@@ -3287,7 +3299,8 @@ def main() -> None:
         help="Path to a json file containing a list of mutation ids for each program to rerun, "
              "as well as a mode specifying if the original supermutants should be restored (keep) or each "
              "mutation should be analyzed individually (single). "
-             "Requires the --rerun option to be used. Example: {'prog': {'ids': [1, 2, 3], 'mode': 'single'}")
+             "Requires the --rerun option to be used. Example: "
+             '{["prog": "<prog>", "ids": [1, 2, 3], "mode": "single"}]')
     parser_eval.add_argument("--fresh-images", default=False, action="store_true",
         help='If the docker images should be rebuild from scratch. This will call pull on the base images, and build with --no-cache.')
     del parser_eval

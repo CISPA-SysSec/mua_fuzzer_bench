@@ -7,6 +7,13 @@ from constants import SHARED_DIR
 
 
 @dataclass
+class RerunMutations:
+    prog: str
+    mutation_ids: List[int]
+    mode: str
+
+
+@dataclass
 class Fuzzer:
     name: str
     queue_dir: str
@@ -68,22 +75,15 @@ class Mutation:
 
 
 @dataclass
-class MutationDataTodo:
-    pass
-
-
-@dataclass
 class SuperMutantUninitialized:
     mutation_ids: List[int]
     prog: Program
-    mutation_data: List[MutationDataTodo]
 
 
 @dataclass
 class SuperMutant:
     supermutant_id: int
     mutation_ids: set[int]
-    mutation_data: List[MutationDataTodo]
     prog: Program
     compile_args: List[CompileArg]
     args: str
@@ -110,96 +110,90 @@ class RunResultKey:
     mutation_ids: Tuple[int, ...]
 
 
-@dataclass
-class CrashingInput:
-    time: float
-    path: Path
-    orig_returncode: Optional[int]
-    mut_returncode: Optional[int]
-    orig_cmd: List[str]
-    mut_cmd: List[str]
-    orig_res: Optional[object]
-    mut_res: Optional[object]
-    orig_timeout: Optional[bool]
-    timeout: Optional[int]
-    num_triggered: Optional[int]
-
-
-# @dataclass
-# class RunResultData:
-#     result: str
-#     mutation_ids: Set[int]
-#     time: float
-#     path: Optional[Path] = field(default=None)
-#     # killed, ..
-#     crash_input: Optional[CrashingInput] = field(default=None)
-#     # timeout
-#     args: Optional[List[str]] = field(default=None)
-
-
-def gen_key(result_type: str, mutation_ids: Set[int]) -> RunResultKey:
-    return RunResultKey(
-        name=result_type,
-        mutation_ids=tuple(sorted(mutation_ids))
-    )
-
-
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CheckResultCovered:
-    path: Path
+    path: Optional[Path]
     mutation_ids: Set[int]
-    cur_time: float
+    time: float
+    by_seed: bool
+
+    def id(self) -> str:
+        if self.by_seed:
+            return f"covered_by_seed"
+        else:
+            return f"covered"
 
     def generate_key(self) -> RunResultKey:
-        return gen_key("covered", self.mutation_ids)
+        return gen_key(self)
 
     def get_mutation_ids(self) -> Set[int]:
         return self.mutation_ids
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CheckResultOrigTimeout:
     path: Path
     orig_cmd: List[str]
-    cur_time: float
+    time: float
+    by_seed: bool
+
+    def id(self) -> str:
+        if self.by_seed:
+            return f"orig_timeout_by_seed"
+        else:
+            return f"orig_timeout"
 
     def generate_key(self) -> RunResultKey:
-        return gen_key("orig_timeout", self.mutation_ids)
+        return gen_key(self)
 
     def get_mutation_ids(self) -> Set[int]:
         return set()
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CheckResultOrigCrash:
     path: Path
     args: List[str]
     returncode: int
     orig_res: str
-    cur_time: float
+    time: float
+    by_seed: bool
+
+    def id(self) -> str:
+        if self.by_seed:
+            return f"orig_crash_by_seed"
+        else:
+            return f"orig_crash"
 
     def generate_key(self) -> RunResultKey:
-        return gen_key("orig_crash", self.mutation_ids)
+        return gen_key(self)
 
     def get_mutation_ids(self) -> Set[int]:
         return set()
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CheckResultTimeout:
     path: Path
     args: List[str]
     mutation_ids: Set[int]
-    cur_time: float
+    time: float
+    by_seed: bool
+
+    def id(self) -> str:
+        if self.by_seed:
+            return f"timeout_by_seed"
+        else:
+            return f"timeout"
 
     def generate_key(self) -> RunResultKey:
-        return gen_key("timeout", self.mutation_ids)
+        return gen_key(self)
 
     def get_mutation_ids(self) -> Set[int]:
         return self.mutation_ids
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CheckResultKilled:
     mutation_ids: Set[int]
     path: Path
@@ -211,10 +205,17 @@ class CheckResultKilled:
     orig_res: str
     mut_res: str
     num_triggered: int
-    cur_time: float
+    time: float
+    by_seed: bool = field(default=False)
+
+    def id(self) -> str:
+        if self.by_seed:
+            return f"killed_by_seed"
+        else:
+            return f"killed"
 
     def generate_key(self) -> RunResultKey:
-        return gen_key("killed", self.mutation_ids)
+        return gen_key(self)
 
     def get_mutation_ids(self) -> Set[int]:
         return self.mutation_ids
@@ -222,6 +223,13 @@ class CheckResultKilled:
 
 check_results_union = CheckResultCovered | CheckResultTimeout | \
                       CheckResultKilled | CheckResultOrigTimeout | CheckResultOrigCrash
+
+
+def gen_key(elem: check_results_union) -> RunResultKey:
+    return RunResultKey(
+        name=elem.id(),
+        mutation_ids=tuple(sorted(elem.get_mutation_ids()))
+    )
 
 
 @dataclass

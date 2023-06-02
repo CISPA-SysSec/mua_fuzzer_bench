@@ -1,10 +1,11 @@
 import logging
+import shlex
 import sqlite3
 import time
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
-from data_types import InitialSuperMutant, Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CrashingInput, CoveredResult
+from data_types import CheckResultKilled, CheckResultTimeout, InitialSuperMutant, Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CoveredResult
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import mutation_locations_path, mutation_prog_source_path
@@ -130,7 +131,6 @@ class Stats:
             run_ctr,
             fuzzer,
             super_mutant_id,
-            result,
             group_id,
             multi_ids,
             description
@@ -387,22 +387,21 @@ class Stats:
         c: sqlite3.Cursor,
         exec_id: str,
         mut_data: SuperMutant,
-        multi_groups: Set[Tuple[str, List[int]]],
+        multi_groups: Set[List[int]],
         fuzzer: str,
         run_ctr: int,
         description: str
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
-        for group_id, (result, multi) in enumerate(multi_groups):
+        for group_id, multi in enumerate(multi_groups):
             for m_id in multi:
-                c.execute('INSERT INTO super_mutants_multi VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO super_mutants_multi VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                     (
                         exec_id,
                         mut_data.prog.name,
                         run_ctr,
                         fuzzer,
                         mut_data.supermutant_id,
-                        result,
                         group_id,
                         m_id,
                         description
@@ -532,7 +531,7 @@ class Stats:
 
     @connection
     def new_crashing_inputs(
-        self, c: sqlite3.Cursor, crashing_inputs: List[CrashingInput],
+        self, c: sqlite3.Cursor, crashing_inputs: List[CheckResultKilled],
         exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
@@ -555,17 +554,48 @@ class Stats:
                         ' '.join((str(v) for v in data.mut_cmd)),
                         str(data.orig_res),
                         str(data.mut_res),
-                        data.orig_timeout,
-                        data.timeout,
+                        None,
+                        None,
                         None
                     )
                 )
         self.conn.commit()
 
     @connection
+    def new_crashing_timout_inputs(
+        self, c: sqlite3.Cursor, crashing_inputs: List[CheckResultTimeout],
+        exec_id: str, prog: str, mutation_id: int, run_ctr: int, fuzzer: str
+    ) -> None:
+        assert self.conn is not None, "connection wrapper returns early if conn is None"
+        for data in crashing_inputs:
+            c.execute('INSERT INTO crashing_inputs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (
+                    exec_id,
+                    prog,
+                    mutation_id,
+                    run_ctr,
+                    fuzzer,
+                    data.time,
+                    "run",
+                    str(data.path),
+                    None,
+                    None,
+                    None,
+                    None,
+                    " ".join(map(shlex.quote, data.args)),
+                    None,
+                    None,
+                    None,
+                    1,
+                    None
+                )
+            )
+        self.conn.commit()
+
+    @connection
     def new_seed_crashing_inputs(
         self, c: sqlite3.Cursor, exec_id: str, prog: str, mutation_id: int,
-        fuzzer: str, crashing_inputs: List[CrashingInput]
+        fuzzer: str, crashing_inputs: List[CheckResultKilled]
     ) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
         for data in crashing_inputs:
@@ -656,28 +686,28 @@ class ReadStatsDb():
     def get_bc_file_content(self, prog: str) -> bytes:
         c = self.db.cursor()
         res_cur = c.execute('select orig_bc_file_data from progs where prog = ?', (prog,))
-        res: List[List[bytes]] = [r for r in res_cur] # type: ignore
+        res: List[List[bytes]] = [r for r in res_cur] # type: ignore[misc]
         assert len(res) == 1
         return res[0][0]
 
     def get_mutation_locations_content(self, prog: str) -> str:
         c = self.db.cursor()
         res_cur = c.execute('select mutation_locations_data from progs where prog = ?', (prog,))
-        res: List[List[str]] = [r for r in res_cur] # type: ignore
+        res: List[List[str]] = [r for r in res_cur] # type: ignore[misc]
         assert len(res) == 1
         return res[0][0]
 
     def get_prog_source_content(self, prog: str) -> str:
         c = self.db.cursor()
         res_cur = c.execute('select prog_source_file_data from progs where prog = ?', (prog,))
-        res: List[List[str]] = [r for r in res_cur] # type: ignore
+        res: List[List[str]] = [r for r in res_cur] # type: ignore[misc]
         assert len(res) == 1
         return res[0][0]
 
     def get_supermutations(self, prog: str) -> List[InitialSuperMutant]:
         c = self.db.cursor()
         res_cur = c.execute('select * from initial_super_mutants where prog = ?', (prog,))
-        res: List[List[str]] = [r for r in res_cur] # type: ignore
+        res: List[List[str]] = [r for r in res_cur] # type: ignore[misc]
         return [
             InitialSuperMutant(
                 exec_id=int(r[0]),

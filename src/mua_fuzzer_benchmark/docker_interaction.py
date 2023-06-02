@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class Container:
-    inner: docker.models.containers.Container # type: ignore
+    inner: docker.models.containers.Container # type: ignore[no-any-unimported]
     
     def __init__(self,
         image: str,
@@ -28,40 +28,40 @@ class Container:
         **kwargs: object
     ) -> None:
         
-        docker_client = docker.from_env() # type: ignore
+        docker_client = docker.from_env() # type: ignore[misc]
 
-        docker_log_config = docker.types.LogConfig( # type: ignore
-            type=docker.types.LogConfig.types.JSON, # type: ignore
+        docker_log_config = docker.types.LogConfig( # type: ignore[misc]
+            type=docker.types.LogConfig.types.JSON, # type: ignore[misc]
             config=log_config
         )
 
-        self.inner = docker_client.containers.run(  # type: ignore
+        self.inner = docker_client.containers.run(  # type: ignore[misc]
             image=image,
             args=args,
-            log_config=docker_log_config, # type: ignore
+            log_config=docker_log_config, # type: ignore[misc]
             **kwargs
         )
 
     @property
     def name(self) -> str:
-        return self.inner.name # type: ignore
+        return self.inner.name # type: ignore[no-any-return, misc]
 
     @property
     def status(self) -> str:
-        return self.inner.status # type: ignore
+        return self.inner.status # type: ignore[no-any-return, misc]
 
     def kill(self, signal: int = 9) -> None:
         # default signal: SIGKILL
-        self.inner.kill(signal) # type: ignore
+        self.inner.kill(signal) # type: ignore[misc]
 
     def stop(self, timeout: int = 10) -> None:
-        self.inner.stop(timeout) # type: ignore
+        self.inner.stop(timeout) # type: ignore[misc]
 
     def reload(self) -> None:
-        self.inner.reload() # type: ignore
+        self.inner.reload() # type: ignore[misc]
 
     def stream_logs(self) -> List[bytes]:
-        return self.inner.logs(stream=True) # type: ignore
+        return self.inner.logs(stream=True) # type: ignore[no-any-return, misc]
 
 class DockerClient:
     pass
@@ -132,7 +132,7 @@ def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout
                 container.stop()
                 logger.info(f"! Testing container still alive {container.name}, keep killing it.")
                 time.sleep(1)
-        except docker.errors.NotFound: # type: ignore
+        except docker.errors.NotFound: # type: ignore[misc]
             # container is dead
             pass
 
@@ -176,7 +176,7 @@ def start_mutation_container(
                 container.stop()
                 logger.info(f"! Mutation container still alive {container.name}, keep killing it.")
                 time.sleep(10)
-        except docker.errors.NotFound: # type: ignore
+        except docker.errors.NotFound: # type: ignore[misc]
             # container is dead
             pass
 
@@ -209,7 +209,7 @@ def run_exec_in_container(
         stdout, _ = proc.communicate()
         timed_out = True
 
-    assert isinstance(proc.returncode, int) # type: ignore
+    assert isinstance(proc.returncode, int) # type: ignore[misc]
     if raise_on_error and proc.returncode != 0:
         logger.debug(f"process error (timed out): {str(proc.args)}\n{stdout}")
         raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {proc.returncode}\n{stdout}")
