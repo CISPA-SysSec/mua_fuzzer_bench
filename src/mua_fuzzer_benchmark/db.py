@@ -338,7 +338,7 @@ class Stats:
     @connection
     def done_run(self, c: sqlite3.Cursor, reason: str, exec_id: str, prog: str, mut_id: int, run_ctr: int, fuzzer: str) -> None:
         assert self.conn is not None, "connection wrapper returns early if conn is None"
-        logger.info(f"! mut done: {reason} :: {prog} {fuzzer} {run_ctr} {mut_id}")
+        logger.debug(f"! mut done: {reason} :: {prog} {fuzzer} {run_ctr} {mut_id}")
         c.execute('INSERT INTO done_runs VALUES (?, ?, ?, ?, ?, ?)',
             (
                 exec_id,
@@ -387,7 +387,7 @@ class Stats:
         c: sqlite3.Cursor,
         exec_id: str,
         mut_data: SuperMutant,
-        multi_groups: Set[List[int]],
+        multi_groups: Set[Tuple[int, ...]],
         fuzzer: str,
         run_ctr: int,
         description: str
@@ -443,8 +443,8 @@ class Stats:
             (
                 exec_id,
                 prog,
-                json.dumps(data.bc_compile_args),
-                json.dumps(data.bin_compile_args),
+                json.dumps(data.bc_compile_args, default=lambda o: o.__dict__), # type: ignore[misc]
+                json.dumps(data.bin_compile_args, default=lambda o: o.__dict__), # type: ignore[misc]
                 str(data.dict_path),
                 str(data.orig_bin),
                 bc_file_data,
@@ -468,7 +468,7 @@ class Stats:
 
         c.execute('UPDATE progs SET supermutant_graph_info = ? where exec_id = ? and prog = ?',
             (
-                json.dumps(graph_info_dict),
+                json.dumps(graph_info_dict, default=lambda o: o.__dict__), # type: ignore[misc]
                 exec_id,
                 prog,
             )

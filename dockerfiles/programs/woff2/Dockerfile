@@ -4,6 +4,8 @@ FROM mutator_mutator
 # woff2
 WORKDIR /home/mutator/sample
 
+RUN echo $LIB_FUZZING_ENGINE
+
 # clone
 RUN apt-get install -y make autoconf automake libtool
 RUN git clone https://github.com/google/woff2

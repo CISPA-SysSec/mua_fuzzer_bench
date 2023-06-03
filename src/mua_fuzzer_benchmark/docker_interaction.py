@@ -18,15 +18,17 @@ logger = logging.getLogger(__name__)
 
 
 class Container:
+    image_name: str
     inner: docker.models.containers.Container # type: ignore[no-any-unimported]
     
     def __init__(self,
         image: str,
-        args: List[str],
-        /,
+        command: List[str],
         log_config: Dict[str, str],
         **kwargs: object
     ) -> None:
+
+        self.image_name = image
         
         docker_client = docker.from_env() # type: ignore[misc]
 
@@ -36,8 +38,8 @@ class Container:
         )
 
         self.inner = docker_client.containers.run(  # type: ignore[misc]
-            image=image,
-            args=args,
+            image,
+            command,
             log_config=docker_log_config, # type: ignore[misc]
             **kwargs
         )
@@ -55,7 +57,7 @@ class Container:
         self.inner.kill(signal) # type: ignore[misc]
 
     def stop(self, timeout: int = 10) -> None:
-        self.inner.stop(timeout) # type: ignore[misc]
+        self.inner.stop(timeout=timeout) # type: ignore[misc]
 
     def reload(self) -> None:
         self.inner.reload() # type: ignore[misc]

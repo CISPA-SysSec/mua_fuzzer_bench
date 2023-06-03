@@ -2,6 +2,7 @@
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+import pprint
 import sys
 import os
 import time
@@ -120,9 +121,10 @@ class PreparedRuns():
         if type_ in ['fuzz', 'check']:
             logger.debug(f"Adding run, type: {type_} supermutant_id: {data.mut_data.supermutant_id} prog_bc: {data.mut_data.prog.orig_bc} mutation_ids: {data.mut_data.mutation_ids}")
         elif type_ == 'mut':
-            logger.debug(f"Adding run: {type_} {data.mut_data.supermutant_id} {data.mut_data.mutation_ids}")
+            logger.debug(f"Adding run: {type_} {data.mut_data.prog.name} {data.mut_data.supermutant_id} {data.mut_data.mutation_ids}")
         else:
-            logger.debug(f"Adding run: {type_} {data}")
+            data_formatted = pprint.pformat(data, width=80, compact=True, indent=2, depth=1)
+            logger.debug(f"Adding run: {type_} {data_formatted}")
 
         self.runs.put_nowait(CommonRun(type_, data))
 
@@ -166,6 +168,7 @@ def check_crashing_inputs(run_data: FuzzerRun, testing_container: Container, cra
                 assert str(sym_path.resolve()) == path_full
 
             res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container, False)
+            logger.debug(f"Check crashing inputs: {res}")
 
     total_check_time = time.time() - check_start_time
     if total_check_time > 1:
@@ -237,9 +240,9 @@ def base_eval_crash_check(
     by_seed: bool,
 ) -> CrashCheckResult:
     mut_data = run_data.mut_data
-    orig_bin = Path(IN_DOCKER_WORKDIR)/"tmp"/Path(mut_data.prog.orig_bin)
+    orig_bin = Path(IN_DOCKER_WORKDIR)/Path(mut_data.prog.orig_bin)
     args = "@@"
-    workdir = run_data.workdir
+    workdir = run_data.get_workdir()
     assert workdir is not None
     docker_mut_bin = shared_dir_to_docker(mut_data.get_mut_base_bin())
     result_dir = Path(workdir)/'crash_check'
@@ -397,7 +400,7 @@ def stop_container(container: Container) -> None:
             container.reload()
         while True:
             container.stop()
-            logger.info(f"! Container still alive {container.name}, keep killing it.")
+            logger.info(f"! Container (image: {container.image_name}) still alive {container.name}, keep killing it.")
             time.sleep(1)
     except (docker.errors.NotFound, docker.errors.APIError): # type: ignore[misc]
         # container is dead
@@ -425,21 +428,18 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
     workdir_host = SHARED_DIR/workdir_path
     workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
 
-    assert run_data.workdir is None
-    run_data.workdir = workdir_host
+    run_data.set_workdir(workdir_host)
 
     crash_dir = workdir_host/run_data.fuzzer.crash_dir
 
-    prog_bc = run_data.prog_bc
-    assert prog_bc is not None
+    prog_bc = run_data.get_prog_bc()
 
     compile_args = build_compile_args(mut_data.compile_args, IN_DOCKER_WORKDIR)
     seed_base_dir = run_data.mut_data.seed_base_dir
     seeds = get_seed_dir(seed_base_dir, mut_data.prog.name, run_data.fuzzer.name)
     dictionary = run_data.mut_data.prog.dict_path
 
-    core_to_use = run_data.core
-    assert core_to_use is not None
+    core_to_use = run_data.get_core()
 
     workdir_host.mkdir(parents=True, exist_ok=True)
 
@@ -624,12 +624,10 @@ def check_run(run_data: CheckRun) -> RunResult:
     workdir_host = SHARED_DIR/workdir_path
     workdir_docker = IN_DOCKER_SHARED_DIR/workdir_path
 
-    assert run_data.workdir is None
-    run_data.workdir = workdir_host
+    run_data.set_workdir(workdir_host)
 
     inputs_to_check = run_data.check_run_input_dir
-    core_to_use = run_data.core
-    assert core_to_use is not None
+    core_to_use = run_data.get_core()
 
     workdir_host.mkdir(parents=True, exist_ok=True)
 
@@ -719,7 +717,6 @@ def measure_mutation_coverage_per_file(
 
         if run['timed_out'] or run['returncode'] != 0:
             logger.info(f"Got returncode != 0: {run['returncode']}")
-            print(run['out'])
             raise CoverageException(run)
 
         # Key is path to file, value is list of mutation ids that were triggered.
@@ -1218,8 +1215,7 @@ def collect_input_paths(workdir: Path, fuzzer_name: str) -> List[Path]:
 
 def copy_fuzzer_inputs(data: FuzzerRun) -> Path:
     tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
-    assert data.workdir is not None
-    found_inputs = collect_input_paths(data.workdir, data.fuzzer.name)
+    found_inputs = collect_input_paths(data.get_workdir(), data.fuzzer.name)
     logger.warning(f"collect_input_paths: {found_inputs}")
     for fi in found_inputs:
         file_hash = hash_file(fi)
@@ -1239,7 +1235,7 @@ def record_supermutant_multi(
     multies = set()
     for rr in results:
 
-        mut_ids = sorted(rr.get_mutation_ids())
+        mut_ids = tuple(sorted(rr.get_mutation_ids()))
 
         if len(mut_ids) == 0:
             continue
@@ -1253,7 +1249,7 @@ def record_supermutant_multi(
 # Helper function to wait for the next eval run to complete.
 # Also updates the stats and which cores are currently used.
 # If `break_after_one` is true, return after a single run finishes.
-def handle_run_result(
+def handle_fuzzer_run_result(
     stats: Stats,
     prepared_runs: PreparedRuns,
     active_mutants: ActiveMutants,
@@ -1261,9 +1257,9 @@ def handle_run_result(
     data: FuzzerRun
 ) -> None:
     mut_data = data.mut_data
-    prog_bc = data.prog_bc
-    assert prog_bc is not None
+    prog_bc = data.get_prog_bc()
     prog = mut_data.prog
+    time_t: Callable[[check_results_union], float] = lambda x: x.time
     try:
         # if there was no exception get the data
         run_result = run_future.result()
@@ -1314,8 +1310,6 @@ def handle_run_result(
                                mut_id, data.run_ctr, data.fuzzer.name)
         elif result_type == 'retry':  # TODO this can only result from a CheckRun, move
             mut_data = copy.deepcopy(mut_data)
-            # del mut_data['check_run']
-            # del mut_data['check_run_input_dir']
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data.mutation_ids)
         elif result_type == 'killed_by_seed':
             logger.info(f"= run (seed):   {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
@@ -1324,7 +1318,6 @@ def handle_run_result(
             assert len(all_mutation_ids) > 0
 
             total_time = run_result.total_time
-            time_t: Callable[[check_results_union], float] = lambda x: x.time
             results = sorted(run_result.data.values(), key=time_t)
             del run_result
 
@@ -1648,8 +1641,7 @@ def handle_run_result(
 
     # Delete the working directory as it is not needed anymore
     if RM_WORKDIR:
-        assert data.workdir is not None
-        workdir = Path(data.workdir)
+        workdir = Path(data.get_workdir())
         try:
             shutil.rmtree(workdir)
         except OSError:
@@ -1689,7 +1681,10 @@ def recompile_and_run(
         mut_data.previous_supermutant_ids.append(old_supermutant_id)
     workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/data.fuzzer.name/str(data.run_ctr)
     workdir.mkdir(parents=True)
-    data.workdir = workdir
+    data.unset_workdir()
+    data.set_workdir(workdir)
+    data.unset_prog_bc()
+    data.unset_core()
     logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
     prepared_runs.add('mut', MutationRun(
         mut_data=mut_data,
@@ -1720,7 +1715,7 @@ def recompile_and_run_from_mutation(
         rr_data = rr.run
         workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/rr_data.fuzzer.name/str(rr_data.run_ctr)
         workdir.mkdir(parents=True)
-        rr_data.workdir = workdir
+        rr_data.set_workdir(workdir)
         rr_data.mut_data = mut_data
 
     logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
@@ -1757,8 +1752,9 @@ def start_check_run(
         mut_data=mut_data,
         run_ctr=run_ctr,
         fuzzer=fuzzer,
-        workdir=workdir,
     )
+
+    check_run.set_workdir(workdir)
 
     check_mutation = MutationRun(
         mut_data=mut_data,
@@ -1780,8 +1776,7 @@ def handle_mutation_result(
 ) -> None:
     mut_data = data.mut_data
     resulting_runs = data.resulting_runs
-    prog_bc = data.prog_bc
-    assert prog_bc is not None
+    prog_bc = data.get_prog_bc()
 
     logger.debug(f"mut finished for: {prog_bc}")
     prog = mut_data.prog
@@ -1831,6 +1826,9 @@ def handle_mutation_result(
         for rr in resulting_runs:
             fr = rr.run
             assert isinstance(fr, FuzzerRun), f"{fr, type(fr)}"
+            assert fr._core is None, fr
+            assert fr._prog_bc is not None, fr
+            fr._workdir = None
             prepared_runs.add('fuzz', fr)
 
     # Update reference count for this mutant
@@ -1867,7 +1865,7 @@ def wait_for_task(
     if task_type == "run":
         data = task.data.data
         if isinstance(data, FuzzerRun):
-            handle_run_result(stats, prepared_runs, active_mutants, completed_task, data)
+            handle_fuzzer_run_result(stats, prepared_runs, active_mutants, completed_task, data)
         elif isinstance(data, CheckRun):
             raise NotImplementedError("Check runs are not implemented yet.")
         else:
@@ -1929,10 +1927,10 @@ def prepare_mutation(core_to_use: int, data: MutationRun) -> None:
     prog_ll_name = (Path(data.mut_data.prog.orig_bc).with_suffix(f".ll.mut.ll").name)
     prog_bc = mut_base_dir/prog_bc_name
     prog_ll = mut_base_dir/prog_ll_name
-    assert data.prog_bc is None
-    data.prog_bc = prog_bc
+
+    data.set_prog_bc(prog_bc)
     for ff in data.resulting_runs:
-        ff.run.prog_bc = prog_bc
+        ff.run.set_prog_bc(prog_bc)
 
 
     if WITH_ASAN:
@@ -1960,6 +1958,9 @@ def prepare_mutation(core_to_use: int, data: MutationRun) -> None:
         except Exception as exc:
             raise RuntimeError(f"Failed to compile mutation") from exc
 
+        assert prog_ll.is_file(), \
+            f"Failed to compile mutation: {prog_ll} is not a file: {run_mut_res}"
+
         with open(prog_ll, 'rt') as f:
             ll_data = f.read()
             for mid in data.mut_data.mutation_ids:
@@ -1980,6 +1981,9 @@ def prepare_mutation(core_to_use: int, data: MutationRun) -> None:
             clang_res = run_exec_in_container(testing, True, clang_args)
         except Exception as exc:
             raise RuntimeError(f"Failed to compile mutation:\n{clang_args}\nrun_mutation output:\n{run_mut_res}\n") from exc
+
+        assert (mut_base_dir/"mut_base").is_file(), \
+            f"Failed to compile mutation: {mut_base_dir/'mut_base'} is not a file: {clang_res}"
 
 
 def print_run_start_msg(run_data: FuzzerRun) -> None:
@@ -2157,7 +2161,9 @@ def print_stats(ii: int, start_time: float, num_mutations: int) -> bool:
     except ZeroDivisionError:
         time_total = 0
         time_left = 0
-    print(f"{ii}/{num_mutations} ({percentage_done*100:05.2f}%)  {cur_time:.2f}->{time_left:.2f}(={time_total:.2f}) hours\r", end='')
+    info_str = f"{ii}/{num_mutations} ({percentage_done*100:05.2f}%)  " + \
+               f"{cur_time:.2f}->{time_left:.2f}(={time_total:.2f}) hours"
+    print(f"{info_str}", end='\r')
     return True
 
 
@@ -3446,4 +3452,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise e
+

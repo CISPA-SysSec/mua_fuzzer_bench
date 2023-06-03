@@ -167,9 +167,6 @@ def load_programs() -> Dict[str, Program]:
         orig_bc: str
         omit_functions: List[str]
 
-    class ProgramConfigRoot(TypedDict):
-        data: Dict[str, ProgramConfig]
-
 
     programs = {}
     for prog_dir in Path("dockerfiles/programs").iterdir():
@@ -185,9 +182,9 @@ def load_programs() -> Dict[str, Program]:
         
         prog_config_path = prog_dir/"config.json"
         with open(prog_config_path, "r") as f:
-            prog_config: ProgramConfigRoot = json.load(f)
+            prog_config: Dict[str, ProgramConfig] = json.load(f)
 
-        for prog_config_name, prog_config_data in prog_config['data'].items():
+        for prog_config_name, prog_config_data in prog_config.items():
 
             prog_name = f"{prog_dir_name}_{prog_config_name}"
 

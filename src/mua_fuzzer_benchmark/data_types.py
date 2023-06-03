@@ -268,13 +268,45 @@ class FuzzerRun:
     fuzzer: Fuzzer
     run_ctr: int
     timeout: int
-    core: Optional[int] = field(default=None)
-    workdir: Optional[Path] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
+    _core: Optional[int] = field(default=None)
+    _workdir: Optional[Path] = field(default=None)
+    _prog_bc: Optional[Path] = field(default=None)
+
+    def get_core(self) -> int:
+        assert self._core is not None, self
+        return self._core
 
     def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
+        assert self._core is None, self
+        self._core = core
+
+    def unset_core(self) -> None:
+        assert self._core is not None, self
+        self._core = None
+
+    def get_workdir(self) -> Path:
+        assert self._workdir is not None, self
+        return self._workdir
+
+    def set_workdir(self, workdir: Path) -> None:
+        assert self._workdir is None, self
+        self._workdir = workdir
+
+    def unset_workdir(self) -> None:
+        assert self._workdir is not None, self
+        self._workdir = None
+
+    def get_prog_bc(self) -> Path:
+        assert self._prog_bc is not None, self
+        return self._prog_bc
+
+    def set_prog_bc(self, prog_bc: Path) -> None:
+        assert self._prog_bc is None, self
+        self._prog_bc = prog_bc
+
+    def unset_prog_bc(self) -> None:
+        assert self._prog_bc is not None, self
+        self._prog_bc = None
 
 
 @dataclass
@@ -284,13 +316,45 @@ class CheckRun:
     mut_data: SuperMutant
     run_ctr: int
     fuzzer: Fuzzer
-    core: Optional[int] = field(default=None)
-    workdir: Optional[Path] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
+    _core: Optional[int] = field(default=None)
+    _workdir: Optional[Path] = field(default=None)
+    _prog_bc: Optional[Path] = field(default=None)
+
+    def get_core(self) -> int:
+        assert self._core is not None, self
+        return self._core
 
     def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
+        assert self._core is None, self
+        self._core = core
+
+    def unset_core(self) -> None:
+        assert self._core is not None, self
+        self._core = None
+
+    def get_workdir(self) -> Path:
+        assert self._workdir is not None, self
+        return self._workdir
+
+    def set_workdir(self, workdir: Path) -> None:
+        assert self._workdir is None, self
+        self._workdir = workdir
+
+    def unset_workdir(self) -> None:
+        assert self._workdir is not None, self
+        self._workdir = None
+
+    def get_prog_bc(self) -> Path:
+        assert self._prog_bc is not None, self
+        return self._prog_bc
+
+    def set_prog_bc(self, prog_bc: Path) -> None:
+        assert self._prog_bc is None, self
+        self._prog_bc = prog_bc
+
+    def unset_prog_bc(self) -> None:
+        assert self._prog_bc is not None, self
+        self._prog_bc = None
 
 
 @dataclass
@@ -303,12 +367,32 @@ class MutationRun:
     mut_data: SuperMutant
     resulting_runs: List[ResultingRun]
     check_run: bool
-    core: Optional[int] = field(default=None)
-    prog_bc: Optional[Path] = field(default=None)
+    _core: Optional[int] = field(default=None)
+    _prog_bc: Optional[Path] = field(default=None)
+
+    def get_core(self) -> int:
+        assert self._core is not None, self
+        return self._core
 
     def set_core(self, core: int) -> None:
-        assert self.core is None
-        self.core = core
+        assert self._core is None, self
+        self._core = core
+
+    def unset_core(self) -> None:
+        assert self._core is not None, self
+        self._core = None
+
+    def get_prog_bc(self) -> Path:
+        assert self._prog_bc is not None, self
+        return self._prog_bc
+
+    def set_prog_bc(self, prog_bc: Path) -> None:
+        assert self._prog_bc is None, self
+        self._prog_bc = prog_bc
+
+    def unset_prog_bc(self) -> None:
+        assert self._prog_bc is not None, self
+        self._prog_bc = None
 
 
 @dataclass

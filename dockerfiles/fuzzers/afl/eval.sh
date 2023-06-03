@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
 
-_term() { 
-  echo "Caught SIGINT signal!"
-  kill -INT "$child"
-}
-
-trap _term SIGINT
-
 set -Euxo pipefail
 
 echo "workdir: $(pwd)"
