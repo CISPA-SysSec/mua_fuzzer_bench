@@ -29,7 +29,7 @@ import logging
 from data_types import ActiveMutants, CheckResultCovered, CheckResultKilled, CheckResultOrigCrash, CheckResultOrigTimeout, CheckResultTimeout, CheckRun, CommonRun, CompileArg, CoveredResult, CrashCheckResult,  FuzzerRun, GatherSeedRun, GatheredSeedsRun, KCovResult, KCovRun, MinimizeSeedRun, Mutation, MutationRun, MutationType, Program, RerunMutations, ResultingRun, RunResult, RunResultKey, SeedRun, SeedRunResult, SuperMutant, SuperMutantUninitialized, check_results_union
 from docker_interaction import DockerLogStreamer, run_exec_in_container, start_mutation_container, start_testing_container, Container
 
-from constants import EXEC_ID, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
+from constants import EXEC_ID, MAX_RETRY_COUNT, MUTATOR_LLVM_DOCKERFILE_PATH, MUTATOR_LLVM_IMAGE_NAME, MUTATOR_MUATATOR_IMAGE_NAME, MUTATOR_MUTATOR_DOCKERFILE_PATH, NUM_CPUS, PRIO_CHECK_MUTANT, PRIO_CHECK_RUN, PRIO_FUZZ_RUN, PRIO_MUTANT, PRIO_RECOMPILE_MUTANT, WITH_ASAN, WITH_MSAN, RM_WORKDIR, FILTER_MUTATIONS, \
     JUST_SEEDS, STOP_ON_MULTI, SKIP_LOCATOR_SEED_CHECK, CHECK_INTERVAL, \
     HOST_TMP_PATH, UNSOLVED_MUTANTS_DIR, IN_DOCKER_WORKDIR, SHARED_DIR, IN_DOCKER_SHARED_DIR
 from helpers import CoveredFile, fuzzer_container_tag, get_seed_dir, hash_file, load_fuzzers, load_programs, mutation_detector_path, mutation_locations_path, mutation_prog_source_path, shared_dir_to_docker, subject_container_tag
@@ -40,7 +40,7 @@ logging.basicConfig(
      filename='eval.log',
      filemode='w',
      level=logging.DEBUG, 
-     format= '[%(asctime)s.%(msecs)03d] %(levelname)-6s %(message)s',
+     format= '[%(asctime)s.%(msecs)03d] %(levelname)-6s %(message)s', # %(pathname)s:%(lineno)d
      datefmt='%H:%M:%S'
  )
 
@@ -50,7 +50,9 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 # set up logging to console
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(message)s')
+formatter = logging.Formatter(
+    '\033[2K\033[1G%(message)s' # move cursor to beginning of line, clear line and print message
+)
 console.setFormatter(formatter)
 
 # add the handler to the root logger
@@ -109,15 +111,15 @@ class CpuCores():
 
 class PreparedRuns():
     def __init__(self) -> None:
-        self.runs: queue.Queue[CommonRun] = queue.Queue()
+        self.runs: queue.PriorityQueue[tuple[int, CommonRun]] = queue.PriorityQueue()
 
     def get_next(self) -> Optional[CommonRun]:
         try:
-            return self.runs.get_nowait()
+            return self.runs.get_nowait()[1]
         except queue.Empty:
             return None
 
-    def add(self, type_: str, data: FuzzerRun | MutationRun | CheckRun) -> None:
+    def add(self, type_: str, priority: int, data: FuzzerRun | MutationRun | CheckRun) -> None:
         if type_ in ['fuzz', 'check']:
             logger.debug(f"Adding run, type: {type_} supermutant_id: {data.mut_data.supermutant_id} prog_bc: {data.mut_data.prog.orig_bc} mutation_ids: {data.mut_data.mutation_ids}")
         elif type_ == 'mut':
@@ -126,7 +128,7 @@ class PreparedRuns():
             data_formatted = pprint.pformat(data, width=80, compact=True, indent=2, depth=1)
             logger.debug(f"Adding run: {type_} {data_formatted}")
 
-        self.runs.put_nowait(CommonRun(type_, data))
+        self.runs.put_nowait((priority, CommonRun(type_, data)))
 
 
 @dataclass
@@ -168,12 +170,11 @@ def check_crashing_inputs(run_data: FuzzerRun, testing_container: Container, cra
                 assert str(sym_path.resolve()) == path_full
 
             res = base_eval_crash_check(Path(tmp_in_dir), run_data, cur_time, testing_container, False)
-            logger.debug(f"Check crashing inputs: {res}")
 
     total_check_time = time.time() - check_start_time
     if total_check_time > 1:
         # log when crashing check takes more than one second
-        logger.debug(f"Check crashing inputs ({new_files}) took: {total_check_time:.2f}")
+        logger.debug(f"Check crashing inputs ({len(new_files)}) took: {total_check_time:.2f}")
 
     return res
     
@@ -454,9 +455,6 @@ def base_eval(run_data: FuzzerRun) -> RunResult:
         seeds = get_seed_dir(seed_base_dir, mut_data.prog.name, run_data.fuzzer.name)
 
         new_results = base_eval_crash_check(seeds, run_data, time.time() - start_time, testing_container, True)
-        # add suffix to identify seed results
-        for res in new_results.results:
-            new_results.results
 
         update_res = update_results(results, new_results, start_time)
         if update_res is not None:
@@ -640,7 +638,7 @@ def check_run(run_data: CheckRun) -> RunResult:
     with start_testing_container(core_to_use, covered, timeout + 60*60) as testing_container:
 
         new_results = base_eval_crash_check(
-            inputs_to_check, run_data, time.time() - start_time, testing_container, False)
+            inputs_to_check, run_data, time.time() - start_time, testing_container, run_data.by_seed)
 
         res = update_results(results, new_results, start_time)
 
@@ -842,7 +840,6 @@ def new_mutation(
     mutation_data: Dict[str, str],
     prog: Program
 ) -> Mutation:
-    mutation_data = copy.deepcopy(mutation_data)
     return Mutation(
         mutation_id=int(mutation_id),
         prog=prog,
@@ -1108,6 +1105,7 @@ def get_all_runs(
                         fuzzer=fuzzer,
                         timeout=int(timeout)*60,
                         mut_data=mut_data,
+                        retry=0,
                     )
                     # Add that run to the database, so that we know it is possible
                     stats.new_run(EXEC_ID, run_data)
@@ -1213,17 +1211,6 @@ def collect_input_paths(workdir: Path, fuzzer_name: str) -> List[Path]:
     return list(found) + list(crashes)
 
 
-def copy_fuzzer_inputs(data: FuzzerRun) -> Path:
-    tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
-    found_inputs = collect_input_paths(data.get_workdir(), data.fuzzer.name)
-    logger.warning(f"collect_input_paths: {found_inputs}")
-    for fi in found_inputs:
-        file_hash = hash_file(fi)
-        dest_path = tmp_dir/file_hash
-        shutil.copyfile(fi, dest_path)
-    return tmp_dir
-
-
 def record_supermutant_multi(
     stats: Stats,
     mut_data: SuperMutant,
@@ -1269,7 +1256,7 @@ def handle_fuzzer_run_result(
         trace = traceback.format_exc()
         mutation_ids = mut_data.mutation_ids
         if len(mutation_ids) > 1:
-            logger.info(f"= run ###:      {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name} Run crashed, retrying with less mutations ...")
+            logger.info(f"= run ###multi: {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name} Run crashed, retrying with less mutations ...")
             chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
             recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
@@ -1308,9 +1295,6 @@ def handle_fuzzer_run_result(
                     'orig timeout by seed!!!\n' + str(run_result))
                 stats.done_run('orig_timeout_by_seed', EXEC_ID, mut_data.prog.name,
                                mut_id, data.run_ctr, data.fuzzer.name)
-        elif result_type == 'retry':  # TODO this can only result from a CheckRun, move
-            mut_data = copy.deepcopy(mut_data)
-            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data.mutation_ids)
         elif result_type == 'killed_by_seed':
             logger.info(f"= run (seed):   {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
 
@@ -1329,19 +1313,25 @@ def handle_fuzzer_run_result(
                 num_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
                 killed = has_result(mut_id, results, ['killed_by_seed'])
 
-                if killed or num_timeout:
-                    stats.new_seeds_executed(
-                        EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name,
-                        num_seed_covered, num_timeout, total_time)
+                killed_mutants |= set([mut_id])
 
+                if killed or num_timeout:
                     if killed is not None:
                         assert isinstance(killed, CheckResultKilled)
-                        stats.new_seed_crashing_inputs(
-                            EXEC_ID, prog.name, mut_id, data.fuzzer.name, [killed])
 
-                    killed_mutants |= set([mut_id])
-                    stats.done_run('killed_by_seed', EXEC_ID, mut_data.prog.name, mut_id,
-                                   data.run_ctr, data.fuzzer.name)
+                        start_check_run(
+                            prepared_runs, data, stats.next_supermutant_id(), [mut_id], [killed.path], True,
+                            time_took=total_time, covered_time=total_time,
+                            seed_covered=bool(num_seed_covered),
+                        )
+                    elif num_timeout:
+
+                        stats.new_seeds_executed(
+                            EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name,
+                            num_seed_covered, num_timeout, total_time)
+
+                        stats.done_run('timeout_by_seed', EXEC_ID, mut_data.prog.name, mut_id,
+                                       data.run_ctr, data.fuzzer.name)
 
             if len(killed_mutants) == 0:
                 for rr in results:
@@ -1358,7 +1348,7 @@ def handle_fuzzer_run_result(
             if len(remaining_mutations) > 0:
                 recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), remaining_mutations)
             else:
-                logger.info(f"! no more mutations (all: {len(all_mutation_ids)} killed: {len(killed_mutants)})")
+                logger.debug(f"! no more mutations (all: {len(all_mutation_ids)} killed: {len(killed_mutants)})")
         elif result_type == 'killed':
             def record_seed_result(
                 seed_covered: Optional[float], seed_timeout: Optional[int],
@@ -1431,8 +1421,16 @@ def handle_fuzzer_run_result(
 
                     # start check run for each killed mutation
                     for km in killed_mutants:
-                        tmp_dir = copy_fuzzer_inputs(data)
-                        start_check_run(prepared_runs, data, stats.next_supermutant_id(), [km], tmp_dir)
+                        killed = has_result(km, results, ['killed'])
+                        assert isinstance(killed, CheckResultKilled)
+                        covered_by_seed = has_result(km, results, ['covered_by_seed'])
+                        covered = has_result(km, results, ['covered'])
+                        assert isinstance(covered, CheckResultCovered)
+
+                        crashing_inputs = collect_input_paths(data.get_workdir(), data.fuzzer.name)
+                        start_check_run(prepared_runs, data, stats.next_supermutant_id(), [km], crashing_inputs, False,
+                                        time_took=killed.time, covered_time=covered.time,
+                                        seed_covered=covered_by_seed is not None)
 
                     # start a new run for a supermutant containing all remaining mutations
                     if len(remaining_mutations) > 0:
@@ -1463,24 +1461,29 @@ def handle_fuzzer_run_result(
                         else:
                             seed_covered_val = None
                         seed_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
-                        record_seed_result(seed_covered_val, seed_timeout, prog.name, data.fuzzer.name,
-                                           data.run_ctr, mut_id)
-
-                        # record covered
-                        covered_time = has_result(mut_id, results, ['covered', 'killed'])
-                        covered_time_val = covered_time.time if covered_time is not None else None
-                        record_run_done(covered_time_val, total_time, prog.name, data.fuzzer.name, data.run_ctr, mut_id)
 
                         # record killed or timeout
                         if killed:
                             killed = copy.deepcopy(killed)
                             assert isinstance(killed, CheckResultKilled)
-                            stats.new_crashing_inputs([killed], EXEC_ID, prog.name, mut_id,
-                                                      data.run_ctr, data.fuzzer.name)
-                            stats.done_run('killed', EXEC_ID, mut_data.prog.name, mut_id,
-                                           data.run_ctr, data.fuzzer.name)
+                            covered = has_result(mut_id, results, ['covered'])
+                            assert isinstance(covered, CheckResultCovered)
+
+                            start_check_run(
+                                prepared_runs, data, stats.next_supermutant_id(), [mut_id], [killed.path], False,
+                                time_took=killed.time, covered_time=covered.time,
+                                seed_covered=seed_covered is not None)
                         elif timeout:
                             assert isinstance(timeout, CheckResultTimeout)
+
+                            record_seed_result(seed_covered_val, seed_timeout, prog.name, data.fuzzer.name,
+                                            data.run_ctr, mut_id)
+
+                            # record covered
+                            covered_time = has_result(mut_id, results, ['covered', 'killed'])
+                            covered_time_val = covered_time.time if covered_time is not None else None
+                            record_run_done(covered_time_val, total_time, prog.name, data.fuzzer.name, data.run_ctr, mut_id)
+
                             record_run_timeout(timeout, prog.name, data.fuzzer.name, data.run_ctr, mut_id)
                             stats.done_run('timeout', EXEC_ID, mut_data.prog.name, mut_id,
                                            data.run_ctr, data.fuzzer.name)
@@ -1630,6 +1633,12 @@ def handle_fuzzer_run_result(
         active_mutants.set_killed(prog_bc)
         pass
 
+    clean_up_active_mutant(prog_bc, data, active_mutants)
+
+
+def clean_up_active_mutant(
+    prog_bc: Path, data: FuzzerRun | CheckRun, active_mutants: ActiveMutants
+) -> None:
     # Update mutant reference count and remove mutant data if no more references
     if active_mutants.decrement_ref_cnt(prog_bc):
         # If mutant was never killed, we want to keep a copy for inspection.
@@ -1637,7 +1646,7 @@ def handle_fuzzer_run_result(
             if prog_bc.is_file():
                 shutil.copy(str(prog_bc), UNSOLVED_MUTANTS_DIR)
 
-        clean_up_mut_base_dir(mut_data)
+        clean_up_mut_base_dir(data.mut_data)
 
     # Delete the working directory as it is not needed anymore
     if RM_WORKDIR:
@@ -1666,7 +1675,7 @@ def handle_fuzzer_run_result(
 
 def recompile_and_run(
     prepared_runs: PreparedRuns,
-    previous_data: FuzzerRun,
+    previous_data: FuzzerRun | CheckRun,
     new_supermutand_id: int,
     mutations: Set[int]
 ) -> None:
@@ -1681,14 +1690,20 @@ def recompile_and_run(
         mut_data.previous_supermutant_ids.append(old_supermutant_id)
     workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/data.fuzzer.name/str(data.run_ctr)
     workdir.mkdir(parents=True)
-    data.unset_workdir()
-    data.set_workdir(workdir)
-    data.unset_prog_bc()
-    data.unset_core()
-    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
-    prepared_runs.add('mut', MutationRun(
+
+    new_data = FuzzerRun(
+        fuzzer=data.fuzzer,
+        run_ctr=data.run_ctr,
         mut_data=mut_data,
-        resulting_runs=[ResultingRun(run=data)],
+        timeout=data.timeout,
+        retry=data.retry,
+    )
+    new_data.set_workdir(workdir)
+
+    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()}, mutations: {mut_data.mutation_ids}")
+    prepared_runs.add('mut', PRIO_RECOMPILE_MUTANT, MutationRun(
+        mut_data=mut_data,
+        resulting_runs=[ResultingRun(run=new_data)],
         check_run=False,
     ))
 
@@ -1718,12 +1733,22 @@ def recompile_and_run_from_mutation(
         rr_data.set_workdir(workdir)
         rr_data.mut_data = mut_data
 
-    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
-    prepared_runs.add('mut', MutationRun(
+    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} mutations: {mut_data.mutation_ids}")
+    prepared_runs.add('mut', PRIO_RECOMPILE_MUTANT, MutationRun(
         mut_data=mut_data,
         resulting_runs=resulting_runs,
         check_run=False
     ))
+
+
+def copy_inputs(paths: List[Path]) -> Path:
+    assert len(paths) > 0
+    tmp_dir = Path(tempfile.mkdtemp(dir=SHARED_DIR/"mutator_tmp"))
+    for fi in paths:
+        file_hash = hash_file(fi)
+        dest_path = tmp_dir/file_hash
+        shutil.copyfile(fi, dest_path)
+    return tmp_dir
 
 
 def start_check_run(
@@ -1731,20 +1756,24 @@ def start_check_run(
     fuzzer_run: FuzzerRun,
     new_supermutand_id: int,
     mutations: List[int],
-    input_dir: Path
+    inputs: List[Path],
+    by_seed: bool,
+    time_took: float,
+    covered_time: float,
+    seed_covered: bool,
 ) -> None:
     fuzzer_run = copy.deepcopy(fuzzer_run)
     mut_data = fuzzer_run.mut_data
     fuzzer = fuzzer_run.fuzzer
     run_ctr = fuzzer_run.run_ctr
     timeout = fuzzer_run.timeout
+    retry = fuzzer_run.retry
     del fuzzer_run
 
     mut_data.mutation_ids = set(mutations)
     mut_data.supermutant_id = new_supermutand_id
 
-    workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/fuzzer.name/str(run_ctr)
-    workdir.mkdir(parents=True)
+    input_dir = copy_inputs(inputs)
 
     check_run = CheckRun(
         check_run_input_dir=input_dir,
@@ -1752,9 +1781,12 @@ def start_check_run(
         mut_data=mut_data,
         run_ctr=run_ctr,
         fuzzer=fuzzer,
+        by_seed=by_seed,
+        time_took=time_took,
+        covered_time=covered_time,
+        seed_covered_time=seed_covered,
+        retry=retry,
     )
-
-    check_run.set_workdir(workdir)
 
     check_mutation = MutationRun(
         mut_data=mut_data,
@@ -1763,8 +1795,112 @@ def start_check_run(
     )
 
     logger.info(
-        f"! new supermutant (check): {mut_data.printable_m_id()} with {len(mut_data.mutation_ids)} mutations")
-    prepared_runs.add('mut', check_mutation)
+        f"! new supermutant (check): {mut_data.printable_m_id()} mutations: {mut_data.mutation_ids}")
+    prepared_runs.add('mut', PRIO_CHECK_MUTANT, check_mutation)
+
+def handle_check_run_result(
+    stats: Stats,
+    prepared_runs: PreparedRuns,
+    active_mutants: ActiveMutants,
+    run_future: Future[Optional[RunResult]],
+    data: CheckRun
+) -> None:
+    mut_data = data.mut_data
+    prog_bc = data.get_prog_bc()
+    prog = mut_data.prog
+    time_t: Callable[[check_results_union], float] = lambda x: x.time
+    try:
+        # if there was no exception get the data
+        run_result = run_future.result()
+        assert run_result is not None
+    except Exception:
+        # if there was an exception record it
+        trace = traceback.format_exc()
+        mutation_ids = mut_data.mutation_ids
+        if len(mutation_ids) > 1:
+            logger.info(f"= run ###multi: {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name} Run crashed, retrying with less mutations ...")
+            chunk_1, chunk_2 = split_up_supermutant_by_distance(mutation_ids)
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
+            recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
+        else:
+            mut_id = list(mutation_ids)[0]
+            stats.run_crashed(EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name, trace)
+            stats.done_run('crashed', EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name)
+            logger.info(f"= run ###:      {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}\n{trace}")
+    else:
+        result_type = run_result.result
+        if result_type == 'killed_by_seed':
+            logger.info(f"= check (seed):   {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
+
+            all_mutation_ids = set(mut_data.mutation_ids)
+            assert len(all_mutation_ids) == 1
+            mut_id = list(all_mutation_ids)[0]
+
+            time_took = data.time_took
+            results = sorted(run_result.data.values(), key=time_t)
+            del run_result
+
+
+            seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
+            timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
+            killed = has_result(mut_id, results, ['killed_by_seed'])
+
+            stats.new_seeds_executed(
+                EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name,
+                seed_covered, timeout, data.seed_covered_time)
+
+            if killed is not None:
+                assert isinstance(killed, CheckResultKilled)
+                stats.new_seed_crashing_inputs(
+                    EXEC_ID, prog.name, mut_id, data.fuzzer.name, [killed])
+
+            stats.done_run('killed_by_seed', EXEC_ID, mut_data.prog.name, mut_id,
+                           data.run_ctr, data.fuzzer.name)
+
+        elif result_type == 'killed':
+            logger.info(f"= check (killed): {prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
+
+            all_mutation_ids = set(mut_data.mutation_ids)
+            assert len(all_mutation_ids) == 1
+            mut_id = list(all_mutation_ids)[0]
+
+            time_took = data.time_took
+            seed_covered_time = data.seed_covered_time
+            covered_time_val = data.covered_time
+            results = sorted(run_result.data.values(), key=time_t)
+            del run_result
+
+            killed = has_result(mut_id, results, ['killed'])
+            assert isinstance(killed, CheckResultKilled)
+
+            stats.new_seeds_executed(
+                EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name, seed_covered_time, None, None)
+
+
+            stats.new_run_executed(
+                EXEC_ID, data.run_ctr, prog.name, mut_id, data.fuzzer.name, covered_time_val, time_took)
+
+            stats.new_crashing_inputs([killed], EXEC_ID, prog.name, mut_id,
+                                      data.run_ctr, data.fuzzer.name)
+            stats.done_run('killed', EXEC_ID, mut_data.prog.name, mut_id,
+                           data.run_ctr, data.fuzzer.name)
+        elif result_type == 'retry':
+            logger.info(f"= check (retry): {prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
+            mut_data = copy.deepcopy(mut_data)
+
+            if data.retry >= MAX_RETRY_COUNT:
+                msg = f"! {prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name} Max retry count reached, giving up"
+                logger.warning(msg)
+                stats.run_crashed(EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name, msg)
+                stats.done_run('crashed', EXEC_ID, mut_data.prog.name, mut_id, data.run_ctr, data.fuzzer.name)
+
+            else:
+                data.retry += 1
+                recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), mut_data.mutation_ids)
+        else:
+            raise ValueError(f"Unknown check run result: {pprint.pformat(run_result, compact=True)}")
+
+    clean_up_active_mutant(prog_bc, data, active_mutants)
 
 
 def handle_mutation_result(
@@ -1819,7 +1955,9 @@ def handle_mutation_result(
         for rr in resulting_runs:
             cr = rr.run
             assert isinstance(cr, CheckRun)
-            prepared_runs.add('check', cr)
+            assert cr._core is None, cr
+            assert cr._prog_bc is not None, cr
+            prepared_runs.add('check', PRIO_CHECK_RUN, cr)
 
     else:
         # Otherwise add all possible runs to prepared runs.
@@ -1829,7 +1967,7 @@ def handle_mutation_result(
             assert fr._core is None, fr
             assert fr._prog_bc is not None, fr
             fr._workdir = None
-            prepared_runs.add('fuzz', fr)
+            prepared_runs.add('fuzz', PRIO_FUZZ_RUN, fr)
 
     # Update reference count for this mutant
     logger.debug(f"add mutant reference count: {prog_bc} {len(resulting_runs)}")
@@ -1867,9 +2005,9 @@ def wait_for_task(
         if isinstance(data, FuzzerRun):
             handle_fuzzer_run_result(stats, prepared_runs, active_mutants, completed_task, data)
         elif isinstance(data, CheckRun):
-            raise NotImplementedError("Check runs are not implemented yet.")
+            handle_check_run_result(stats, prepared_runs, active_mutants, completed_task, data)
         else:
-            raise RuntimeError("Unknown run type.")
+            raise RuntimeError(f"Unknown run type: {data}")
     elif task_type == "mut":
         data = task.data.get_mut_run()
         handle_mutation_result(stats, prepared_runs, active_mutants, completed_task, data)
@@ -2189,7 +2327,7 @@ def start_next_task(
                 # Get the next mutant
                 ii, mutant = next(all_runs)
 
-                prepared_runs.add('mut', mutant)
+                prepared_runs.add('mut', PRIO_MUTANT, mutant)
 
             except StopIteration:
                 # Done with all mutations and runs, break out of this loop and finish eval.

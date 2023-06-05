@@ -60,9 +60,19 @@ TMP_PROG_DIR = HOST_TMP_PATH/"programs"
 
 IN_DOCKER_SHARED_DIR = Path("/shared/")
 
+# How often a fuzzing run should be retried, this value is only increased if the
+# reported crash is not confirmed during a check run.
+MAX_RETRY_COUNT = 3
+
 MUTATOR_LLVM_DOCKERFILE_PATH = "dockerfiles/mutator/Dockerfile.llvm"
 MUTATOR_MUTATOR_DOCKERFILE_PATH = "dockerfiles/mutator/Dockerfile.mutator"
 MUTATOR_LLVM_IMAGE_NAME = "mutator_deps:2004"
 MUTATOR_MUATATOR_IMAGE_NAME = "mutator_mutator:latest"
 
 BLOCK_SIZE = 1024*4
+
+PRIO_MUTANT = 5
+PRIO_FUZZ_RUN = 4
+PRIO_RECOMPILE_MUTANT = 3
+PRIO_CHECK_MUTANT = 2
+PRIO_CHECK_RUN = 1

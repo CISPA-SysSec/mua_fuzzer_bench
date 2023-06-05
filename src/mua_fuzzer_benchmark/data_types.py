@@ -13,7 +13,7 @@ class RerunMutations:
     mode: str
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class Fuzzer:
     name: str
     queue_dir: str
@@ -22,13 +22,13 @@ class Fuzzer:
     crash_ignore_files: List[str]
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class CompileArg:
     val: str
     action: Optional[str]
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class Program:
     name: str
     bc_compile_args: List[CompileArg]
@@ -80,7 +80,7 @@ class SuperMutantUninitialized:
     prog: Program
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class SuperMutant:
     supermutant_id: int
     mutation_ids: set[int]
@@ -262,12 +262,13 @@ class CoveredResult:
     not_covered_supermutants: List[List[int]]
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class FuzzerRun:
     mut_data: SuperMutant
     fuzzer: Fuzzer
     run_ctr: int
     timeout: int
+    retry: int
     _core: Optional[int] = field(default=None)
     _workdir: Optional[Path] = field(default=None)
     _prog_bc: Optional[Path] = field(default=None)
@@ -309,13 +310,18 @@ class FuzzerRun:
         self._prog_bc = None
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class CheckRun:
     check_run_input_dir: Path
     timeout: int
     mut_data: SuperMutant
     run_ctr: int
     fuzzer: Fuzzer
+    by_seed: bool
+    time_took: float
+    covered_time: float
+    seed_covered_time: Optional[float]
+    retry: int
     _core: Optional[int] = field(default=None)
     _workdir: Optional[Path] = field(default=None)
     _prog_bc: Optional[Path] = field(default=None)
@@ -357,12 +363,12 @@ class CheckRun:
         self._prog_bc = None
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class ResultingRun:
     run: FuzzerRun | CheckRun
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class MutationRun:
     mut_data: SuperMutant
     resulting_runs: List[ResultingRun]
@@ -469,7 +475,7 @@ class MinimizeSeedRun:
     prog: Program
 
 
-@dataclass
+@dataclass(eq=True, order=True)
 class CommonRun:
     run_type: str
     data: FuzzerRun | MutationRun | CheckRun | SeedRun
