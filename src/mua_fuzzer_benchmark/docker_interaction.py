@@ -45,6 +45,10 @@ class Container:
         )
 
     @property
+    def id(self) -> str:
+        return self.inner.id # type: ignore[no-any-return, misc]
+
+    @property
     def name(self) -> str:
         return self.inner.name # type: ignore[no-any-return, misc]
 
@@ -95,6 +99,36 @@ class DockerLogStreamer(threading.Thread):
         # self.q.put(None)
 
 
+def stop_container(container: Container) -> None:
+    try:
+        container.kill(2)
+
+        for _ in range(10):
+            time.sleep(1)
+            container.reload()
+
+        container.stop()
+        logger.info(f"! Mutation container still alive {container.name}, " +
+                    "keep stopping it.")
+
+        for _ in range(10):
+            time.sleep(1)
+            container.reload()
+
+        with subprocess.Popen(["docker", "stop", container.id]) as proc:
+            proc.communicate(timeout=10)
+
+        container.reload()
+
+        raise ValueError(
+            f"Container {container.name} {container.id} is still alive after " +
+            "trying to kill it.")
+
+    except docker.errors.NotFound: # type: ignore[misc]
+        # container is dead
+        pass
+
+
 @contextlib.contextmanager
 def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout: int) -> Generator[Container, None, None]:
     # Start and run the container
@@ -125,18 +159,7 @@ def start_testing_container(core_to_use: int, trigger_file: CoveredFile, timeout
     except Exception as exc:
         raise exc
     finally: # This will stop the container if there is an exception or not.
-        try:
-            container.kill(2)
-            for _ in range(50):
-                time.sleep(.1)
-                container.reload()
-            while True:
-                container.stop()
-                logger.info(f"! Testing container still alive {container.name}, keep killing it.")
-                time.sleep(1)
-        except docker.errors.NotFound: # type: ignore[misc]
-            # container is dead
-            pass
+        stop_container(container)
 
 
 @contextlib.contextmanager
@@ -167,20 +190,7 @@ def start_mutation_container(
     except Exception as exc:
         raise exc
     finally: # This will stop the container if there is an exception or not.
-        try:
-            container.kill(2)
-            time.sleep(.5)
-            container.reload()
-            for _ in range(10):
-                time.sleep(5)
-                container.reload()
-            while True:
-                container.stop()
-                logger.info(f"! Mutation container still alive {container.name}, keep killing it.")
-                time.sleep(10)
-        except docker.errors.NotFound: # type: ignore[misc]
-            # container is dead
-            pass
+        stop_container(container)
 
 
 def run_exec_in_container(
@@ -196,27 +206,35 @@ def run_exec_in_container(
     If return_code is not 0, raise a ValueError containing the run result.
     """
     container_name = container.name
+    timeout = MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout
 
     timed_out = False
     sub_cmd: List[str] = ["docker", "exec", *(exec_args if exec_args is not None else []), container_name, *cmd]
-    proc = subprocess.Popen(sub_cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            close_fds=True,
-            errors='backslashreplace',  # text mode: stdout is a str
-            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-    try:
-        stdout, _ = proc.communicate(timeout=MAX_RUN_EXEC_IN_CONTAINER_TIME if timeout is None else timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        stdout, _ = proc.communicate()
-        timed_out = True
+    with subprocess.Popen(sub_cmd,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        close_fds=True,
+        errors='backslashreplace',  # text mode: stdout is a str
+        # preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)
+    ) as proc:
+        try:
+            stdout, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, _ = proc.communicate(timeout=10)
+            timed_out = True
+        except Exception:
+            proc.kill()
+            proc.wait()
+            raise
 
-    assert isinstance(proc.returncode, int) # type: ignore[misc]
-    if raise_on_error and proc.returncode != 0:
-        logger.debug(f"process error (timed out): {str(proc.args)}\n{stdout}")
-        raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {proc.returncode}\n{stdout}")
+        returncode = proc.poll()
 
-    return {'returncode': proc.returncode, 'out': stdout, 'timed_out': timed_out}
+        assert isinstance(returncode, int)
+        if raise_on_error and returncode != 0:
+            logger.debug(f"process error (timed out): {str(proc.args)}\n{stdout}")
+            raise ValueError(f"exec_in_docker failed (timed out)\nexec_code: {returncode}\n{stdout}")
+
+        return {'returncode': returncode, 'out': stdout, 'timed_out': timed_out}
     ##################
     # alternative version using docker lib, this errors with lots of docker containers
     # https://github.com/docker/docker-py/issues/2278

@@ -2,7 +2,7 @@
 import sqlite3
 from helper import db_connect, fix_path, query, to_latex_table, out_path, data_path
 
-db = db_connect("data/current/stats_all.db")
+db = db_connect("data/basic/stats_all.db")
 
 
 #%%

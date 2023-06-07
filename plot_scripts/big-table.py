@@ -12,10 +12,10 @@ args = ArgumentParser("")
 args.add_argument("db_path")
 args.add_argument("out_name")
 
-args = args.parse_args()
+args = args.parse_args(["data/basic/stats_all.db", "big-table.tex"])
 
 con = db_connect(args.db_path)
-seed_dir = fix_path("seeds/seeds_coverage/")
+seed_dir = fix_path("tmp/coverage/")
 print(seed_dir)
 
 run_results = pd.read_sql_query("select * from run_results", con)
@@ -24,8 +24,8 @@ run_results = pd.read_sql_query("select * from run_results", con)
 
 full_res = {}
 for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
-    ].groupby(['exec_id', 'prog', 'fuzzer']
-    )['covered_by_seed', 'found_by_seed'].sum().iterrows():
+    ].groupby(['exec_id', 'prog', 'fuzzer'], group_keys=False
+    )[['covered_by_seed', 'found_by_seed']].sum().iterrows():
     index = (rr[0][1], rr[0][2])
     cov = rr[1]['covered_by_seed']
     found = rr[1]['found_by_seed']
@@ -34,7 +34,7 @@ for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed',
 all_progs = sorted(set(pp for pp, ff in full_res.keys()))
 
 run_data = []
-for res_json in seed_dir.glob("info_*.json"):
+for res_json in seed_dir.glob("info*.json"):
     with open(res_json, 'rt') as f:
         run_data.extend(json.load(f))
 

@@ -2,7 +2,7 @@
 from collections import defaultdict
 from helper import db_connect, fix_path, query, to_latex_table, out_path, data_path
 
-con = db_connect("data/current/stats_all.db")
+con = db_connect("data/basic/stats_all.db")
 
 run_results = query(con, "select * from run_results")
 

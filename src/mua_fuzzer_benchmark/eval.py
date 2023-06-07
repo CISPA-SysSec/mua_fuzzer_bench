@@ -60,9 +60,6 @@ logging.getLogger('').addHandler(console)
 logger = logging.getLogger(__name__)
 
 
-logger.info("Starting ...")
-
-
 # Indicates if the evaluation should continue, is mainly used to shut down
 # after a keyboard interrupt by the user.
 # Global variable that is only written in the sigint_handler, as such it is safe
@@ -193,7 +190,7 @@ def get_check_result(f: TextIO, cur_time: float, by_seed: bool) -> check_results
     elif result == "orig_timeout":
         return CheckResultOrigTimeout(
             path=Path(res['path']).resolve(), # type: ignore[misc]
-            orig_cmd=res['orig_cmd'], # type: ignore[misc]
+            orig_cmd=res['args'], # type: ignore[misc]
             time=cur_time,
             by_seed=by_seed,
         )
@@ -256,7 +253,7 @@ def base_eval_crash_check(
         testing, input_dir, orig_bin, docker_mut_bin, args, result_dir)
     if timed_out:
         return CrashCheckResult(
-            result='timeout_check_crashing',
+            result='timeout_by_seed' if by_seed else 'timeout',
             total_time=cur_time,
             covered_file_seen=None,
             timed_out=True,
@@ -287,7 +284,8 @@ def update_results(
     results: Dict[RunResultKey, check_results_union],
     new_results: CrashCheckResult, start_time: float
 ) -> Optional[RunResult]:
-    if new_results.result not in ['check_done', 'covered', 'multiple']:
+    if new_results.result not in ['check_done', 'covered', 'multiple',
+                                  'timeout', 'timeout_by_seed']:
         raise ValueError(f"Error during seed crash check: {new_results}")
     new_results_list = new_results.results
 
@@ -297,6 +295,12 @@ def update_results(
     has_orig_timeout_by_seed = False
     has_killed = False
     has_timeout = False
+
+    if new_results.result == 'timeout':
+        has_timeout = True
+
+    if new_results.result == 'timeout_by_seed':
+        has_timeout_by_seed = True
 
     for nr in new_results_list:
         # Check that there are no results where multiple ids are found at once.
@@ -311,19 +315,14 @@ def update_results(
         known_result_type = False
         if nr.id() == "killed_by_seed":
             has_killed_by_seed = True
-            known_result_type = True
         if nr.id() == "timeout_by_seed":
             has_timeout_by_seed = True
-            known_result_type = True
         if nr.id() == "orig_timeout_by_seed":
             has_orig_timeout_by_seed = True
-            known_result_type = True
         if nr.id() == "killed":
             has_killed = True
-            known_result_type = True
         if nr.id() == "timeout":
             has_timeout = True
-            known_result_type = True
         if nr.id() in HANDLED_RESULT_TYPES:
             known_result_type = True
 
@@ -871,7 +870,7 @@ def get_all_mutations(
     if rerun_mutations_p is not None:
         class RerunMutationsDict(TypedDict):
             prog: str
-            ids: List[int]
+            mutation_ids: List[int]
             mode: str
 
         with open(rerun_mutations_p, 'rt') as f:
@@ -879,7 +878,7 @@ def get_all_mutations(
             rerun_mutations = {
                 rm['prog']: RerunMutations(
                     prog=rm['prog'],
-                    mutation_ids=rm['ids'],
+                    mutation_ids=rm['mutation_ids'],
                     mode=rm['mode'])
                 for rm in rerun_mutations_data
             }
@@ -953,7 +952,7 @@ def get_all_mutations(
             logger.info(f"After filtering: found {len(mutations)} mutations for {prog}")
 
         if rerun:
-            supermutations_raw = rerun.get_supermutations(prog)
+            supermutations_raw = rerun.get_initial_super_mutants(prog)
             expected_exec_id = supermutations_raw[0].exec_id
             len_sm = max(sm.super_mutant_id for sm in supermutations_raw) + 1
             mutations_set = set(int(mm.mutation_id) for mm in mutations)
@@ -990,13 +989,14 @@ def get_all_mutations(
             # supermutations, graph_info = get_supermutations_simple_reachable(prog_info, mutations)
             covered = get_supermutations_seed_reachable(prog, prog_info, mutations, mutator, seed_base_dir, fuzzers)
             stats.new_supermutant_graph_info(EXEC_ID, prog, covered)
+            supermutations = covered.supermutants
 
-        for ii, sms in enumerate(covered.supermutants):
+        for ii, sms in enumerate(supermutations):
             stats.new_initial_supermutant(EXEC_ID, prog, ii, sms)
 
         s_mutations = list(
             SuperMutantUninitialized(sm, prog_info) # , mutation_data)
-            for sm in covered.supermutants
+            for sm in supermutations
         )
 
         all_mutations.extend(s_mutations)
@@ -1309,7 +1309,7 @@ def handle_fuzzer_run_result(
 
             killed_mutants: set[int] = set()
             for mut_id in all_mutation_ids:
-                num_seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
+                num_seed_covered = 0 if has_result(mut_id, results, ['covered_by_seed']) else None
                 num_timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
                 killed = has_result(mut_id, results, ['killed_by_seed'])
 
@@ -1339,10 +1339,10 @@ def handle_fuzzer_run_result(
                         chunk_1, chunk_2 = split_up_supermutant_by_distance(all_mutation_ids)
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_1)
                         recompile_and_run(prepared_runs, data, stats.next_supermutant_id(), chunk_2)
-                    break
+                        break
                 else:  # no break
                     assert len(killed_mutants) >= 1, f"Expected at least one mutant to be killed.: {results} {all_mutation_ids}"
-            assert len(all_mutation_ids & killed_mutants) == len(killed_mutants), "No mutations in common"
+            assert len(all_mutation_ids & killed_mutants) == len(killed_mutants)
 
             remaining_mutations = all_mutation_ids - killed_mutants
             if len(remaining_mutations) > 0:
@@ -1830,7 +1830,7 @@ def handle_check_run_result(
     else:
         result_type = run_result.result
         if result_type == 'killed_by_seed':
-            logger.info(f"= check (seed):   {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
+            logger.info(f"= check (seed): {mut_data.prog.name}:{mut_data.printable_m_id()}:{data.fuzzer.name}")
 
             all_mutation_ids = set(mut_data.mutation_ids)
             assert len(all_mutation_ids) == 1
@@ -1841,7 +1841,7 @@ def handle_check_run_result(
             del run_result
 
 
-            seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else 0
+            seed_covered = 1 if has_result(mut_id, results, ['covered_by_seed']) else None
             timeout = 1 if has_result(mut_id, results, ['timeout_by_seed']) else None
             killed = has_result(mut_id, results, ['killed_by_seed'])
 
@@ -1849,10 +1849,12 @@ def handle_check_run_result(
                 EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name,
                 seed_covered, timeout, data.seed_covered_time)
 
-            if killed is not None:
-                assert isinstance(killed, CheckResultKilled)
-                stats.new_seed_crashing_inputs(
-                    EXEC_ID, prog.name, mut_id, data.fuzzer.name, [killed])
+            assert isinstance(killed, CheckResultKilled)
+            stats.new_seed_crashing_inputs(
+                EXEC_ID, prog.name, mut_id, data.fuzzer.name, [killed])
+
+            stats.new_run_executed(
+                EXEC_ID, data.run_ctr, prog.name, mut_id, data.fuzzer.name, 0.0, time_took)
 
             stats.done_run('killed_by_seed', EXEC_ID, mut_data.prog.name, mut_id,
                            data.run_ctr, data.fuzzer.name)
@@ -1875,7 +1877,6 @@ def handle_check_run_result(
 
             stats.new_seeds_executed(
                 EXEC_ID, prog.name, mut_id, data.run_ctr, data.fuzzer.name, seed_covered_time, None, None)
-
 
             stats.new_run_executed(
                 EXEC_ID, data.run_ctr, prog.name, mut_id, data.fuzzer.name, covered_time_val, time_took)
@@ -2026,10 +2027,15 @@ def check_crashing(
     if not input_dir.is_dir():
         raise ValueError(f"Given seed dir path is not a directory: {input_dir}")
 
+    time_start = time.time()
+
+    num_inputs = len(list(input_dir.glob("**/*")))
+
     covered_dir = SHARED_DIR/"covered"
     covered_dir.mkdir(parents=True, exist_ok=True)
 
-    max_runtime = 2 if not (WITH_ASAN or WITH_MSAN) else 20
+    max_runtime = 1 if not (WITH_ASAN or WITH_MSAN) else 5
+    timeout = int(((max_runtime/10) * num_inputs) + 60)
 
     with tempfile.TemporaryDirectory(dir=covered_dir) as covered:
 
@@ -2045,11 +2051,12 @@ def check_crashing(
                 [
                     '--env', f"TRIGGERED_FOLDER={covered}",
                     '--env', f'MUT_MAX_RUN={max_runtime}'
-                ], timeout=120*60)
+                ], timeout=timeout)
 
     returncode = cast(int, proc['returncode'])
     out = cast(str, proc['out'])
     timed_out = cast(bool, proc['timed_out'])
+    logger.debug(f"check_crashing: returncode: {returncode}, took: {time.time() - time_start}, num inputs: {num_inputs} timeout: {timeout}")
     return returncode, out, timed_out #proc['returncode'], proc['out'], proc['timed_out']
 
 
@@ -2369,9 +2376,13 @@ def run_eval(
     seed_base_dir_s: str,
     rerun: Optional[Path],
     rerun_mutations: Optional[Path],
-    fresh_images: bool
+    fresh_images: bool,
+    result_path_s: str,
 ) -> None:
     global should_run
+    tmp_db_path = SHARED_DIR/"mutator/stats.db"
+    result_path = Path(result_path_s).with_suffix(".db")
+    assert not result_path.exists(), f"Result path {result_path} already exists."
 
     if rerun_mutations is not None:
         assert rerun is not None, "To use the --rerun-mutations options the --rerun option is required."
@@ -2389,7 +2400,7 @@ def run_eval(
     base_shm_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize the stats object
-    stats = Stats(str(SHARED_DIR/"mutator/stats.db"))
+    stats = Stats(str(tmp_db_path))
 
     # Record current eval execution data
     # Get the current git status
@@ -2469,7 +2480,11 @@ def run_eval(
     # Record total time for this execution.
     stats.execution_done(EXEC_ID, time.time() - execution_start_time)
 
-    logger.info("eval done :)")
+    logger.info(f"eval done, copying db to: {result_path}")
+
+    # Copy the stats db to the result path
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(tmp_db_path, result_path)
 
 
 def get_seed_gathering_runs(
@@ -2681,7 +2696,7 @@ def chunks(lst: List[C], n: int) -> Generator[List[C], None, None]:
 
 def gather_seeds(
     progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int,
-    per_fuzzer: bool, source_dir: Path, destination_dir: Path
+    source_dir: Path, destination_dir: Path
 ) -> None:
     global should_run
 
@@ -2815,20 +2830,25 @@ def gather_seeds(
 
             sr.covered_mutations = set(covered_mutations)
 
-            kcov_res_path = kcov_res_dir/f"{sr.prog}_{sr.fuzzer}_{sr.instance}.json"
-            get_kcov(prog, sr_seed_dir, str(kcov_res_path))
+            # kcov_res_path = kcov_res_dir/f"{sr.prog}_{sr.fuzzer}_{sr.instance}.json"
+            # get_kcov(prog, sr_seed_dir, str(kcov_res_path))
 
-            class KcovResDict(TypedDict):
-                covered: List[Tuple[str, str]]
-                all_lines: List[Tuple[str, str]]
+            # class KcovResDict(TypedDict):
+            #     covered_lines: List[Tuple[str, str]]
+            #     all_lines: List[Tuple[str, str]]
 
-            with open(kcov_res_path) as f:
-                kcov_res_data: KcovResDict = json.load(f)
-                kcov_res = KCovResult(
-                    covered_lines=kcov_res_data['covered'],
-                    all_lines=kcov_res_data['all_lines'],
-                )
-            sr.kcov_res = kcov_res
+            # with open(kcov_res_path) as f:
+            #     kcov_res_data: KcovResDict = json.load(f)
+            #     kcov_res = KCovResult(
+            #         covered_lines=kcov_res_data['covered_lines'],
+            #         all_lines=kcov_res_data['all_lines'],
+            #     )
+            # sr.kcov_res = kcov_res
+
+            sr.kcov_res = KCovResult(
+                covered_lines=[],
+                all_lines=[],
+            )
 
             logger.info(f"{sr.prog} {sr.fuzzer} {sr.instance}: "
                   f"created {sr.num_seeds_minimized} seeds inputs covering {len(covered_mutations)} mutations")
@@ -2867,7 +2887,10 @@ def gather_seeds(
             shutil.copyfile(si, median_run_dir/si.name)
 
     with open(destination_dir/'info.json', 'wt') as f:
-        json.dump(seed_runs, f)
+        data = list(sr.to_dict()
+                    for prog_fuzzer in runs_by_prog_fuzzer.values()
+                    for sr in prog_fuzzer)
+        json.dump(data, f)
     logger.info(f"Done gathering seeds.")
 
 
@@ -2875,10 +2898,10 @@ def coverage_fuzzing(progs: List[str], fuzzers: List[str], fuzz_time: str, seed_
     seed_dir = Path(seed_dir)
     result_dir = Path(result_dir)
 
-    assert seed_dir.exists(), f"Expected the --seed-dir: {seed_dir} to exist."
+    assert seed_dir.is_dir(), f"Expected the --seed-dir: {seed_dir} to exist."
     assert not result_dir.exists(), f"Expected the --result-dir: {result_dir} to not exist."
 
-    gather_seeds(progs, fuzzers, fuzz_time, instances, True, seed_dir, result_dir)
+    gather_seeds(progs, fuzzers, fuzz_time, instances, seed_dir, result_dir)
 
 
 # dest dir is seed_base_dir
@@ -3407,11 +3430,79 @@ def prepare_shared_dir_and_tmp_dir() -> None:
         sys.exit(1)
 
 
+def generate_rerun_file(
+    db_path_s: str, out_file_s: str, untried: bool, covered: bool,
+    skip_timeout: bool, skip_killed: bool, skip_crashed: bool,
+    full_supermutants: bool, mode: str
+) -> None:
+
+    FILTER_TYPES = ['covered', 'covered_not_killed', 'killed']
+
+    out_file = Path(out_file_s).with_suffix('.json')
+    assert not out_file.exists(), f"Output file already exists: {out_file}"
+
+    db = ReadStatsDb(Path(db_path_s))
+
+    progs = db.get_all_progs()
+
+    data = []
+
+    for prog in progs:
+        all_mutants = db.get_all_mutants(prog)
+
+        keep_mutants = set()
+
+        for mm in all_mutants:
+            keep = False
+
+            if untried and mm.untried:
+                keep |= True
+            if covered and mm.covered:
+                keep |= True
+            if skip_timeout and mm.timeout:
+                keep &= False
+            if skip_crashed and mm.crashed:
+                keep &= False
+            if skip_killed and mm.killed:
+                keep &= False
+
+            if keep:
+                keep_mutants.add(mm.mut_id)
+
+        if full_supermutants:
+            initial_supermutants = db.get_initial_super_mutants(prog)
+            supermutants_dict = defaultdict(list)
+            for ism in initial_supermutants:
+                supermutants_dict[ism.super_mutant_id].append(ism.mutation_id)
+            supermutants = list(supermutants_dict.values())
+            for sm in supermutants:
+                for sm_mut_id in sm:
+                    if sm_mut_id in keep_mutants:
+                            keep_mutants.update(sm)
+                            break
+
+        data.append(RerunMutations(
+            prog=prog,
+            mutation_ids=list(keep_mutants),
+            mode=mode,
+        ).to_dict())
+
+    logger.info(f"Writing rerun file to {out_file}")
+
+    with open(out_file, 'w') as f:
+        json.dump(data, f, indent=4)
+
+
+def prepare_db(db_path_s: str) -> None:
+    db = ReadStatsDb(Path(db_path_s))
+    db.execute_eval_sql()
+
 
 @no_type_check  # mypy does not understand the type argument of argparse, ignore errors for now
 def main() -> None:
     import sys
     import argparse
+    import distutils
 
     # set signal handler for keyboard interrupt
     signal.signal(signal.SIGINT, sigint_handler)
@@ -3430,10 +3521,15 @@ def main() -> None:
         help='The programs to evaluate on, will fail if the name is not known.')
     parser_eval.add_argument("--fuzz-time", required=True,
         help='Time in minutes for how long the fuzzers have to find mutations.')
-    parser_eval.add_argument("--num-repeats", type=int, default=1,
-        help="How often to repeat each mutation for each fuzzer.")
+    # parser_eval.add_argument("--num-repeats", type=int, default=1,
+    #     help="How often to repeat each mutation for each fuzzer.")
     parser_eval.add_argument("--seed-dir", required=True,
         help="The directory containing the initial seed inputs.")
+    parser_eval.add_argument("--result-path", required=True,
+        help='The path where the result database should be written to. The path '
+         'will checked to not exist. The extension will be overwritten with ".db". '
+         'Note that the database will only be copied to this location once the '
+         'evaluation finishes.')
     parser_eval.add_argument("--rerun", default=None,
         help="Rerun a previous experiment based on that runs database. "
              "Requires a path to the database as the argument. "
@@ -3461,60 +3557,12 @@ def main() -> None:
             help='Time in minutes for how long the fuzzers have to find coverage.')
     parser_coverage.add_argument("--seed-dir", required=True,
             help="The directory containing the initial seed inputs.")
-    parser_coverage.add_argument("--result-dir", default=None,
+    parser_coverage.add_argument("--result-dir", default=None, required=True,
             help="The directory where the coverage seed inputs that are collected during fuzzing are stored. "
                  "One directory for each fuzzer and instance.")
-    parser_coverage.add_argument("--instances", type=int, default=1,
-            help="The number of instances for each fuzzer, that will be run. Defaults to 1.")
+    parser_coverage.add_argument("--instances", type=int, required=True,
+            help="The number of instances for each fuzzer, that will be run.")
     del parser_coverage
-
-    # CMD: check_seeds 
-    parser_check_seeds = subparsers.add_parser('check_seeds', help="Execute the seeds once with every fuzzer to check that they do not "
-            " cause any errors, if they cause an error the seed files are deleted.")
-    parser_check_seeds.add_argument("--fuzzers", nargs='+', required=True,
-            help='The fuzzers to use check with.')
-    parser_check_seeds.add_argument("--progs", nargs='+', required=True,
-            help='The programs to check for.')
-    del parser_check_seeds
-
-    # CMD: gather_seeds 
-    parser_gather_seeds = subparsers.add_parser('gather_seeds', help="Run the fuzzers on the unmutated binary to find inputs. "
-            "Check the resulting fuzzing working directories for their individual results, this is not done by the framework.")
-    parser_gather_seeds.add_argument("--fuzzers", nargs='+', required=True,
-            help='The fuzzers to run, will fail if the name is not known.')
-    parser_gather_seeds.add_argument("--progs", nargs='+', required=True,
-            help='The programs to fuzz, will fail if the name is not known.')
-    parser_gather_seeds.add_argument("--timeout", required=True,
-            help='Time in minutes for how long the fuzzers have to find seed inputs.')
-    parser_gather_seeds.add_argument("--num-repeats", type=int, default=1,
-            help="How often to repeat each seed collection for each fuzzer.")
-    parser_gather_seeds.add_argument("--seed-dir", required=True,
-            help="The directory with the seeds to start with.")
-    parser_gather_seeds.add_argument("--dest-dir", required=True,
-            help="The directory where to put the found seeds.")
-    parser_gather_seeds.add_argument("--per-fuzzer", default=False, action="store_true",
-            help="If seeds should be gathered on a per fuzzer basis (if given) or combined (default).")
-    del parser_gather_seeds
-
-    # CMD: import_seeds 
-    parser_import_seeds = subparsers.add_parser('import_seeds', help="Copy the seed files from the directory into the used seed directory. "
-            "Note that the used seed directory can be specified using the MUT_SEED_DIR environment variable.")
-    parser_import_seeds.add_argument("--source", help="The source seed directory.")
-    parser_import_seeds.add_argument("--dest", help="The destination seed directory.")
-    del parser_import_seeds
-
-    # # CMD: plot 
-    # parser_plot = subparsers.add_parser('plot', help="Generate plots for the gathered data")
-    # parser_plot.add_argument("--artifacts", default=False, action="store_true",
-    #         help="If further detailed plots and latex tables should be written to disk.")
-    # parser_plot.add_argument("--seed-dir", default=None,
-    #         help="Will be used to generate stats regarding the seeds, if given.")
-    # parser_plot.add_argument("--skip-script", default=False, action="store_true",
-    #         help="If plot has already been called on the current db, so eval.sql script has been executed on the db. "
-    #             "This option can be used to skip reevaluating the "
-    #             "script, speeding up the plot process. Useful for debugging of plotting.")
-    # parser_plot.add_argument("db_path", help="The sqlite database to plot.")
-    # del parser_plot
 
     # CMD: merge 
     parser_merge = subparsers.add_parser('merge', help="Merge result databases.")
@@ -3525,66 +3573,72 @@ def main() -> None:
         help='Paths of the databases that will be merged, these dbs will not be modified.')
     del parser_merge
 
-    # CMD: minimize_seeds 
-    parser_minimize_seeds = subparsers.add_parser('minimize_seeds',
-            help="Minimize the seeds by finding the minimum set (greedily) "
-            "that covers all mutations reached by the full set of seeds.")
-    parser_minimize_seeds.add_argument("--seed_path", required=True,
-            help=f'The base dir for the seed files. Needs to be inside: {HOST_TMP_PATH}')
-    parser_minimize_seeds.add_argument("--res_path", required=True,
-            help=f'The path where the minimized seeds will be written to. Needs to be inside: {HOST_TMP_PATH}')
-    parser_minimize_seeds.add_argument("--progs", nargs='+', required=True,
-        help='The program on which to minimize the seeds.')
-    parser_minimize_seeds.add_argument("--fuzzers", nargs='+', required=True,
-        help='The fuzzer on which is used to minimize the seeds.')
-    parser_minimize_seeds.add_argument("--per-fuzzer", default=False, action="store_true",
-            help="If the inputs seed directory is already split up on a per fuzzer basis.")
-    del parser_minimize_seeds
+    # CMD: generate_rerun_file
+    parser_rerun_file = subparsers.add_parser('generate_rerun_file',
+        help="Create a rerun file usable for 'eval' as for the '--rerun-mutations' flag."
+             "This is useful to rerun mutations based on a previous run."
+             "Note that the filter arguments are irrespective of fuzzer.")
+    parser_rerun_file.add_argument("--db", required=True,
+        help='Path to the database where the mutations should be taken from.'
+             "This db needs to be used as the '--rerun' db for the 'eval' command.")
+    parser_rerun_file.add_argument("--out-file", required=True,
+        help="Path to where the resulting json file should be written, "
+             "the extension will be overwritten by '.json'.")
+    parser_rerun_file.add_argument("--untried", required=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        help="If mutations that have not been run (by any fuzzer) yet should be included.")
+    parser_rerun_file.add_argument("--covered", required=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        help="If mutations that have not been covered during a run (by any fuzzer) "
+             "should be included.")
+    parser_rerun_file.add_argument("--skip-timeout", required=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        help="If mutations that have timed out during a run (by any fuzzer) "
+             "should be excluded.")
+    parser_rerun_file.add_argument("--skip-killed", required=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        help="If mutations that have been killed during a run (by any fuzzer) "
+             "should be excluded.")
+    parser_rerun_file.add_argument("--skip-crashed", required=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        help="If mutations that have crashed during a run (by any fuzzer) "
+             "should be excluded.")
+    parser_rerun_file.add_argument("--mode", required=True,
+        help="In what mode the rerun of supermutants should be performed: "
+             "Either 'keep' or 'single', see eval command for details.")
+    parser_rerun_file.add_argument("--full-supermutants", default=False, action="store_true",
+        help="If set, should any mutation of a initial supermutant be included in the result, "
+             "instead all mutations of the supermutant are included.")
+    del parser_rerun_file
 
-    # CMD: seed_coverage
-    parser_seed_coverage = subparsers.add_parser('seed_coverage',
-            help="Measure the seed coverage on the programs using kcov.")
-    parser_seed_coverage.add_argument("--seed-path", required=True,
-            help=f'The base dir for the seed files. Needs to be inside: {HOST_TMP_PATH}')
-    parser_seed_coverage.add_argument("--res-path", required=True,
-            help=f'The path where the coverage stats will be written to. Needs to be inside: {HOST_TMP_PATH}')
-    parser_seed_coverage.add_argument("--prog", required=True,
-        help='The program for which to measure coverage.')
-    del parser_seed_coverage
+    # CMD: prepare_db
+    parser_prepare_db = subparsers.add_parser('prepare_db',
+        help="Execute the eval.sql script on the db, preparing it for plotting.")
+    parser_prepare_db.add_argument("--db", required=True,
+        help='The db to prepare.')
+    del parser_prepare_db
 
     args = parser.parse_args()
 
     cmd = args.cmd
-    assert isinstance(cmd, str)
 
     if cmd == 'eval':
-        run_eval(args.progs, args.fuzzers, args.fuzz_time, args.num_repeats,
-                 args.seed_dir, args.rerun, args.rerun_mutations, args.fresh_images)
+        run_eval(args.progs, args.fuzzers, args.fuzz_time, 1, # repeats not supported
+                 args.seed_dir, args.rerun, args.rerun_mutations, args.fresh_images,
+                 args.result_path)
     elif cmd == 'coverage_fuzzing':
-        raise NotImplementedError("Coverage fuzzing is not implemented yet.")
-        coverage_fuzzing(args.progs, args.fuzzers, args.fuzz_time,
+        coverage_fuzzing(
+            args.progs, args.fuzzers, args.fuzz_time,
         args.seed_dir, args.result_dir, args.instances)
-    elif cmd == 'check_seeds':
-        raise NotImplementedError("Check seeds is not implemented yet.")
-        # check_seeds(args.progs, args.fuzzers)
-    elif cmd == 'gather_seeds':
-        raise NotImplementedError("Gather seeds is not implemented yet.")
-        gather_seeds(args.progs, args.fuzzers, args.timeout, args.num_repeats,
-        args.per_fuzzer, args.seed_dir, args.dest_dir)
-    elif cmd == 'import_seeds':
-        raise NotImplementedError("Import seeds is not implemented yet.")
-        import_seeds(args.source, args.dest)
-    # elif args.cmd == 'plot':
-    #     generate_plots(args.db_path, args.seed_dir, args.artifacts, args.skip_script)
     elif cmd == 'merge':
         raise NotImplementedError("Merge is not implemented yet.")
         merge_dbs(args.out_db_path, args.in_db_paths)
-    elif cmd == 'minimize_seeds':
-        raise NotImplementedError("Minimize seeds is not implemented yet.")
-        minimize_seeds(args.seed_path, args.res_path, args.fuzzers, args.progs, args.per_fuzzer)
-    elif cmd == 'seed_coverage':
-        raise NotImplementedError("Seed coverage is not implemented yet.")
-        seed_coverage(args.seed_path, args.res_path, args.prog)
+    elif cmd == 'generate_rerun_file':
+        generate_rerun_file(args.db, args.out_file, args.untried, args.covered,
+                            args.skip_timeout, args.skip_killed, args.skip_crashed,
+                            args.full_supermutants, args.mode)
+    elif cmd == 'prepare_db':
+        prepare_db(args.db)
     else:
         parser.print_help(sys.stderr)
 

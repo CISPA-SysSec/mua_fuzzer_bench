@@ -12,6 +12,23 @@ class RerunMutations:
     mutation_ids: List[int]
     mode: str
 
+    def to_dict(self) -> Dict[str, Union[str, List[int]]]:
+        return {
+            "prog": self.prog,
+            "mutation_ids": self.mutation_ids,
+            "mode": self.mode
+        }
+
+
+@dataclass
+class DoneMutation:
+    untried: bool
+    covered: bool
+    crashed: bool
+    timeout: bool
+    killed: bool
+    mut_id: int
+
 
 @dataclass(eq=True, order=True)
 class Fuzzer:
@@ -44,7 +61,7 @@ class Program:
 
 @dataclass
 class InitialSuperMutant:
-    exec_id: int
+    exec_id: str
     prog: str
     super_mutant_id: int
     mutation_id: int
@@ -425,6 +442,12 @@ class KCovResult:
     covered_lines: List[Tuple[str, str]]
     all_lines: List[Tuple[str, str]]
 
+    def to_dict(self) -> Dict[str, List[Tuple[str, str]]]:
+        return {
+            "covered_lines": self.covered_lines,
+            "all_lines": self.all_lines,
+        }
+
 
 @dataclass
 class GatherSeedRun:
@@ -450,6 +473,19 @@ class GatheredSeedsRun:
     num_seeds_minimized: int
     covered_mutations: Set[int]
     kcov_res: KCovResult
+
+    def to_dict(self) -> Dict[str, None | str | int | List[int] | Dict[str, List[Tuple[str, str]]]]:
+        return {
+            "prog": self.prog,
+            "fuzzer": self.fuzzer,
+            "instance": self.instance,
+            "seed_dir": str(self.seed_dir),
+            "num_seeds": self.num_seeds,
+            "minimized_dir": str(self.minimized_dir),
+            "num_seeds_minimized": self.num_seeds_minimized,
+            "covered_mutations": list(self.covered_mutations),
+            "kcov_res": self.kcov_res.to_dict(),
+        }
 
 
 @dataclass

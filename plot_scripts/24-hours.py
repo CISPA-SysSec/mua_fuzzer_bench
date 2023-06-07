@@ -9,7 +9,7 @@ all_queries = []
 for pp in [
     # "data/24_hours_2/stats_all.db",
     # "data/24_hours_3/stats_all.db",
-    "data/24_3/stats_all.db",
+    "data/24_hours/stats_all.db",
 ]:
     db = db_connect(pp)
     all_queries.append(query(db, """

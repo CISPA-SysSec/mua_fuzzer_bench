@@ -6,7 +6,7 @@ import sqlite3
 from typing import List, Optional
 from helper import db_connect, fix_path, query, out_path, to_latex_table
 
-def_con = db_connect(fix_path("data/current/stats_all.db"))
+def_con = db_connect(fix_path("data/basic/stats_all.db"))
 asan_con = db_connect(fix_path("data/asan/stats_all.db"))
 
 #%%

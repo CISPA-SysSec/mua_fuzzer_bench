@@ -5,7 +5,7 @@ import time
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Set, Tuple, TypeVar, ParamSpec, Concatenate, TYPE_CHECKING, cast
-from data_types import CheckResultKilled, CheckResultTimeout, InitialSuperMutant, Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CoveredResult
+from data_types import CheckResultKilled, CheckResultTimeout, DoneMutation, InitialSuperMutant, Program, MutationType, Mutation, MutationRun, SuperMutant, FuzzerRun, CoveredResult
 
 from constants import WITH_ASAN, WITH_MSAN
 from helpers import mutation_locations_path, mutation_prog_source_path
@@ -683,6 +683,11 @@ class ReadStatsDb():
         super().__init__()
         self.db = sqlite3.connect(db_path)
 
+    def execute_eval_sql(self) -> None:
+        c = self.db.cursor()
+        with open('eval.sql', 'r') as f:
+            c.executescript(f.read())
+
     def get_bc_file_content(self, prog: str) -> bytes:
         c = self.db.cursor()
         res_cur = c.execute('select orig_bc_file_data from progs where prog = ?', (prog,))
@@ -704,16 +709,62 @@ class ReadStatsDb():
         assert len(res) == 1
         return res[0][0]
 
-    def get_supermutations(self, prog: str) -> List[InitialSuperMutant]:
+    def get_initial_super_mutants(self, prog: str) -> List[InitialSuperMutant]:
         c = self.db.cursor()
         res_cur = c.execute('select * from initial_super_mutants where prog = ?', (prog,))
         res: List[List[str]] = [r for r in res_cur] # type: ignore[misc]
         return [
             InitialSuperMutant(
-                exec_id=int(r[0]),
+                exec_id=str(r[0]),
                 prog=str(r[1]),
                 super_mutant_id=int(r[2]),
                 mutation_id=int(r[3]),
             )
             for r in res
         ]
+
+    def get_all_progs(self) -> List[str]:
+        c = self.db.cursor()
+        progs_c = c.execute('select prog from progs')
+        progs: List[str] = list(set([r[0] for r in progs_c])) # type: ignore[misc]
+        return progs
+
+
+    def get_all_mutants(self, prog: str) -> List[DoneMutation]:
+        c = self.db.cursor()
+
+        mutation_ids_c = c.execute('select mutation_id from mutations where prog = ?', (prog,))
+        mutation_ids = set([int(r[0]) for r in mutation_ids_c]) # type: ignore[misc]
+
+        done_runs_c = c.execute('select mutation_id, covered_file_seen from executed_runs where prog = ?', (prog,))
+        done_runs = {int(r[0]): r[1] is not None for r in done_runs_c} # type: ignore[misc]
+
+        crashed_c = c.execute('select mutation_id from run_crashed where prog = ?', (prog,))
+        crashed = set([int(r[0]) for r in crashed_c]) # type: ignore[misc]
+
+        killed_c = c.execute('select mutation_id from crashing_inputs where prog = ?', (prog,))
+        killed = set([int(r[0]) for r in killed_c]) # type: ignore[misc]
+
+        killed_by_seed_c = c.execute('select mutation_id from seed_crashing_inputs where prog = ?', (prog,))
+        killed_by_seed = set([int(r[0]) for r in killed_by_seed_c]) # type: ignore[misc]
+
+        timeout_c = c.execute('select mutation_id, timed_out from executed_seeds where prog = ?', (prog,))
+        timeout = {int(r[0]): r[1] is not None for r in timeout_c} # type: ignore[misc]
+
+        mutations = []
+
+        for mm in mutation_ids:
+            mutations.append(
+                DoneMutation(
+                    mut_id=mm,
+                    untried=mm not in done_runs,
+                    covered=done_runs[mm] if mm in done_runs else False,
+                    timeout=timeout[mm] if mm in timeout else False,
+                    crashed=mm in crashed,
+                    killed=mm in killed or mm in killed_by_seed,
+                )
+            )
+
+        return mutations
+
+

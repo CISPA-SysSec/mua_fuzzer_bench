@@ -3,7 +3,7 @@ import pandas as pd
 
 from helper import db_connect, fix_path, query, to_latex_table, out_path
 
-con = db_connect(fix_path("data/current/stats_all.db"))
+con = db_connect(fix_path("data/basic/stats_all.db"))
 
 pd.set_option('display.max_colwidth', 1000)
 
