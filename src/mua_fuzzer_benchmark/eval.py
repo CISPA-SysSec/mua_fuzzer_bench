@@ -1730,10 +1730,17 @@ def recompile_and_run_from_mutation(
         rr_data = rr.run
         workdir = SHARED_DIR/"mutator"/mut_data.prog.name/mut_data.printable_m_id()/rr_data.fuzzer.name/str(rr_data.run_ctr)
         workdir.mkdir(parents=True)
+
+        if rr_data._workdir is not None:
+            rr_data.unset_workdir()
         rr_data.set_workdir(workdir)
+
+        if rr_data._prog_bc is not None:
+            rr_data.unset_prog_bc()
+
         rr_data.mut_data = mut_data
 
-    logger.info(f"! new supermutant (run): {mut_data.printable_m_id()} mutations: {mut_data.mutation_ids}")
+    logger.info(f"! new supermutant (mut): {mut_data.printable_m_id()} mutations: {mut_data.mutation_ids}")
     prepared_runs.add('mut', PRIO_RECOMPILE_MUTANT, MutationRun(
         mut_data=mut_data,
         resulting_runs=resulting_runs,

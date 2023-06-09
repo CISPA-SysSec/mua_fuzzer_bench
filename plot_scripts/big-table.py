@@ -12,7 +12,7 @@ args = ArgumentParser("")
 args.add_argument("db_path")
 args.add_argument("out_name")
 
-args = args.parse_args(["data/basic/stats_all.db", "big-table.tex"])
+args = args.parse_args()
 
 con = db_connect(args.db_path)
 seed_dir = fix_path("tmp/coverage/")
@@ -22,6 +22,8 @@ run_results = pd.read_sql_query("select * from run_results", con)
 
 #%%
 
+all_fuzzers = set()
+
 full_res = {}
 for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed', 'found_by_seed']
     ].groupby(['exec_id', 'prog', 'fuzzer'], group_keys=False
@@ -30,6 +32,7 @@ for rr in run_results[['exec_id', 'prog', 'fuzzer', 'mut_id', 'covered_by_seed',
     cov = rr[1]['covered_by_seed']
     found = rr[1]['found_by_seed']
     full_res[index] = (cov, found)
+    all_fuzzers.add(rr[0][2])
 
 all_progs = sorted(set(pp for pp, ff in full_res.keys()))
 
@@ -52,7 +55,7 @@ for _, bb in bucketed.items():
 prog_fuzzer_stats = pd.read_sql_query("SELECT * from run_results_by_prog_and_fuzzer", con)
 # print(prog_fuzzer_stats.loc[(prog_fuzzer_stats['fuzzer'] == "afl") & (prog_fuzzer_stats['prog'] == "curl")])
 
-all_fuzzers = sorted(set(kk for dd in seed_data.values() for kk in dd.keys()))
+# all_fuzzers = sorted(set(kk for dd in seed_data.values() for kk in dd.keys()))
 
 #res_table += rf"Program &   \#Type &&   {all_fuzzers_str} \\" + "\n"
 

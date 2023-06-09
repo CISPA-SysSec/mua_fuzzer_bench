@@ -90,7 +90,7 @@ based on covered mutations will be moved into a separate directory.
 
 ```bash
 src/mua_fuzzer_benchmark/eval.py coverage_fuzzing \
-    --fuzzers afl libfuzzer aflpp honggfuzz \
+    --fuzzers libfuzzer aflpp honggfuzz \
     --progs woff2_new \
     --fuzz-time $((60 * 48)) \
     --seed-dir tmp/seeds/seeds_minimal \
@@ -115,7 +115,7 @@ run created by the `coverage_fuzzing` command.
 
 ```bash
 src/mua_fuzzer_benchmark/eval.py eval \
-    --fuzzers afl libfuzzer aflpp honggfuzz \
+    --fuzzers libfuzzer aflpp honggfuzz \
     --progs woff2_new \
     --fuzz-time $((60 * 1)) \
     --seed-dir tmp/coverage/median_runs/ \
@@ -137,7 +137,7 @@ src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
     --untried no \
     --covered yes \
     --skip-timeout yes \
-    --skip-killed yes \
+    --skip-killed no \
     --skip-crashed yes \
     --mode keep
 ```
@@ -148,7 +148,7 @@ rerun).
 
 ```bash
 MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
-    --fuzzers afl libfuzzer aflpp honggfuzz \
+    --fuzzers libfuzzer aflpp honggfuzz \
     --progs woff2_new \
     --fuzz-time $((60 * 1)) \
     --seed-dir tmp/coverage/median_runs/ \
@@ -176,7 +176,7 @@ src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
 
 ```bash
 MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
-    --fuzzers afl libfuzzer aflpp honggfuzz \
+    --fuzzers libfuzzer aflpp honggfuzz \
     --progs woff2_new \
     --fuzz-time $((60 * 24)) \
     --seed-dir tmp/coverage/median_runs/ \
@@ -192,6 +192,7 @@ requires first that the databases are prepared for plotting using:
 `src/mua_fuzzer_benchmark/eval.py prepare_db --db <db>`
 
 This needs to be done for all three databases previously created:
+
 ```bash
 src/mua_fuzzer_benchmark/eval.py prepare_db --db data/basic/stats_all.db
 src/mua_fuzzer_benchmark/eval.py prepare_db --db data/asan/stats_all.db
