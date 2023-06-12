@@ -2711,15 +2711,14 @@ def gather_seeds(
     # destination_dir = Path(destination_dir_s)
     destination_dir.mkdir(parents=True, exist_ok=True)
 
+    prepare_mutator_docker_image(fresh_images)
+    prepare_shared_dir_and_tmp_dir()
+    build_docker_images(fuzzers, progs)
+
     # prepare environment
     seed_coverage_base_shm_dir = SHARED_DIR/"mutator_seed_gathering"
     shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
     seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
-
-
-    prepare_mutator_docker_image(fresh_images)
-    prepare_shared_dir_and_tmp_dir()
-    build_docker_images(fuzzers, progs)
 
     # Keep a list of which cores can be used
     cores = CpuCores(NUM_CPUS)
