@@ -2703,7 +2703,7 @@ def chunks(lst: List[C], n: int) -> Generator[List[C], None, None]:
 
 def gather_seeds(
     progs: List[str], fuzzers: List[str], timeout: str, num_repeats: int,
-    source_dir: Path, destination_dir: Path
+    source_dir: Path, destination_dir: Path, fresh_images: bool
 ) -> None:
     global should_run
 
@@ -2716,6 +2716,9 @@ def gather_seeds(
     shutil.rmtree(seed_coverage_base_shm_dir, ignore_errors=True)
     seed_coverage_base_shm_dir.mkdir(parents=True, exist_ok=True)
 
+
+    prepare_mutator_docker_image(fresh_images)
+    prepare_shared_dir_and_tmp_dir()
     build_docker_images(fuzzers, progs)
 
     # Keep a list of which cores can be used
@@ -2901,14 +2904,14 @@ def gather_seeds(
     logger.info(f"Done gathering seeds.")
 
 
-def coverage_fuzzing(progs: List[str], fuzzers: List[str], fuzz_time: str, seed_dir: Path, result_dir: Path, instances: int) -> None:
+def coverage_fuzzing(progs: List[str], fuzzers: List[str], fuzz_time: str, seed_dir: Path, result_dir: Path, instances: int, fresh_images: bool) -> None:
     seed_dir = Path(seed_dir)
     result_dir = Path(result_dir)
 
     assert seed_dir.is_dir(), f"Expected the --seed-dir: {seed_dir} to exist."
     assert not result_dir.exists(), f"Expected the --result-dir: {result_dir} to not exist."
 
-    gather_seeds(progs, fuzzers, fuzz_time, instances, seed_dir, result_dir)
+    gather_seeds(progs, fuzzers, fuzz_time, instances, seed_dir, result_dir, fresh_images)
 
 
 # dest dir is seed_base_dir
@@ -3569,6 +3572,8 @@ def main() -> None:
                  "One directory for each fuzzer and instance.")
     parser_coverage.add_argument("--instances", type=int, required=True,
             help="The number of instances for each fuzzer, that will be run.")
+    parser_eval.add_argument("--fresh-images", default=False, action="store_true",
+        help='If the docker images should be rebuild from scratch. This will call pull on the base images, and build with --no-cache.')
     del parser_coverage
 
     # CMD: merge 
@@ -3636,7 +3641,7 @@ def main() -> None:
     elif cmd == 'coverage_fuzzing':
         coverage_fuzzing(
             args.progs, args.fuzzers, args.fuzz_time,
-        args.seed_dir, args.result_dir, args.instances)
+        args.seed_dir, args.result_dir, args.instances, args.fresh_images)
     elif cmd == 'merge':
         raise NotImplementedError("Merge is not implemented yet.")
         merge_dbs(args.out_db_path, args.in_db_paths)
