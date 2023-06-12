@@ -3572,7 +3572,7 @@ def main() -> None:
                  "One directory for each fuzzer and instance.")
     parser_coverage.add_argument("--instances", type=int, required=True,
             help="The number of instances for each fuzzer, that will be run.")
-    parser_eval.add_argument("--fresh-images", default=False, action="store_true",
+    parser_coverage.add_argument("--fresh-images", default=False, action="store_true",
         help='If the docker images should be rebuild from scratch. This will call pull on the base images, and build with --no-cache.')
     del parser_coverage
 
