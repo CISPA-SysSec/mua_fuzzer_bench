@@ -29,13 +29,12 @@ each supermutant that needs to be evaluated (Stage 2).
 
 To run this framework two dependencies are required.
 
-First are the required Python packages, this is managed using
-[hatch](https://hatch.pypa.io/latest/). Once installed, `hatch shell` can be
-used to set up and activate the environment. The configuration can be found in
-the `pyproject.toml` file.
+First, the required Python packages are managed using
+[hatch](https://hatch.pypa.io/latest/install/).
+The configuration can be found in [pyproject.toml](pyproject.toml).
 
-The other requirement is [docker](https://www.docker.com/) and that the user
-is part of the `docker` group.
+The other requirement is [docker](https://docs.docker.com/engine/install/)
+and that the user is a member of the `docker` group.
 
 # Usage
 
@@ -56,7 +55,7 @@ file to see if those changes are acceptable and modify if not.
 
 Additionally, the framework requires a few python packages. The python
 environment is managed through [hatch](https://hatch.pypa.io/latest/).
-All that needs to be is install hatch, then `hatch shell` will set up the
+All that needs to be installed is hatch, then `hatch shell` will set up the
 packages.
 
 ```bash
@@ -64,7 +63,7 @@ source ./set_proc_sys_parameters.sh  # source the script to allow ulimit to work
 hatch shell  # enter the python environment
 ```
 
-Once these two lines have been executed the following commands can be run in
+Once these two lines have been executed, the following commands can be run in
 this shell session.
 
 
@@ -85,7 +84,7 @@ the in a folder identical to the prog variant name, so for the following
 command the seed files would be placed under:
 `tmp/seeds/seeds_minimal/woff2_new`.
 
-Also note that the fuzz-time is in minutes. Of the instances the median run
+Also note that the fuzz-time is in minutes. Of the instances, the median run
 based on covered mutations will be moved into a separate directory.
 
 ```bash
@@ -109,7 +108,7 @@ the paper are repeated to show some example usages.
 
 ### Basic Evaluation
 
-As said the `eval` command provides the entry point to evaluate mutations.
+As said, the `eval` command provides the entry point to evaluate mutations.
 See below for an example. Note that the `seed-dir` now points to the median
 run created by the `coverage_fuzzing` command.
 
@@ -121,6 +120,8 @@ src/mua_fuzzer_benchmark/eval.py eval \
     --seed-dir tmp/coverage/median_runs/ \
     --result-path data/basic/stats_all.db
 ```
+
+After the evaluation, the result database will be copied to `result-path`.
 
 ### ASan
 
@@ -143,8 +144,8 @@ src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
 ```
 
 The following command shows how to start a rerun eval, this time building the
-program with ASan (to be clear the `MUT_BUILD_ASAN` can also be used without
-rerun).
+program with ASan. (To be clear: `MUT_BUILD_ASAN` can also be used without
+`--rerun`, which ensures that exactly the same supermutants will be build.)
 
 ```bash
 MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
@@ -159,8 +160,8 @@ MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
 
 ### 24 Hours (with ASan)
 
-Just to complete the experiments of the paper, below the mutations still
-not killed after the ASan experiment are now again run for 24 hours.
+Just to complete the experiments of the paper, this example shows how to run
+the mutations still not killed after the ASan experiment again (for 24 hours).
 
 ```bash
 src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
@@ -187,8 +188,8 @@ MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
 
 ## Getting the Results
 
-The plots as shown in the paper can be reproduced using the Makefile. This
-requires first that the databases are prepared for plotting using:
+The plots as shown in the paper can be reproduced using the Makefile.
+This requires that the databases are prepared for plotting first using:
 `src/mua_fuzzer_benchmark/eval.py prepare_db --db <db>`
 
 This needs to be done for all three databases previously created:
@@ -208,15 +209,15 @@ This part of the usage will likely be changed after artifact evaluation.
 # Extending the Tool
 
 There are three expected ways to extend the current state of the framework.
-Adding new fuzzer, adding new program, and adding or changing mutations.
+Adding new fuzzers, adding new programs, and adding or changing mutations.
 
 ## Adding New Fuzzers
 
 All fuzzers are located in the directory `dockerfiles/fuzzers/`, each fuzzer
 is located in a separate directory, and the directory name is used to identify
 the fuzzer. It is recommended to look at existing fuzzer configurations and
-follow their setup when adding a new fuzzer. Note that `dockerfiles/fuzzers/system/`
-is used as the base image.
+follow their setup when adding a new fuzzer.
+Note that `dockerfiles/fuzzers/system/` is used as the base image.
 Four files need to be provided to use a fuzzer (under `dockerfiles/fuzzers/<fuzzer name>/`):
 
 - **Dockerfile**: The docker build command is run from the project root dir.
@@ -285,14 +286,13 @@ Two files are required to add a program (additional files are allowed, see
 
 ## Adding or Modifying Mutations
 
-
 The file [mutation_doc.json](mutation_doc.json) contains documentation about
-the different mutation types implemented in this project as a machine readable
-json file.
+the different mutation types implemented in this project as a machine-readable
+JSON file.
 
 ## Install
 
-Changing mutations requires additional setup see below.
+Changing mutations requires additional setup shown below.
 
 ### Docker Install
 
