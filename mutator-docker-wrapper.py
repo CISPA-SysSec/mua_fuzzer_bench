@@ -6,8 +6,8 @@ import subprocess
 import sys
 import argparse
 
-llvm_dockerfile = "dockerfiles/Dockerfile.llvm"
-mutator_dockerfile = "dockerfiles/Dockerfile.mutator"
+llvm_dockerfile = "dockerfiles/mutator/Dockerfile.llvm"
+mutator_dockerfile = "dockerfiles/mutator/Dockerfile.mutator"
 llvm_image = "mutator_deps:2004"
 mutator_image = "mutator_mutator:latest"
 container_name = "mutator_container"
