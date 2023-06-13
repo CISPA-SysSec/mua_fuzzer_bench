@@ -5,40 +5,34 @@ Script for building, running and deleting the lFuzzer docker container.
 import subprocess
 import sys
 import argparse
-import os
 
-
-llvm_dockerfile = "Dockerfile.llvm"
-mutator_dockerfile = "Dockerfile.mutator"
+llvm_dockerfile = "dockerfiles/Dockerfile.llvm"
+mutator_dockerfile = "dockerfiles/Dockerfile.mutator"
 llvm_image = "mutator_deps:2004"
 mutator_image = "mutator_mutator:latest"
 container_name = "mutator_container"
 
 
-def print_fail(message):
+def print_fail(message: str) -> None:
     """
     Prints the message in red to the error console.
-    :param message:
-    :return:
     """
     sys.stderr.write('\x1b[1;31m' + message + '\x1b[0m\n\n')
 
 
-def print_pass(message):
+def print_pass(message: str) -> None:
     """
     Prints the message in green to stdout.
-    :param message:
-    :return:
     """
     sys.stdout.write('\x1b[1;32m' + message + '\x1b[0m\n\n')
 
 
-def build():
+def build() -> None:
     """
-    Builds the container by first building the llvm container and then consecutively building the lFuzzer container
-    :return:
+    Builds the container by first building the llvm container and then consecutively building the lFuzzer container.
     """
-    proc = subprocess.run(["docker", "image", "inspect", llvm_image], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run(["docker", "image", "inspect", llvm_image],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
         # build llvm image
         proc = subprocess.run(["docker", "build", "--no-cache", "-t", llvm_image, "-f", llvm_dockerfile, "."])
@@ -58,10 +52,10 @@ def build():
     print_pass("Successfully built Mutator Docker container.")
 
 
-def rebuild():
+def rebuild() -> None:
     """
-        Deletes the Mutator images including all containers and data and rebuilds it from scratch.
-        """
+    Deletes the Mutator images including all containers and data and rebuilds it from scratch.
+    """
     inpt = input(
         "Do you want to delete the Mutator image including all "
         "containers and experiment data and rebuild it? [yes/no]: ")
@@ -78,12 +72,12 @@ def rebuild():
         exit(0)
 
 
-def start():
+def start() -> None:
     """
     Starts the Mutator container.
-    :return:
     """
-    proc = subprocess.run(["docker", "image", "inspect", mutator_image], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run(["docker", "image", "inspect", mutator_image],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
         inpt = input("Mutator image does not exist. Do you want to build it now (takes around an hour)? [y/n]: ")
         if inpt == "y":
@@ -99,7 +93,8 @@ def start():
                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout)
     if not is_there:
         print_pass("Container does not exist. Container will be created and started and bash will be attached.")
-        subprocess.run(["docker", "run", "-dt", "--name", container_name, mutator_image])
+        subprocess.run(["docker", "run", "-dt", "--name",
+                       container_name, mutator_image])
         subprocess.run(["docker", "start", container_name])
         subprocess.run(["docker", "exec", "-it", container_name, "/bin/bash"])
         return
@@ -117,7 +112,7 @@ def start():
         exit(1)
 
 
-def delete():
+def delete() -> None:
     """
     Deletes the Mutator and llvm images including all containers and data.
     """
@@ -138,10 +133,9 @@ def delete():
         exit(0)
 
 
-def stop():
+def stop() -> None:
     """
     Stops the lFuzzer docker container.
-    :return:
     """
     inpt = input("Container will be stopped, all running experiments will be aborted "
                  "(already generated data should will not be deleted). Are you sure? [y/n]: ")
