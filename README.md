@@ -84,7 +84,7 @@ the in a folder identical to the prog variant name, so for the following
 command the seed files would be placed under:
 `tmp/seeds/seeds_minimal/woff2_new`.
 
-Also note that the fuzz-time is in minutes. Of the instances, the median run
+Also, note that the `fuzz-time` is in minutes. Of the instances, the median run
 based on covered mutations will be moved into a separate directory.
 
 ```bash
@@ -92,7 +92,7 @@ src/mua_fuzzer_benchmark/eval.py coverage_fuzzing \
     --fuzzers libfuzzer aflpp honggfuzz \
     --progs woff2_new \
     --fuzz-time $((60 * 48)) \
-    --seed-dir tmp/seeds/seeds_minimal \
+    --seed-dir tmp/seeds/minimal \
     --result-dir tmp/coverage \
     --instances 13
 ```

@@ -24,4 +24,6 @@ p <- muta_data %>%
     ) +
     labs(y = "Percentage of Mutants", fill = "Result")
 
-ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width = 5, height = 7)
+ggsave(p, filename = "plot/fig/mutation_types.pdf", device = "pdf", width = 5,
+       height = 7, family = "NimbusSan")
+embed_fonts("plot/fig/mutation_types.pdf")

@@ -3,7 +3,7 @@ options(repos = c(CRAN = "https://cran.rstudio.com"))
 ## First specify the packages of interest
 packages <- c(
   "ggplot2", "UpSetR", "tidyr", "dplyr", "VennDiagram", "ggupset", "forcats", "rjson", "gsubfn", "ggvenn", "DBI",
-  "RSQLite"
+  "RSQLite", "extrafont"
 )
 
 
@@ -18,5 +18,8 @@ package_check <- lapply(
   }
 )
 rm(packages, package_check)
+
+# font_import(prompt = FALSE)
+# loadfonts()
 
 dir.create(file.path("plot", "fig"), showWarnings = FALSE)

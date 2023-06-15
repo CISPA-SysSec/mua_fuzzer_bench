@@ -38,4 +38,5 @@ p <- pivot_kill_data %>%
 
 p
 
-ggsave(p, file = "plot/fig/resampling.pdf", width = 8, height = 8)
+ggsave(p, file = "plot/fig/resampling.pdf", width = 8, height = 8, family = "NimbusSan")
+embed_fonts("plot/fig/resampling.pdf")

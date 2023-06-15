@@ -31,5 +31,6 @@ p <- ggplot(data) +
     theme(plot.title = element_text(hjust = 0.5)) +
     xlim(c(-2, 2)) +
     ylim(c(-1.9, 1.3))
-p
-ggsave(p, filename = "plot/fig/wayne.pdf", device = "pdf", width = 5, height = 4.5)
+
+ggsave(p, filename = "plot/fig/wayne.pdf", device = "pdf", width = 5, height = 4.5, family = "NimbusSan")
+embed_fonts("plot/fig/wayne.pdf")

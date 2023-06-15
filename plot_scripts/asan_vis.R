@@ -115,4 +115,6 @@ p <- rejiggered %>%
   theme_bw() +
   theme(legend.position = "bottom", axis.title.x = element_blank(), strip.text = element_text(size = 6.5))
 p
-ggsave(p, filename = "plot/fig/oracle-percentages-stacked-no-afl.pdf", device = "pdf", width = 8, height = 4)
+ggsave(p, filename = "plot/fig/oracle-percentages-stacked-no-afl.pdf",
+       device = "pdf", width = 8, height = 4, family = "NimbusSan")
+embed_fonts("plot/fig/oracle-percentages-stacked-no-afl.pdf")
