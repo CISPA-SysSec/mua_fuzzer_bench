@@ -145,7 +145,8 @@ src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
 
 The following command shows how to start a rerun eval, this time building the
 program with ASan. (To be clear: `MUT_BUILD_ASAN` can also be used without
-`--rerun`, which ensures that exactly the same supermutants will be build.)
+`--rerun`. Also, `--rerun` ensures that the same supermutants that have been
+generated for the `--rerun <db>` will be started again.)
 
 ```bash
 MUT_BUILD_ASAN=1 src/mua_fuzzer_benchmark/eval.py eval \
