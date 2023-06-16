@@ -15,6 +15,3 @@ echo core | sudo tee /proc/sys/kernel/core_pattern
 # Set performance governor for all cores, we want to have full performance
 # to evaluate as consistently as possible.
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-
-# Disable aslr on host, makes fuzzing bit more consistent.
-echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
