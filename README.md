@@ -173,7 +173,7 @@ src/mua_fuzzer_benchmark/eval.py generate_rerun_file \
     --skip-timeout yes \
     --skip-killed yes \
     --skip-crashed yes \
-    --mode keep
+    --mode single
 ```
 
 ```bash
