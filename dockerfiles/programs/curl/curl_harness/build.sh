@@ -90,9 +90,9 @@ llvm-link \
 
 $CXX $CXXFLAGS \
   -o $OUT/curl_fuzzer \
-  ../out/curl.bc \
+  $OUT/curl.bc \
   $LIB_FUZZING_ENGINE \
-  -L../out/lib/ \
+  -L $OUT/lib/ \
   -lpthread \
   -lidn2 \
   -lz \
