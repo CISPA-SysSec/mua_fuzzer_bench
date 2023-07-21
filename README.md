@@ -30,8 +30,10 @@ each supermutant that needs to be evaluated (Stage 2).
 To run this framework two dependencies are required.
 
 First, the required Python packages are managed using
-[hatch](https://hatch.pypa.io/latest/install/).
-The configuration can be found in [pyproject.toml](pyproject.toml).
+[hatch](https://hatch.pypa.io/latest/install/). See
+[Preparing the Environment](#preparing-the-environment) on how to use it.
+The configuration can be found in [pyproject.toml](pyproject.toml), but we
+**discourage** manual setups.
 
 The other requirement is [docker](https://docs.docker.com/engine/install/)
 and that the user is a member of the `docker` group.
@@ -56,14 +58,15 @@ file to see if those changes are acceptable and modify if not.
 Additionally, the framework requires a few python packages. The python
 environment is managed through [hatch](https://hatch.pypa.io/latest/).
 All that needs to be installed is hatch, then `hatch shell` will set up the
-packages.
+packages. We **strongly recommend** this over a manual setup.
 
 ```bash
 source ./set_proc_sys_parameters.sh  # source the script to allow ulimit to work
 hatch shell  # enter the python environment
 ```
 
-Once these two lines have been executed, the following commands can be run in
+Executing the second command opens a shell in the virtual environment that has
+all dependencies installed. Afterwards, the following commands can be run in
 this shell session.
 
 
