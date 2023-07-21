@@ -1,8 +1,8 @@
 # mua-fuzzer-benchmark
 
 This project contains the source code used for the evaluation of the
-"Systematic Assessment of Fuzzers using Mutation Testing" paper. Note that
-this framework only supports Linux systems at the moment.
+[Systematic Assessment of Fuzzers using Mutation Testing](https://www.usenix.org/conference/usenixsecurity23/presentation/gorz)
+paper. Note that this framework only supports Linux systems at the moment.
 
 The goal of this project is to provide a framework to compare fuzzers using
 mutation analysis. Fuzzers are tools that implement fuzzing / fuzz testing to
