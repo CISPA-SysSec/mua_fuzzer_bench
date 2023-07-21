@@ -75,7 +75,7 @@ RUN pip3 install wllvm
 # ENV PATH "/root/toolchains/build/llvm+clang-901-x86_64-linux-gnu_build/bin/:$PATH"
 ENV LLVM_COMPILER "clang"
 
-RUN wget https://downloads.gradle-dn.com/distributions/gradle-6.8-bin.zip
+RUN wget https://services.gradle.org/distributions/gradle-6.8-bin.zip
 RUN unzip gradle-6.8-bin.zip
 RUN mv gradle-6.8 /usr/local/gradle
 
