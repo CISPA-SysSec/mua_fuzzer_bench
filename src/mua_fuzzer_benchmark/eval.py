@@ -753,6 +753,18 @@ def get_supermutations_seed_reachable(
     is_in_mut_data: Callable[[int], bool] = lambda x: x in mut_data
     covered_mutations = set(filter(is_in_mut_data, covered_mutations))
 
+    # Check if any mutations are covered, if no mutations are covered,
+    # we can not generate any supermutants. More importantly it is quite likely
+    # that the setup is faulty, so we should fail early.
+    # It is likely that no seed inputs are available.
+    if len(covered_mutations) == 0:
+        seed_dirs = [get_seed_dir(seed_base_dir, prog, fuzzer) for fuzzer in fuzzers]
+        raise ValueError(
+            "No mutations are covered, this is likely due to no seed inputs " +
+            "being available. Please check the following directories:\n" +
+            '\n'.join(map(str, seed_dirs))
+        )
+
     incov_set_length: Callable[[int], int] = lambda mm: len(input_coverages[mm])
     mutations_todo = sorted(list(covered_mutations), key=incov_set_length, reverse=True)
 
