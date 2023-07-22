@@ -80,8 +80,7 @@ def get_seed_dir(seed_base_dir: Path, prog: str, fuzzer: str) -> Path:
         prog_fuzzer_seed_dir = prog_seed_dir/fuzzer
         if not prog_fuzzer_seed_dir.is_dir():
             raise ValueError(
-                f"Expected seed dir to exist {prog_fuzzer_seed_dir}, using " + 
-                f"full dir instead: {prog_seed_dir}")
+                f"Expected seed dir to exist: {prog_fuzzer_seed_dir}.")
         return prog_fuzzer_seed_dir
 
     elif has_files:
