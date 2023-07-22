@@ -26,6 +26,22 @@ into two parts, one longer session on the unmutated executable, to give the
 fuzzer as much of a head start as it can get. This allows shorter sessions for
 each supermutant that needs to be evaluated (Stage 2).
 
+
+# Requirements
+
+It is recommended to use a current Linux distribution, which are supported by
+the two main requirements docker and hatch.
+
+Hardware requirements depend on the the number of CPU cores that are available
+and should be used. The RAM requirements mostly depends on the subject, as a
+rule of thumb, we would recommend around 1GB per instance.
+
+The hard drive space requires also depends on the subjects and fuzzers.
+Most space will be used for the docker images, seed corpus, and resulting
+databases. We recommend around 100GB available space for evaluations
+with multiple subjects and fuzzers.
+
+
 # Installation
 
 To run this framework two dependencies are required.
