@@ -8,7 +8,7 @@ import psutil
 EXEC_ID = str(uuid.uuid4())
 
 # set the number of concurrent runs
-NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=True)))
+NUM_CPUS = int(os.getenv("MUT_NUM_CPUS", psutil.cpu_count(logical=True)))  # type: ignore[misc]
 
 # If the detector binary should be build with ASAN
 WITH_ASAN = os.getenv("MUT_BUILD_ASAN", "0") == "1"

@@ -661,7 +661,7 @@ def load_rerun_prog(rerun: ReadStatsDb, prog: str, prog_info: Program) -> None:
         f.write(mutation_locations_content)
 
 
-def instrument_prog(container: Container, prog_info: Program) -> None:
+def instrument_prog(container: Container, prog_info: Program) -> Dict[str, Union[int, str, bool]]:
     # Compile the mutation location detector for the prog.
     bc_path = Path(prog_info.orig_bc)
     args = ["./run_mutation.py",
@@ -670,7 +670,7 @@ def instrument_prog(container: Container, prog_info: Program) -> None:
             "--bc-args=" + build_compile_args(prog_info.bc_compile_args, '/home/mutator'),
             "--bin-args=" + build_compile_args(prepend_main_arg(prog_info.bin_compile_args), '/home/mutator')]
     try:
-        run_exec_in_container(container, True, args)
+        return run_exec_in_container(container, True, args)
     except Exception as e:
         logger.info("Printing files in all parent directories of the out dir.")
 
@@ -752,6 +752,18 @@ def get_supermutations_seed_reachable(
     # do this filtering now
     is_in_mut_data: Callable[[int], bool] = lambda x: x in mut_data
     covered_mutations = set(filter(is_in_mut_data, covered_mutations))
+
+    # Check if any mutations are covered, if no mutations are covered,
+    # we can not generate any supermutants. More importantly it is quite likely
+    # that the setup is faulty, so we should fail early.
+    # It is likely that no seed inputs are available.
+    if len(covered_mutations) == 0:
+        seed_dirs = [get_seed_dir(seed_base_dir, prog, fuzzer) for fuzzer in fuzzers]
+        raise ValueError(
+            "No mutations are covered, this is likely due to no seed inputs " +
+            "being available. Please check the following directories:\n" +
+            '\n'.join(map(str, seed_dirs))
+        )
 
     incov_set_length: Callable[[int], int] = lambda mm: len(input_coverages[mm])
     mutations_todo = sorted(list(covered_mutations), key=incov_set_length, reverse=True)
@@ -898,16 +910,25 @@ def get_all_mutations(
         logger.info("="*50)
         logger.info(f"Compiling base and locating mutations for {prog}")
 
+        instrument_result: Optional[Dict[str, Union[int, str, bool]]]
+
         if rerun is None:
-            instrument_prog(mutator, prog_info)
+            instrument_result = instrument_prog(mutator, prog_info)
         else:
             load_rerun_prog(rerun, prog, prog_info)
+            instrument_result = None
 
         stats.new_prog(EXEC_ID, prog, prog_info)
 
         # get info on mutations
         with open(mutation_locations_path(prog_info), 'rt') as f:
             mutation_data: List[Dict[str, str]] = json.load(f)
+
+        if len(mutation_data) == 0:
+            msg = f"No mutations found for {prog}.\n"
+            if instrument_result is not None:
+                msg += f"Instrumentation failed:\n{instrument_result}"
+            raise ValueError(msg)
 
         if FILTER_MUTATIONS:
             if rerun is not None:
