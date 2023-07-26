@@ -2,7 +2,8 @@
 
 This project contains the source code used for the evaluation of the
 [Systematic Assessment of Fuzzers using Mutation Testing](https://www.usenix.org/conference/usenixsecurity23/presentation/gorz)
-paper. Note that this framework only supports Linux systems at the moment.
+paper, see [here](#cite) if you want to cite the paper.
+Note that this framework only supports Linux systems at the moment.
 
 The goal of this project is to provide a framework to compare fuzzers using
 mutation analysis. Fuzzers are tools that implement fuzzing / fuzz testing to
@@ -24,6 +25,22 @@ needed that fuzzers require to get results. This is done by splitting fuzzing
 into two parts, one longer session on the unmutated executable, to give the
 fuzzer as much of a head start as it can get. This allows shorter sessions for
 each supermutant that needs to be evaluated (Stage 2).
+
+
+# Requirements
+
+It is recommended to use a current Linux distribution, which are supported by
+the two main requirements docker and hatch.
+
+Hardware requirements depend on the the number of CPU cores that are available
+and should be used. The RAM requirements mostly depends on the subject, as a
+rule of thumb, we would recommend around 1GB per instance.
+
+The hard drive space requires also depends on the subjects and fuzzers.
+Most space will be used for the docker images, seed corpus, and resulting
+databases. We recommend around 100GB available space for evaluations
+with multiple subjects and fuzzers.
+
 
 # Installation
 
@@ -415,6 +432,20 @@ gradle clean
 # run in root directory to delete all generated mutation files in samples
 
 sh clean_mutations_in_samples.sh
+```
+
+# Cite
+If you want to cite this project, we would recommend the following bibtex entry:
+
+```bibtex
+@inproceedings{goerz2023muafuzzerbenchmark,
+  location  = {Anaheim, {CA}, {USA}},
+  title     = {Systematic Assessment of Fuzzers using Mutation Analysis},
+  url       = {https://www.usenix.org/conference/usenixsecurity23/presentation/gorz},
+  booktitle = usenix-security,
+  author    = {Philipp Görz and Björn Mathis and Keno Hassler and Emre Güler and Thorsten Holz and Andreas Zeller and Rahul Gopinath},
+  date      = {2023-08}
+}
 ```
 
 # License
